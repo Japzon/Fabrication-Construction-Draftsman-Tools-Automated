@@ -1,0 +1,60 @@
+---
+description: How to completely and robustly update or create features and functions for the Auto Robot and CNC Dev Kit Addon
+---
+Auto Robot and CNC Dev Kit AI Agent Update Workflow
+
+This workflow is the absolute source of truth for AI agents interacting with this repository. Follow these steps meticulously to robustly update or create new features, preserving the addon's unique framework and preventing major errors across future updates.
+
+1. Strict Operational Protocols
+
+No Unmentioned Changes. Never add, alter, or remove features unless explicitly instructed. Focus exclusively on the tasks given.
+
+Minimal Text and Max Organization. Substantially bypass conversational filler, prioritize checklists, and provide compact summaries of modifications.
+
+Task Syntax Reader. Respect the user's task syntax. Using a period and comma indicates a completely new, separate task. A single period indicates relation to the previous task objective.
+
+Target Environment. All Python code must be strictly compatible with Blender version 4.5.6 LTS. There are no exceptions.
+
+2. Literal Naming Constraints and Structure Enforcement
+
+The codebase explicitly avoids generic variable reuse, such as sharing a single radius variable for gears, wheels, and springs, in favor of uncompromising, literal naming.
+
+Property Variables in properties.py. Variable names must exactly match the literal label shown to the user in the frontend GUI. Do NOT be resource efficient and reuse properties across distinct mechanical categories. For example, instead of a generic radius variable, you must explicitly use gear_radius, rack_width, wheel_base_radius, or motor_radius depending on the object.
+
+GUI Classes in panels user interface files. Panel class names must perfectly mirror their string display tag. For example, a panel with the text Create Mechanical Parts dictates that the underlying Python class title must be URDF_PT_CreateMechanicalParts.
+
+Operators in operators.py. Action classes and bl_idname identicality trace the GUI. For example, a button showing Generate Robot with AI dictates that the operator class must be URDF_OT_GenerateRobotWithAI and its bl_idname must be urdf.generate_robot_with_ai.
+
+3. Core Architecture Rules
+
+Know exactly where Python logic belongs before writing code. Do not mix module responsibilities.
+
+The __init__.py file handles Add-on metadata and central registration triggers.
+
+The properties.py file contains Add-on properties groups such as URDF_MechProps and URDF_InertialProperties, and also the procedural BMesh generation logic such as the generate mesh functions.
+
+The operators.py file holds Button execution classes containing the execute methods that trigger core actions. You must use explicit wrapper logic and pass context safely.
+
+The core.py file holds pure utility and backend functions like Gizmo updates, Rigging application, and Material assignments that do not directly interact with Blender GUI drawing loops.
+
+The panels user interface files contain separated logic grouping layout drawing functions like the draw definitions.
+
+4. Feature Creation and Extension Sequence
+
+When asked to implement or update a function, execute this sequence strictly.
+
+Step 4A is to Define the Properties First. Open properties.py. Navigate to the relevant property group like URDF_MechProps for procedural features. Inject rigidly named variables containing bpy.props.FloatProperty or integer fields. If they are mesh altering variables, you must bind them to the update parameter by setting update to wrapper_regenerate.
+
+Step 4B is to Wire the GUI Layout. Locate the correct sub file in the panels directory. Append the layout.prop function call using the exact literal variable name you created directly to the edit_box or row. Because the property is explicitly named underneath, you rarely need to overwrite the text parameter argument at this layer.
+
+Step 4C is to Construct the Generation Logic. Go back to properties.py or core.py for procedural operations. Ensure you initialize a clean temporary bmesh.new object. Target your newly generated localized variables like wheel_tread_count. Apply vertices changes securely using safe matrix projections. End sequences systematically by calling bm.to_mesh and freeing memory with bm.free.
+
+Step 4D is Operator Deployment and Registration. If the update introduces a brand new action command, wrap it inside operators.py starting with a class named URDF_OT_LiteralActionName. Finally, check __init__.py and the target module's internal CLASSES array to ensure the new Operator or Panel is properly appended so that the register and unregister loops can catch it.
+
+5. Procedural Safety Limitations
+
+Boolean Cuts. If a feature generates cut planes or booleans like Bore Holes inside gears, you must explicitly clear the cutter data geometry before appending the new shape per update. Failing to clear overlapping geometry triggers Blender Boolean z-fighting, which outputs half hole mesh crashes on parametric slider adjustments.
+
+Real Units and Precision Scaling. Properties representing spatial dimensions (like Cage Size or Part Length) must use `unit='LENGTH'` to ensure they are interpreted correctly in the Blender UI (e.g., as millimeters or meters). When using a "Size Cage", the generation multiplier must be calculated based on the precise bounding volume of the part's default state to ensure the final object perfectly fits the requested cage dimension.
+
+Merging Doubles. Before finishing any complex nested feature generator, you must invariably execute bmesh ops remove_doubles to weld procedural seams seamlessly and prevent stability issues.

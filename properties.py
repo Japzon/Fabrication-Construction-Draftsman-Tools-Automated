@@ -28,27 +28,31 @@ def generate_chain_link_mesh(bm: bmesh.types.BMesh, props: 'URDF_MechProps') -> 
     """
     bm.clear()
 
+    # --- ACTION: Get Unit Scale ---
+    u = bpy.context.scene.unit_settings.scale_length
+    s = 1.0 / u if u > 0 else 1.0
+
     if props.type_chain == 'BELT':
         # For belts, create a simple flat segment.
-        link_width = props.belt_width
-        link_length = props.chain_pitch
-        link_thickness = props.belt_thickness
+        link_width = props.belt_width * s
+        link_length = props.chain_pitch * s
+        link_thickness = props.belt_thickness * s
         bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Diagonal((link_length, link_thickness, link_width, 1.0)))
         return
 
     # --- Roller Chain logic ---
-    pitch = props.chain_pitch
-    roller_radius = props.chain_roller_radius
-    roller_length = props.chain_roller_length
-    plate_thickness = props.chain_plate_thickness
-    plate_height = props.chain_plate_height
+    pitch = props.chain_pitch * s
+    roller_radius = props.chain_roller_radius * s
+    roller_length = props.chain_roller_length * s
+    plate_thickness = props.chain_plate_thickness * s
+    plate_height = props.chain_plate_height * s
 
-    # Clamp values to ensure the geometry is always valid.
+    # Clamp values to ensure the geometry is always valid. (Already in meters, converted to BU)
     plate_height = max(plate_height, roller_radius * 2.0 * 1.05)
-    plate_thickness = max(plate_thickness, 0.001)
-    roller_radius = max(roller_radius, 0.001)
-    pitch = max(pitch, 0.001)
-    roller_length = max(roller_length, 0.001)
+    plate_thickness = max(plate_thickness, 0.001 * s)
+    roller_radius = max(roller_radius, 0.001 * s)
+    pitch = max(pitch, 0.001 * s)
+    roller_length = max(roller_length, 0.001 * s)
 
     half_pitch = pitch / 2.0
     plate_end_radius = plate_height / 2.0
@@ -274,8 +278,8 @@ def _generate_circular_gear_mesh(bm: bmesh.types.BMesh, props: 'URDF_MechProps')
     depth = props.gear_tooth_depth * s
 
     if props.type_gear == 'INTERNAL':
-        min_outer = radius + depth + 0.05
-        outer_rad = max(props.gear_outer_radius, min_outer)
+        min_outer = radius + depth + 0.05 * s
+        outer_rad = max(props.gear_outer_radius * s, min_outer)
         inner_rad = radius
         
         mat_bottom = mathutils.Matrix.Translation((0, 0, -length/2))
@@ -455,10 +459,10 @@ def generate_electronics_mesh(bm: bmesh.types.BMesh, props: 'URDF_MechProps', ob
             bmesh.ops.create_cone(bm, cap_ends=True, radius1=bell_r, radius2=bell_r, depth=bell_h, segments=32, matrix=mathutils.Matrix.Translation((0, 0, length/2 - bell_h/2)))
 
         if props.motor_shaft:
-            shaft_len = props.motor_shaft_length; shaft_rad = props.motor_shaft_radius
+            shaft_len = props.motor_shaft_length * s; shaft_rad = props.motor_shaft_radius * s
             shaft_pos = mathutils.Vector((0, 0, length/2 + shaft_len/2))
             if props.type_electronics in ['MOTOR_SERVO_STD', 'MOTOR_SERVO_MICRO']:
-                shaft_pos = mathutils.Vector((length * 0.25, 0, height/2 + height * 0.15 + shaft_len/2))
+                shaft_pos = mathutils.Vector(((props.motor_length * s) * 0.25, 0, height/2 + height * 0.15 + shaft_len/2))
             bmesh.ops.create_cone(bm, cap_ends=True, radius1=shaft_rad, radius2=shaft_rad, depth=shaft_len, segments=16, matrix=mathutils.Matrix.Translation(shaft_pos))
 
     elif 'SENSOR' in props.type_electronics:
@@ -539,29 +543,29 @@ def generate_wheel_mesh(bm: bmesh.types.BMesh, props: 'URDF_MechProps', obj: bpy
                 if props.wheel_side_pattern == 'SPOKES':
                     ret_poke = bmesh.ops.poke(bm, faces=side_pattern_faces)
                     spoke_faces = [f for f in ret_poke['faces']]
-                    spoke_gap = props.wheel_pattern_spacing
+                    spoke_gap = props.wheel_pattern_spacing * s
                     bmesh.ops.inset_individual(bm, faces=spoke_faces, thickness=spoke_gap, depth=0)
                     ret_ext = bmesh.ops.extrude_face_region(bm, geom=spoke_faces)
                     verts_ext = [v for v in ret_ext['geom'] if isinstance(v, bmesh.types.BMVert)]
                     verts_top = [v for v in verts_ext if v.co.z > 0]; verts_bottom = [v for v in verts_ext if v.co.z < 0]
-                    if verts_top: bmesh.ops.translate(bm, verts=verts_top, vec=(0, 0, props.wheel_pattern_depth))
-                    if verts_bottom: bmesh.ops.translate(bm, verts=verts_bottom, vec=(0, 0, -props.wheel_pattern_depth))
+                    if verts_top: bmesh.ops.translate(bm, verts=verts_top, vec=(0, 0, props.wheel_pattern_depth * s))
+                    if verts_bottom: bmesh.ops.translate(bm, verts=verts_bottom, vec=(0, 0, -props.wheel_pattern_depth * s))
                 elif props.wheel_side_pattern == 'DISH':
                     ret_poke = bmesh.ops.poke(bm, faces=side_pattern_faces)
                     for v in ret_poke['verts']:
                         direction = -1.0 if v.co.z > 0 else 1.0
-                        v.co.z += direction * props.wheel_pattern_depth
+                        v.co.z += direction * props.wheel_pattern_depth * s
                 elif props.wheel_side_pattern == 'RINGS':
                     current_faces = side_pattern_faces
                     # AI Editor Note: Use wheel_tread_count as a proxy for ring density if needed, or fixed num.
                     num_rings = max(2, int(props.wheel_tread_count / 4))
                     for i in range(num_rings):
-                        ret_inset = bmesh.ops.inset_region(bm, faces=current_faces, thickness=props.wheel_pattern_spacing, depth=0)
+                        ret_inset = bmesh.ops.inset_region(bm, faces=current_faces, thickness=props.wheel_pattern_spacing * s, depth=0)
                         current_faces = ret_inset['faces']
                         if i % 2 == 0:
                             verts_top = [v for f in current_faces for v in f.verts if v.co.z > 0]; verts_bottom = [v for f in current_faces for v in f.verts if v.co.z < 0]
-                            if verts_top: bmesh.ops.translate(bm, verts=list(set(verts_top)), vec=(0, 0, props.wheel_pattern_depth))
-                            if verts_bottom: bmesh.ops.translate(bm, verts=list(set(verts_bottom)), vec=(0, 0, -props.wheel_pattern_depth))
+                            if verts_top: bmesh.ops.translate(bm, verts=list(set(verts_top)), vec=(0, 0, props.wheel_pattern_depth * s))
+                            if verts_bottom: bmesh.ops.translate(bm, verts=list(set(verts_bottom)), vec=(0, 0, -props.wheel_pattern_depth * s))
 
         if props.wheel_tread_pattern != 'NONE':
             side_faces = [f for f in bm.faces if len(f.verts) == 4 and abs(f.normal.z) < 0.1]
@@ -1461,12 +1465,16 @@ def wrapper_regenerate(self: 'URDF_MechProps', context: bpy.types.Context) -> No
         pbone = rig.pose.bones.get(owner_obj.parent_bone)
         if pbone:
             # Sync the correct radius to the joint bone based on part category
+            # Use unit scale to convert meters to BU for visual parity
             r = self.radius
             if self.category == 'GEAR': r = self.gear_radius
             elif self.category == 'WHEEL': r = self.wheel_radius
             elif self.category == 'PULLEY': r = self.pulley_radius
             elif self.category == 'BASIC_JOINT': r = self.joint_radius
-            pbone.urdf_props.joint_radius = r
+            
+            u = context.scene.unit_settings.scale_length
+            s = 1.0 / u if u > 0 else 1.0
+            pbone.urdf_props.joint_radius = r * s
 
 def update_radius_prop(self: 'URDF_MechProps', context: bpy.types.Context) -> None:
     """

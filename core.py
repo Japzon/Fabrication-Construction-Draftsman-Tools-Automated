@@ -3228,6 +3228,10 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         # SIZE CAGE FIX: Ensure initial length matches the cage scale
         props.length = scale_factor
         
+        # --- AI Editor Note: Unit-Aware Display Size ---
+        unit_scale = context.scene.unit_settings.scale_length
+        s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+
         # Create Empties
         s_empty = bpy.data.objects.new(f"Spring_Start_{new_obj.name}", None)
         e_empty = bpy.data.objects.new(f"Spring_End_{new_obj.name}", None)
@@ -3235,8 +3239,8 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         s_empty.location = location
         e_empty.location = location + mathutils.Vector((0, 0, props.length))
         props.spring_start_obj = s_empty; props.spring_end_obj = e_empty
-        s_empty.empty_display_size = 0.2 * scale_factor
-        e_empty.empty_display_size = 0.2 * scale_factor
+        s_empty.empty_display_size = 0.2 * scale_factor * s
+        e_empty.empty_display_size = 0.2 * scale_factor * s
         
         if type_sub == 'DAMPER':
             # AI Editor Note: Adjusted to maximize cage. Base max dim approx 0.05m.
@@ -3399,8 +3403,13 @@ def _calculate_bone_geometry(objs, axis_orient: str, reference_obj=None):
 
     if max_radius < 0.001:
         max_radius = 0.5
+    
+    # --- AI Editor Note: Return radius in physical Meters ---
+    # Blender Units (BU) must be normalized by the scene scale to get meters.
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    normalized_radius = max_radius * unit_scale if unit_scale > 0 else max_radius
 
-    return head_world, tail_world, roll_vec_world, max_radius
+    return head_world, tail_world, roll_vec_world, normalized_radius
 
 
 def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> Tuple[str, str]:
@@ -3418,9 +3427,14 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
     # 1. Calculate bone geometry from the rotor object
     head, tail, roll, radius = _calculate_bone_geometry(obj, context.scene.urdf_bone_axis)
 
+    unit_scale = context.scene.unit_settings.scale_length
+    s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+
     # --- AI Editor Note: Override radius for Continuous joints to match motor size ---
     if props.type_basic_joint == 'JOINT_CONTINUOUS':
-        radius = props.radius
+        # radius from _calculate is in BU (scaled by s), but props.joint_radius is in meters.
+        # We must multiply by s to match mesh visualization.
+        radius = props.joint_radius * s
 
     # 2. Create bones in Edit Mode
     if context.mode != 'OBJECT': bpy.ops.object.mode_set(mode='OBJECT')
@@ -3447,7 +3461,8 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
         eb_base.tail = rig_mat_inv @ base_tail_world
         eb_base.align_roll(rig_mat_inv.to_3x3() @ roll)
     else:
-        offset_vec_world = (tail - head).normalized() * -0.05
+        # Offset must be scaled by 's' to be visible in mm scenes
+        offset_vec_world = (tail - head).normalized() * -0.05 * s
         eb_base.head = rig_mat_inv @ (head + offset_vec_world)
         eb_base.tail = rig_mat_inv @ head
         eb_base.align_roll(rig_mat_inv.to_3x3() @ roll)
@@ -4055,7 +4070,10 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Y'
 
     # --- ACTION: HEAD ---
-    neck_pos = torso_pos + mathutils.Vector((0, 0, torso_h / 2))
+    unit_scale = context.scene.unit_settings.scale_length
+    s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+    
+    neck_pos = torso_pos + mathutils.Vector((0, 0, (torso_h / 2) * s))
     neck_joint = create_parametric_part_object(context, 'BASIC_JOINT', 'JOINT_REVOLUTE', neck_pos, scale_factor=scale_factor*0.5, rotor_arm_length=0.05*scale_factor)
     neck_joint.name = get_unique_name("Neck")
     base_bone, joint_bone = rig_parametric_joint(context, neck_joint)
@@ -4065,8 +4083,8 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
     pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Z'
     
     context.view_layer.update() # Update for head position
-    head_pos = neck_joint.matrix_world @ mathutils.Vector((0, 0, neck_joint.urdf_mech_props.length / 2 + 0.1*scale_factor))
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.12*scale_factor, location=head_pos)
+    head_pos = neck_joint.matrix_world @ mathutils.Vector((0, 0, (neck_joint.urdf_mech_props.length / 2 + 0.1*scale_factor) * s))
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.12*scale_factor*s, location=head_pos)
     head = context.active_object; head.name = get_unique_name("Head")
     context.view_layer.objects.active = head; head.select_set(True); bpy.ops.urdf.add_bone()
     head_mesh_bone = f"Bone_{head.name.replace('.', '_')}"
@@ -4080,12 +4098,15 @@ def _build_simple_shape(context: bpy.types.Context, shape_type: str, scale_facto
     rig = context.scene.urdf_active_rig
     cursor_loc = context.scene.cursor.location
     
+    unit_scale = context.scene.unit_settings.scale_length
+    s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+
     if shape_type == 'BOX':
-        bpy.ops.mesh.primitive_cube_add(size=1.0 * scale_factor, location=cursor_loc)
+        bpy.ops.mesh.primitive_cube_add(size=1.0 * scale_factor * s, location=cursor_loc)
     elif shape_type == 'CYLINDER':
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.5 * scale_factor, depth=1.0 * scale_factor, location=cursor_loc)
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.5 * scale_factor * s, depth=1.0 * scale_factor * s, location=cursor_loc)
     elif shape_type == 'SPHERE':
-        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5 * scale_factor, location=cursor_loc)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5 * scale_factor * s, location=cursor_loc)
         
     obj = context.active_object
     obj.name = get_unique_name(shape_type.capitalize())
@@ -4194,7 +4215,9 @@ def _build_procedural_arm(context: bpy.types.Context, config: Dict[str, Any], sc
 
     # Create Arm Base (if standalone)
     if not base_obj:
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.08 * scale_factor, depth=0.05 * scale_factor, location=base_pos + mathutils.Vector((0,0,0.025*scale_factor)))
+        unit_scale = context.scene.unit_settings.scale_length
+        s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.08 * scale_factor * s, depth=0.05 * scale_factor * s, location=base_pos + mathutils.Vector((0,0,0.025*scale_factor*s)))
         base_link = context.active_object
         base_link.name = get_unique_name("Arm_Base")
         
@@ -4298,21 +4321,24 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
     cursor_loc = context.scene.cursor.location
     
     # --- COGNITION: Dimension Planning ---
+    unit_scale = context.scene.unit_settings.scale_length
+    s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+
     num_wheels = config['params'].get('wheels', 4)
     
-    # Chassis Dimensions
-    chassis_len = (0.15 * num_wheels) * scale_factor
-    if chassis_len < 0.4 * scale_factor: chassis_len = 0.4 * scale_factor
-    chassis_width = 0.3 * scale_factor
-    chassis_height = 0.1 * scale_factor
+    # Chassis Dimensions (Normalized to Meters internally, so apply s for BU)
+    chassis_len = (0.15 * num_wheels) * scale_factor * s
+    if chassis_len < 0.4 * scale_factor * s: chassis_len = 0.4 * scale_factor * s
+    chassis_width = 0.3 * scale_factor * s
+    chassis_height = 0.1 * scale_factor * s
     
     # Calculate placement (Chassis bottom at clearance height)
-    ground_clearance = 0.05 * scale_factor
+    ground_clearance = 0.05 * scale_factor * s
     chassis_center_z = ground_clearance + (chassis_height / 2.0)
-    chassis_pos = cursor_loc + mathutils.Vector((0, 0, chassis_center_z))
+    chassis_pos = cursor_loc + mathutils.Vector((0, 0, chassis_center_z)) # chassis_center_z is already scaled
     
     # --- ACTION: Create Chassis ---
-    bpy.ops.mesh.primitive_cube_add(size=1, location=chassis_pos)
+    bpy.ops.mesh.primitive_cube_add(size=1.0 * s, location=chassis_pos)
     chassis = context.active_object
     chassis.name = get_unique_name("Chassis")
     chassis.dimensions = (chassis_len, chassis_width, chassis_height)
@@ -4392,8 +4418,8 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
     if 'LIDAR' in config['components']:
         # Place on top front of chassis
         # Top Z = chassis_center_z + chassis_height/2
-        lidar_z = chassis_center_z + (chassis_height / 2.0) + (0.02 * scale_factor) # Slight offset
-        lidar_pos = cursor_loc + mathutils.Vector((chassis_len/3, 0, lidar_z))
+        lidar_z = chassis_center_z + (chassis_height / 2.0) + (0.02 * scale_factor * s) # Slight offset
+        lidar_pos = cursor_loc + mathutils.Vector(((chassis_len/3), 0, lidar_z)) # chassis_len is already scaled
         
         # AI Editor Note: Use parametric sensor
         lidar = create_parametric_part_object(context, 'ELECTRONICS', 'SENSOR_LIDAR', lidar_pos, scale_factor=scale_factor, radius=0.03*scale_factor, length=0.04*scale_factor)
@@ -4609,8 +4635,12 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
                     local_min[i] = min(local_min[i], local_point[i])
                     local_max[i] = max(local_max[i], local_point[i])
 
+        # Access variables for scaling
+        unit_scale = bpy.context.scene.unit_settings.scale_length
+        s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+
         # --- ACTION: Determine Base Scale ---
-        base_scale = 0.5 # Default fallback
+        base_scale = 0.5 * s # Default fallback (normalized)
         
         if has_meshes:
             dims = local_max - local_min
@@ -4624,20 +4654,24 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
                     base_scale = bone.length / 2.0
             
             # Ensure it's at least as large as the manual radius property
-            if base_scale < props.joint_radius:
-                base_scale = props.joint_radius
+            # props.joint_radius is in meters, so multiply by s for BU.
+            if base_scale < props.joint_radius * s:
+                base_scale = props.joint_radius * s
         else:
-            # Fallback to properties if no meshes attached
+            # Fallback to properties if no meshes attached.
+            # Convert meters to BU using s.
             if gizmo_type == 'ROTATION':
-                base_scale = props.joint_radius
+                base_scale = props.joint_radius * s
             elif gizmo_type == 'SLIDER':
-                base_scale = bone.length / 2.0 if bone.length > config.MIN_BONE_LENGTH else 0.5
+                # bone.length is in BU, so no 's' needed.
+                base_scale = bone.length / 2.0 if bone.length > config.MIN_BONE_LENGTH else 0.5 * s
             elif gizmo_type == 'FIXED':
-                base_scale = props.joint_radius * 0.5
+                base_scale = props.joint_radius * 0.5 * s
             elif gizmo_type == 'BASE':
-                base_scale = bone.length if bone.length > 0.05 else (props.joint_radius * 2.0)
-                if base_scale < 0.05:
-                    base_scale = 0.5
+                # bone.length is in BU.
+                base_scale = bone.length if bone.length > 0.05 * s else (props.joint_radius * 2.0 * s)
+                if base_scale < 0.05 * s:
+                    base_scale = 0.5 * s
                 
                 # Ensure it doesn't stay at 0.5 if it's meant to be small
                 if bone.length < 0.2 and props.joint_radius < 0.2:

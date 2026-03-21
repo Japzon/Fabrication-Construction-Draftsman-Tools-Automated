@@ -197,36 +197,36 @@ def sync_git():
     zip_addon()
     
     # Git operations
-    print("[INFO] Cleaning repository index of outdated/ignored files...")
-    # This ensures that files now in .gitignore are removed from tracking
-    subprocess.run(["git", "rm", "-r", "--cached", ".", "--quiet"])
-    
-    print("[INFO] Staging all current updates and removals...")
+    print("[INFO] Staging updates and removals...")
     subprocess.run(["git", "add", "-A"])
     
     # Any changes?
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
     if diff.returncode == 0:
-        print("\n[INFO] No changes detected. Repository is already up to date.")
-        return True
+        # Check if we still need to push/pull even if no local changes
+        status = subprocess.run(["git", "status", "-sb"], capture_output=True, text=True).stdout
+        if "behind" not in status and "ahead" not in status:
+            print("\n[INFO] No changes detected. Repository is already up to date.")
+            return True
         
-    # Pull changes first to avoid "rejected" error
+    # Commit message (if changes exist)
+    if diff.returncode != 0:
+        print("\n" + "-"*30)
+        msg = input("Enter commit message (Press Enter for auto-timestamp): ").strip()
+        if not msg:
+            msg = f"Update: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        print("-"*30)
+        subprocess.run(["git", "commit", "-m", msg])
+
+    # Sync with remote
     print("[INFO] Syncing with remote repository...")
     # Identify current branch
     branch_result = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
     current_branch = branch_result.stdout.strip() or "main"
     
-    print(f"[INFO] Pulling latest from {current_branch}...")
-    subprocess.run(["git", "pull", "--rebase", "--autostash", "origin", current_branch])
-
-    # Commit message
-    print("\n" + "-"*30)
-    msg = input("Enter commit message (Press Enter for auto-timestamp): ").strip()
-    if not msg:
-        msg = f"Update: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    print("-"*30)
-        
-    subprocess.run(["git", "commit", "-m", msg])
+    print(f"[INFO] Pulling latest from origin/{current_branch}...")
+    # Added --allow-unrelated-histories for cases where .git was re-initialized
+    subprocess.run(["git", "pull", "--rebase", "--autostash", "--allow-unrelated-histories", "origin", current_branch])
     
     # Push
     print("\n[INFO] Pushing to GitHub...")

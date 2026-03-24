@@ -7,6 +7,7 @@ import os
 import json
 import xml.etree.ElementTree as ET
 import gpu
+import uuid
 from bpy.app.handlers import persistent
 from operator import itemgetter
 from bpy_extras.io_utils import ExportHelper, ImportHelper
@@ -61,54 +62,91 @@ class URDF_OT_OpenAssetBrowser(bpy.types.Operator):
             pass
         return {'FINISHED'}
 
-class URDF_OT_RegisterAssetCategory(bpy.types.Operator):
-    """Creates a new folder and registers it as a Blender Asset Library"""
-    bl_idname = "urdf.register_asset_category"
-    bl_label = "Register Category"
-    bl_description = "Creates a local folder and adds it to Blender's asset libraries list"
+class URDF_OT_AddAssetLibrary(bpy.types.Operator):
+    """Adds a new Asset Library to Blender Preferences"""
+    bl_idname = "urdf.add_asset_library"
+    bl_label = "Add Library"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         props = context.scene.urdf_asset_props
-        name = props.category_name
+        path = props.add_library_path
+        if not path or not os.path.exists(path):
+            self.report({'ERROR'}, "Please select a valid directory path first.")
+            return {'CANCELLED'}
         
-        # Default path in Blender User Data Asset folder
-        base_path = os.path.join(bpy.utils.user_resource('DATAFILES'), "urdf_assets", name)
+        name = os.path.basename(os.path.normpath(path))
+        if not name:
+            name = "New_Library"
+            
+        bpy.ops.preferences.asset_library_add(directory=path)
+        new_lib = context.preferences.filepaths.asset_libraries[-1]
+        new_lib.name = name
         
-        try:
-            if not os.path.exists(base_path):
-                os.makedirs(base_path)
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to create directory: {e}")
+        props.target_library = name
+        self.report({'INFO'}, f"Added and selected library: {name}")
+        return {'FINISHED'}
+
+class URDF_OT_RegisterAssetCatalog(bpy.types.Operator):
+    """Creates a catalog definition in the selected Asset Library"""
+    bl_idname = "urdf.register_asset_catalog"
+    bl_label = "Register Catalog"
+    bl_description = "Registers a new catalog in the selected library's catalog file"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.urdf_asset_props
+        cat_name = props.new_catalog_name
+        lib_name = props.target_library
+        
+        if lib_name == 'LOCAL':
+            self.report({'WARNING'}, "Cannot create catalog in 'Current File'. Select a valid Library.")
+            return {'CANCELLED'}
+        if not cat_name.strip():
+            self.report({'WARNING'}, "Please enter a name for the new catalog.")
             return {'CANCELLED'}
             
-        # Register in Blender Preferences
         prefs = context.preferences
-        filepaths = prefs.filepaths
-        
-        exists = False
-        for lib in filepaths.asset_libraries:
-            if lib.name == name:
-                exists = True
+        lib_path = ""
+        for lib in prefs.filepaths.asset_libraries:
+            if lib.name == lib_name:
+                lib_path = lib.path
                 break
+                
+        if not lib_path:
+            self.report({'ERROR'}, f"Target library '{lib_name}' not found.")
+            return {'CANCELLED'}
         
-        if not exists:
-            # Note: asset_library_add is a WM operator but we can call it.
-            bpy.ops.preferences.asset_library_add(directory=base_path)
-            # Find the newly added (last) and fix the name if needed (it might auto-name)
-            new_lib = filepaths.asset_libraries[-1]
-            new_lib.name = name
-            self.report({'INFO'}, f"Registered Library: {name}")
-        else:
-            self.report({'WARNING'}, f"Category '{name}' is already registered.")
+        cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
+        new_uuid = str(uuid.uuid4())
+        
+        try:
+            if not os.path.exists(cat_file):
+                with open(cat_file, "w", encoding='utf-8') as f:
+                    f.write("# This is an Asset Catalog Definition file for Blender.\n")
+                    f.write("VERSION 1\n\n")
+                    f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
+                self.report({'INFO'}, f"Created catalog '{cat_name}' in '{lib_name}'.")
+            else:
+                with open(cat_file, "r", encoding='utf-8') as f:
+                    content = f.read()
+                if f":{cat_name}:" not in content and f":{cat_name}\n" not in content:
+                    with open(cat_file, "a", encoding='utf-8') as f:
+                        f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
+                    self.report({'INFO'}, f"Added catalog '{cat_name}' to '{lib_name}'.")
+                else:
+                    self.report({'WARNING'}, f"Catalog '{cat_name}' already exists in '{lib_name}'.")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to write catalog: {e}")
+            return {'CANCELLED'}
             
         return {'FINISHED'}
 
 class URDF_OT_MarkAndUploadAsset(bpy.types.Operator):
-    """Marks selected as assets for the active library"""
+    """Imports selected items into the active catalog and exports them to its folder"""
     bl_idname = "urdf.mark_and_upload_asset"
-    bl_label = "Mark Selected as Asset"
-    bl_description = "Tags the selected objects/collections as assets in the current file"
+    bl_label = "Import Selected to Catalog"
+    bl_description = "Tags the selected objects as assets, assigns catalog UUID, and exports them"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -116,57 +154,179 @@ class URDF_OT_MarkAndUploadAsset(bpy.types.Operator):
             self.report({'WARNING'}, "No objects selected to mark as assets.")
             return {'CANCELLED'}
             
+        props = context.scene.urdf_asset_props
+        lib_name = props.target_library
+        # Use the selected catalog's UUID directly from the dropdown property
+        cat_uuid = props.selected_catalog if props.selected_catalog != 'NONE' else ""
+        
+        lib_path = ""
+        if lib_name != 'LOCAL':
+            prefs = context.preferences
+            for lib in prefs.filepaths.asset_libraries:
+                if lib.name == lib_name:
+                    lib_path = lib.path
+                    break
+        
         for obj in context.selected_objects:
             if not obj.asset_data:
                 obj.asset_mark()
-                self.report({'INFO'}, f"Marked: {obj.name}")
-            else:
-                self.report({'INFO'}, f"Already marked: {obj.name}")
+            if cat_uuid and obj.asset_data:
+                obj.asset_data.catalog_id = cat_uuid
+            self.report({'INFO'}, f"Marked: {obj.name}")
         
-        props = context.scene.urdf_asset_props
-        lib_name = props.target_library
-        self.report({'INFO'}, f"Success. Save this file to your '{lib_name}' library to complete upload.")
-        
+        if lib_name == 'LOCAL' or not lib_path:
+            self.report({'INFO'}, "Saved to 'Current File' only. Note: For external saving, select a library.")
+            return {'FINISHED'}
+            
+        category_path = os.path.join(lib_path, cat_name)
+        if not os.path.exists(category_path):
+            try:
+                 os.makedirs(category_path)
+            except Exception as e:
+                 self.report({'ERROR'}, f"Could not create catalog directory: {e}")
+                 return {'CANCELLED'}
+                 
+        exported = 0
+        for obj in context.selected_objects:
+            filepath = os.path.join(category_path, f"{obj.name}.blend")
+            try:
+                bpy.data.libraries.write(filepath, {obj})
+                exported += 1
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed saving {obj.name}: {e}")
+                
+        self.report({'INFO'}, f"Successfully exported {exported} objects to catalog OS directory.")
         return {'FINISHED'}
 
-class URDF_OT_ImportToAssetCategory(bpy.types.Operator, ImportHelper):
-    """Imports an external file and prepares it as an asset"""
-    bl_idname = "urdf.import_to_asset_category"
-    bl_label = "Import to Active Category"
-    bl_description = "Imports a 3D file and marks it as an asset automatically"
-    
-    filename_ext = ".obj;.fbx;.gltf;.glb;.stl"
-    filter_glob: bpy.props.StringProperty(default="*.obj;*.fbx;*.gltf;*.glb;*.stl", options={'HIDDEN'})
+class URDF_OT_ImportToAssetCatalog(bpy.types.Operator):
+    """Imports an external 3D file, marks it as an asset, and places it in the target catalog.
+    Supports: .obj .fbx .gltf .glb .stl .blend .dae .ply .abc .usd .usda .usdc .usdz .x3d .wrl .3mf .zip"""
+    bl_idname = "urdf.import_to_asset_catalog"
+    bl_label = "Import to Catalog"
+    bl_description = "Import a 3D file (or ZIP) and register it as an asset in the chosen library catalog"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def _resolve_file(self, filepath, context):
+        """If filepath is a ZIP, extract it to a temp dir and return the first importable file path."""
+        import zipfile, tempfile
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext != '.zip':
+            return filepath, None
+        tmp_dir = tempfile.mkdtemp(prefix="urdf_import_")
+        with zipfile.ZipFile(filepath, 'r') as zf:
+            zf.extractall(tmp_dir)
+        # Find best importable file
+        PRIO = ['.blend', '.gltf', '.glb', '.fbx', '.obj', '.dae', '.abc', '.usd', '.usda', '.usdc', '.usdz', '.x3d', '.wrl', '.ply', '.stl', '.3mf']
+        found = {}
+        for root, dirs, files in os.walk(tmp_dir):
+            for fname in files:
+                fe = os.path.splitext(fname)[1].lower()
+                if fe in PRIO and fe not in found:
+                    found[fe] = os.path.join(root, fname)
+        for p in PRIO:
+            if p in found:
+                return found[p], tmp_dir
+        return None, tmp_dir
 
     def execute(self, context):
-        filepath = self.filepath
-        ext = os.path.splitext(filepath)[1].lower()
-        
-        # Deselect to track imported
+        import shutil, zipfile
+        props = context.scene.urdf_asset_props
+        filepath = props.import_source_filepath
+        lib_name = props.import_target_library
+        cat_uuid = props.import_target_catalog if props.import_target_catalog != 'NONE' else ""
+
+        if not filepath or not os.path.exists(filepath):
+            self.report({'ERROR'}, "Select a valid source file before importing.")
+            return {'CANCELLED'}
+
+        actual_filepath, tmp_dir = self._resolve_file(filepath, context)
+        if not actual_filepath:
+            self.report({'ERROR'}, "No importable file found inside ZIP.")
+            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
+            return {'CANCELLED'}
+
+        ext = os.path.splitext(actual_filepath)[1].lower()
         bpy.ops.object.select_all(action='DESELECT')
-        
+
         try:
-            if ext == '.obj':
-                bpy.ops.wm.obj_import(filepath=filepath)
+            if ext == '.blend':
+                # Append all objects from the .blend file
+                with bpy.data.libraries.load(actual_filepath, link=False) as (src, dst):
+                    dst.objects = src.objects
+                for obj in dst.objects:
+                    if obj is not None:
+                        context.scene.collection.objects.link(obj)
+                        obj.select_set(True)
+            elif ext == '.obj':
+                bpy.ops.wm.obj_import(filepath=actual_filepath)
             elif ext == '.fbx':
-                bpy.ops.import_scene.fbx(filepath=filepath)
+                bpy.ops.import_scene.fbx(filepath=actual_filepath)
             elif ext in ['.gltf', '.glb']:
-                bpy.ops.import_scene.gltf(filepath=filepath)
+                bpy.ops.import_scene.gltf(filepath=actual_filepath)
             elif ext == '.stl':
-                bpy.ops.wm.stl_import(filepath=filepath)
+                bpy.ops.wm.stl_import(filepath=actual_filepath)
+            elif ext == '.dae':
+                bpy.ops.wm.collada_import(filepath=actual_filepath)
+            elif ext == '.ply':
+                bpy.ops.wm.ply_import(filepath=actual_filepath)
+            elif ext in ['.abc']:
+                bpy.ops.wm.alembic_import(filepath=actual_filepath)
+            elif ext in ['.usd', '.usda', '.usdc', '.usdz']:
+                bpy.ops.wm.usd_import(filepath=actual_filepath)
+            elif ext in ['.x3d', '.wrl']:
+                bpy.ops.import_scene.x3d(filepath=actual_filepath)
+            elif ext == '.3mf':
+                bpy.ops.import_mesh.threemf(filepath=actual_filepath)
             else:
-                self.report({'ERROR'}, f"Unsupported format: {ext}")
+                self.report({'ERROR'}, f"Unsupported file format: {ext}")
+                if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
                 return {'CANCELLED'}
-                
-            # Mark imported as asset
-            for obj in context.selected_objects:
-                obj.asset_mark()
-                
-            self.report({'INFO'}, f"Imported and marked {os.path.basename(filepath)}")
         except Exception as e:
             self.report({'ERROR'}, f"Import failed: {e}")
+            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
             return {'CANCELLED'}
-            
+
+        imported_objs = list(context.selected_objects)
+        if not imported_objs:
+            self.report({'WARNING'}, "No objects were imported.")
+            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
+            return {'CANCELLED'}
+
+        # Mark each imported object as asset and assign catalog UUID
+        for obj in imported_objs:
+            if not obj.asset_data:
+                obj.asset_mark()
+            if cat_uuid and obj.asset_data:
+                obj.asset_data.catalog_id = cat_uuid
+
+        # Optionally export .blend files into the catalog subfolder
+        if lib_name and lib_name != 'LOCAL':
+            lib_path = ""
+            for lib in context.preferences.filepaths.asset_libraries:
+                if lib.name == lib_name:
+                    lib_path = lib.path
+                    break
+
+            if lib_path:
+                base_name = os.path.splitext(os.path.basename(filepath))[0]
+                dest_dir = os.path.join(lib_path, base_name)
+                if not os.path.exists(dest_dir):
+                    try:
+                        os.makedirs(dest_dir)
+                    except Exception as e:
+                        self.report({'WARNING'}, f"Could not create folder: {e}")
+
+                for obj in imported_objs:
+                    dest_file = os.path.join(dest_dir, f"{obj.name}.blend")
+                    try:
+                        bpy.data.libraries.write(dest_file, {obj})
+                    except Exception as e:
+                        self.report({'WARNING'}, f"Export failed for {obj.name}: {e}")
+
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        self.report({'INFO'}, f"Imported {len(imported_objs)} object(s) from {os.path.basename(filepath)}.")
         return {'FINISHED'}
 
 # --- MAIN OPERATORS ---
@@ -709,53 +869,56 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
                         rig = obj.parent; break
 
         if context.mode == 'POSE':
-            if hasattr(context, 'selected_pose_bones_from_active_object') and context.selected_pose_bones_from_active_object:
-                bones_to_update = list(context.selected_pose_bones_from_active_object)
-            elif rig and rig.type == 'ARMATURE':
-                # AI Editor Note: Robust fallback for timers where context.selected_pose_bones may be empty.
-                bones_to_update = [b for b in rig.pose.bones if b.bone.select]
-                # If still empty, fall back to active bone
-                if not bones_to_update and rig.pose.bones.active:
-                    bones_to_update = [rig.pose.bones.active]
+            # AI Editor Note: Access selected_pose_bones from the global context for maximum reliability
+            # across different interaction methods (timers, scripts, or UI callbacks).
+            sel_bones = getattr(bpy.context, 'selected_pose_bones', [])
+            
+            # Also check the rig specifically mentioned in the scene if nothing else is found
+            if not sel_bones and rig and rig.type == 'ARMATURE':
+                sel_bones = [b for b in rig.pose.bones if b.bone.select]
+            
+            for pb in sel_bones:
+                if pb not in bones_to_update:
+                    bones_to_update.append(pb)
+        
         elif context.mode == 'OBJECT':
-            if rig:
-                for obj in context.selected_objects:
-                    if obj == rig: continue
-                    # Find all bones associated with this selection hierarchy
-                    def find_bones_in_hierarchy(o):
-                        # 1. Check if this object or any parent is bound to a bone
-                        curr = o
-                        while curr:
-                            if curr.parent == rig and curr.parent_type == 'BONE' and curr.parent_bone:
-                                pbone = rig.pose.bones.get(curr.parent_bone)
-                                if pbone and pbone not in bones_to_update:
-                                    bones_to_update.append(pbone)
-                                break # Found the root attachment for this branch
-                            curr = curr.parent
-                        
-                        # 2. Check all descendants for bone attachments
-                        for child in o.children:
-                            find_bones_in_hierarchy(child)
-                            
-                    find_bones_in_hierarchy(obj)
-                
-                # If no bones found from selection, fallback to active bone if rig is active
-                if not bones_to_update and rig == context.active_object and rig.pose.bones.active:
-                    bones_to_update = [rig.pose.bones.active]
-                
-                # Ultimate fallback to tracked active bone from UI interactions
-                if not bones_to_update and core._last_active_bone_name:
-                    pbone = rig.pose.bones.get(core._last_active_bone_name)
-                    if pbone:
-                        bones_to_update = [pbone]
+            # Look for bones based on the objects that are parented/attached to them
+            search_scope = context.selected_objects
+            # If no objects are selected, check the active rig's selection history
+            if not search_scope and rig:
+                search_scope = [rig]
+
+            for obj in search_scope:
+                # 1. Check if the object is an armature itself - treat it as a bone search
+                if obj.type == 'ARMATURE':
+                    for pb in obj.pose.bones:
+                        if pb.bone.select and pb not in bones_to_update:
+                            bones_to_update.append(pb)
+                    continue
+
+                # 2. Find all bones associated with this selection hierarchy
+                def find_bones_in_hierarchy(o):
+                    curr = o
+                    while curr:
+                        if curr.parent and curr.parent.type == 'ARMATURE' and curr.parent_type == 'BONE' and curr.parent_bone:
+                            pbone = curr.parent.pose.bones.get(curr.parent_bone)
+                            if pbone and pbone not in bones_to_update:
+                                bones_to_update.append(pbone)
+                            break
+                        curr = curr.parent
+                    for child in o.children:
+                        find_bones_in_hierarchy(child)
+                find_bones_in_hierarchy(obj)
         
         if not bones_to_update:
             return {'CANCELLED'}
 
-        # AI Editor Note: Use the property update guard to prevent redundant logic 
-        # and recursion while we set multiple properties per bone.
-        old_guard = core._prop_update_guard
+        # AI Editor Note: Use both guards to prevent recursive tool updates
+        # and standard bone-to-bone property propagation.
+        old_guard_prop = core._prop_update_guard
+        old_guard_tool = core._joint_editor_update_guard
         core._prop_update_guard = True
+        core._joint_editor_update_guard = True
 
         try:
             for bone in bones_to_update:
@@ -776,7 +939,10 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
                 apply_native_constraints(bone)
                 update_ik_chain_length(props, context)
         finally:
-            core._prop_update_guard = old_guard
+            core._prop_update_guard = old_guard_prop
+            core._joint_editor_update_guard = old_guard_tool
+            # Force refresh to ensure constraints and UI catch up
+            context.view_layer.update()
             
         self.report({'INFO'}, f"Applied joint settings to {len(bones_to_update)} bones")
         # AI Editor Note: Removed auto-switch to Pose Mode to prevent "getting stuck" 
@@ -2294,7 +2460,7 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         # Set Material
         set_mat = nodes.new('GeometryNodeSetMaterial')
         set_mat.location = (1000, 0)
-        mat = get_or_create_text_material(context)
+        mat = get_or_create_text_material(text_obj)
         set_mat.inputs['Material'].default_value = mat
 
         # --- Links ---
@@ -2333,16 +2499,20 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
             elif item.name == "Object B":
                 mod[item.identifier] = obj_b
 
-def get_or_create_text_material(context):
-    """Ensures the shared text material exists and returns it."""
-    mat_name = "URDF_Text_Material"
+def get_or_create_text_material(target_obj):
+    """Ensures a unique text material exists for the given object and returns it."""
+    # AI Editor Note: Renamed and added debug check to isolate the Context error.
+    if not hasattr(target_obj, "name"):
+         print(f"CRITICAL ERROR: get_or_create_text_material received {type(target_obj)} with no name: {target_obj}")
+         return bpy.data.materials.new("ERROR_MAT")
+
+    mat_name = f"URDF_Material_{target_obj.name}"
     mat = bpy.data.materials.get(mat_name)
     if not mat:
         mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
     
-    # AI Editor Note: Always sync color to scene property to prevent mismatch (e.g. white viewport vs black property)
-    color = getattr(context.scene, "urdf_text_color", (0.0, 0.0, 0.0, 1.0))
+    color = getattr(target_obj, "urdf_dim_text_color", (0.0, 0.0, 0.0, 1.0))
     if mat.use_nodes and mat.node_tree:
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
         if bsdf:
@@ -2350,9 +2520,39 @@ def get_or_create_text_material(context):
             bsdf.inputs['Emission Color'].default_value = color
             bsdf.inputs['Emission Strength'].default_value = 1.0
     
-    # AI Editor Note: Update viewport display color for Solid mode so changes are visible immediately
     mat.diffuse_color = color
     return mat
+
+def update_dimensions_trigger(self, context):
+    """Triggered when per-object dimension properties (like units or thickness) change."""
+    from . import core
+    core.update_dimensions_for_object(self)
+
+def update_dimension_length(self, context):
+    """Updates the position of Arrow B relative to Arrow A based on the Length property."""
+    # AI Editor Note: Refactored to allow the 'Length' property on the label object 
+    # to drive the distance between the two arrow heads.
+    # Logic: Find Arrow B (typically child of Arrow A or linked via GN) and move it locally along Z.
+    obj = self
+    if not obj.get("urdf_is_dimension"):
+        return
+
+    length = getattr(obj, "urdf_dim_length", 0.0)
+    
+    # Identify Arrow heads. We find them via the GN modifier sockets or hierarchy.
+    mod = obj.modifiers.get("Dynamic_Dimension")
+    eb = None
+    if mod and mod.node_group:
+        sock_b = mod.node_group.interface.items_tree.get("Object B")
+        if sock_b:
+            eb = mod[sock_b.identifier]
+
+    if eb:
+        # Arrow B is typically parented to Arrow A or the Label to maintain axis.
+        # Moving along local Z matches our generation orientation.
+        eb.location.z = length
+        # AI Editor Note: Force update to ensure GN and parented parts catch up
+        eb.update_tag()
 
 def create_arrow_mesh_data():
     """Creates a wireframe arrow mesh with origin at the tip."""
@@ -2393,8 +2593,8 @@ def create_arrow_mesh_data():
     return mesh
 
 def update_arrow_settings(self, context):
-    """Updates the size and scale of dimension arrows for ALL dimension objects in the scene."""
-    # AI Editor Note: Direction map for rotation calculation
+    """Updates the size and scale of dimension arrows for the specific dimension object."""
+    # AI Editor Note: Refactored to work per-object.
     direction_map = {
         'X': mathutils.Vector((1, 0, 0)),
         'Y': mathutils.Vector((0, 1, 0)),
@@ -2404,64 +2604,137 @@ def update_arrow_settings(self, context):
         '-Z': mathutils.Vector((0, 0, -1)),
     }
 
-    arrow_s = context.scene.urdf_dim_arrow_scale
-    text_s = context.scene.urdf_dim_text_scale
+    # Handle both Scene-level (global) and Object-level (local) updates
+    if isinstance(self, bpy.types.Scene):
+        # Global update: Sync all dimensions to scene defaults if they don't have local overrides
+        # Actually, for this task, we want PER arrow properties, so we skip global sync
+        # and only update the active object or selected objects.
+        return
 
-    for obj in context.scene.objects:
-        if obj.get("urdf_is_dimension"):
-            # AI Editor Note: Get direction from the object itself, allowing per-dimension settings.
-            # Fallback to 'Z' if not set (e.g. old files).
-            dir_enum = getattr(obj, "urdf_dim_direction", 'Z')
-            target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
-            
-            rot_quat = target_vec.to_track_quat('Z', 'Y')
-            rot_euler = rot_quat.to_euler()
+    obj = self
+    if not obj.get("urdf_is_dimension"):
+        return
 
-            arrows = []
-            # 1. Check direct constraints (Normal mode)
-            for c in obj.constraints:
-                if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
-                    arrows.append(c.target)
-            
-            # 2. Check parent constraints (Placement mode)
-            if not arrows and obj.parent and obj.parent.name.startswith("Anchor_"):
-                for c in obj.parent.constraints:
-                    if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
-                        arrows.append(c.target)
-            
-            # AI Editor Note: Determine old arrow scale from existing arrows before updating them.
-            old_arrow_s = arrow_s
-            if arrows:
-                if arrows[0].type == 'EMPTY':
-                    old_arrow_s = arrows[0].empty_display_size
-                else:
-                    old_arrow_s = arrows[0].scale[0]
+    arrow_s = getattr(obj, "urdf_dim_arrow_scale", 0.1)
+    text_s = getattr(obj, "urdf_dim_text_scale", 0.1)
+    dir_enum = getattr(obj, "urdf_dim_direction", 'Z')
+    target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
+    
+    rot_quat = target_vec.to_track_quat('Z', 'Y')
+    rot_euler = rot_quat.to_euler()
 
-            # AI Editor Note: Update Text Scale
-            obj.scale = (text_s, text_s, text_s)
+    arrows = []
+    # 1. Check direct constraints (Normal mode)
+    for c in obj.constraints:
+        if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
+            arrows.append(c.target)
+    
+    # 2. Check parent constraints (Placement mode)
+    if not arrows and obj.parent and obj.parent.name.startswith("Anchor_"):
+        for c in obj.parent.constraints:
+            if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
+                arrows.append(c.target)
+    
+    # Update Text Scale
+    obj.scale = (text_s, text_s, text_s)
 
-            # AI Editor Note: Smart Position Update based on Arrow Scale Delta.
-            if abs(old_arrow_s - arrow_s) > 0.0001:
-                # Scale changed: Apply delta movement along the arrow axis
-                obj.location += target_vec * (arrow_s - old_arrow_s)
-            elif not getattr(obj, "urdf_dim_is_manual", False):
-                # No scale change and not manual: Snap to default position
-                obj.location = target_vec * arrow_s
+    # Smart Position Update
+    if not getattr(obj, "urdf_dim_is_manual", False):
+        obj.location = target_vec * arrow_s
 
-            for arrow in arrows:
-                # AI Editor Note: Use scale property to control visual size of the Empty.
-                if arrow.type == 'EMPTY':
-                    arrow.empty_display_size = arrow_s
-                else:
-                    arrow.scale = (arrow_s, arrow_s, arrow_s)
-                # AI Editor Note: Set location to (0,0,0) so Origin is at the Vertex.
-                # This allows for easy scaling from the vertex anchor point.
-                # AI Editor Note: Only reset if using Vertex parenting (Legacy/Deforming).
-                # For static vertex mode (Object parent), we must preserve the offset.
-                if arrow.parent_type == 'VERTEX':
-                    arrow.location = (0, 0, 0)
-                # AI Editor Note: Update rotation to match direction setting
-                arrow.rotation_euler = rot_euler
+    for arrow in arrows:
+        if arrow.type == 'EMPTY':
+            arrow.empty_display_size = arrow_s
+        else:
+            arrow.scale = (arrow_s, arrow_s, arrow_s)
+        
+        if arrow.parent_type == 'VERTEX':
+            arrow.location = (0, 0, 0)
+        
+        arrow.rotation_euler = rot_euler
+
+def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=None):
+    """
+    Creates a hierarchical, driven dimension arrow between two points.
+    Anchor (Root) -> Arrow A (Origin) -> Arrow B (End)
+    """
+    scene = context.scene
+    coll = bpy.data.collections.get("URDF_Dimensions")
+    # Store initial mode to restore later
+    original_mode = context.mode
+    if original_mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    if not coll:
+        coll = bpy.data.collections.new("URDF_Dimensions")
+        context.scene.collection.children.link(coll)
+
+    # 1. Main Anchor (Empty Parent)
+    vec = p2 - p1
+    initial_length = vec.length
+    if initial_length < 0.0001: return None
+    
+    rot_quat = vec.to_track_quat('Z', 'Y')
+    
+    anchor = bpy.data.objects.new(f"{name}_Container", None)
+    anchor.empty_display_type = 'PLAIN_AXES'
+    anchor.empty_display_size = 0.05
+    coll.objects.link(anchor)
+    anchor.location = p1
+    anchor.rotation_euler = rot_quat.to_euler()
+    
+    if parent_a:
+        obj, p_type, p_sub = parent_a
+        anchor.parent = obj
+        if p_type == 'VERTEX':
+            anchor.parent_type = 'VERTEX'
+            anchor.parent_vertices = (p_sub, 0, 0)
+            anchor.location = (0,0,0) # Local to vert
+    
+    # 2. Arrow A (Origin Head)
+    arrow_mesh = create_arrow_mesh_data()
+    aa = bpy.data.objects.new(f"{name}_Arrow_A", arrow_mesh)
+    aa.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
+    coll.objects.link(aa)
+    aa.parent = anchor
+    aa.location = (0,0,0)
+    
+    # 3. Arrow B (End Head)
+    ab = bpy.data.objects.new(f"{name}_Arrow_B", arrow_mesh)
+    ab.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
+    coll.objects.link(ab)
+    ab.parent = aa
+    ab.location = (0, 0, initial_length)
+    
+    # 4. Label Object (The UI handle host)
+    txt_mesh = bpy.data.meshes.new(f"{name}_Label_Mesh")
+    txt_obj = bpy.data.objects.new(f"{name}_Label", txt_mesh)
+    coll.objects.link(txt_obj)
+    txt_obj["urdf_is_dimension"] = True
+    txt_obj.urdf_dim_length = initial_length
+    
+    # Position label at midpoint slightly offset
+    txt_obj.parent = aa
+    txt_obj.location = (0, 0.05, initial_length / 2) 
+    
+    # 5. Setup Geometry Nodes & Material
+    setup_dimension_gn(txt_obj, aa, ab, context)
+    mat = get_or_create_text_material(txt_obj)
+    if txt_obj.data.materials: txt_obj.data.materials[0] = mat
+    else: txt_obj.data.materials.append(mat)
+    
+    # Sync visual properties
+    update_arrow_settings(txt_obj, context)
+    
+    # Restore mode with correct mapping for EDIT sub-modes
+    if original_mode != 'OBJECT':
+        # AI Editor Note: mode_set expects 'EDIT', not 'EDIT_MESH' or 'EDIT_ARMATURE'
+        target_mode = 'EDIT' if original_mode.startswith('EDIT') else original_mode
+        try:
+            bpy.ops.object.mode_set(mode=target_mode)
+        except: pass # Fallback for edge cases
+        
+    return txt_obj
 
 class URDF_OT_AddTextDescription(bpy.types.Operator):
     """Add a text description label to the selected element"""
@@ -2517,7 +2790,7 @@ class URDF_OT_AddTextDescription(bpy.types.Operator):
         text_obj.show_in_front = True # Always visible (X-Ray)
 
         # Assign Material
-        mat = get_or_create_text_material(context)
+        mat = get_or_create_text_material(text_obj)
         if text_obj.data.materials:
             text_obj.data.materials[0] = mat
         else:
@@ -2574,10 +2847,11 @@ class URDF_OT_RemoveDimension(bpy.types.Operator):
         self.report({'INFO'}, "Dimension removed.")
         return {'FINISHED'}
 
+
 class URDF_OT_AddDimension(bpy.types.Operator):
-    """Generate a dimension measurement between selected elements"""
+    """Generate a smart dimension measurement between selected elements or based on bounding box"""
     bl_idname = "urdf.add_dimension"
-    bl_label = "Add Dimension (Vertex to Vertex)"
+    bl_label = "Generate Dimensions for Selected"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -2586,195 +2860,71 @@ class URDF_OT_AddDimension(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        unit_settings = scene.unit_settings
+        obj = context.active_object
         
-        start_loc = None
-        end_loc = None
+        # --- 1. SMART CHECK: Point-to-Point (Explicit Selection) ---
         
-        # Parenting info: (Object, Type, Bone/VertexIndex)
-        parent_info_a = None
-        parent_info_b = None
-        
-        original_mode = context.mode
-
-        if context.mode == 'OBJECT':
+        # A. Object Mode Multi-Selection
+        if context.mode == 'OBJECT' and len(context.selected_objects) >= 2:
             sel = context.selected_objects
-            if len(sel) != 2:
-                self.report({'WARNING'}, "Select exactly 2 objects in Object Mode.")
-                return {'CANCELLED'}
+            p1 = sel[0].matrix_world.translation
+            p2 = sel[-1].matrix_world.translation
+            generate_smart_dimension_parametric(context, p1, p2, name="Selection", parent_a=(sel[0], 'OBJECT', None))
+            return {'FINISHED'}
             
-            obj_a = sel[0]
-            obj_b = sel[1]
-            start_loc = obj_a.matrix_world.translation
-            end_loc = obj_b.matrix_world.translation
-            
-            parent_info_a = (obj_a, 'OBJECT', None)
-            parent_info_b = (obj_b, 'OBJECT', None)
-            
-        elif context.mode == 'EDIT_MESH':
-            obj = context.active_object
+        # B. Edit Mode Vertex Selection
+        if context.mode == 'EDIT_MESH':
             bm = bmesh.from_edit_mesh(obj.data)
-            verts = [v for v in bm.verts if v.select]
-            
-            if len(verts) == 2:
-                v1, v2 = verts
-            elif len(verts) > 2:
-                 # Check edges
-                 edges = [e for e in bm.edges if e.select]
-                 if len(edges) == 1:
-                     v1 = edges[0].verts[0]
-                     v2 = edges[0].verts[1]
-                 else:
-                     self.report({'WARNING'}, "Select exactly 2 vertices or 1 edge.")
-                     return {'CANCELLED'}
+            # Use history to honor vertex click order
+            hist = [e for e in bm.select_history if isinstance(e, bmesh.types.BMVert)]
+            if len(hist) >= 2:
+                v1, v2 = hist[0], hist[-1]
+                p1 = obj.matrix_world @ v1.co
+                p2 = obj.matrix_world @ v2.co
+                generate_smart_dimension_parametric(context, p1, p2, name="Vertex", parent_a=(obj, 'VERTEX', v1.index))
+                return {'FINISHED'}
             else:
-                self.report({'WARNING'}, "Select exactly 2 vertices or 1 edge.")
-                return {'CANCELLED'}
-            
-            start_loc = obj.matrix_world @ v1.co
-            end_loc = obj.matrix_world @ v2.co
-            
-            parent_info_a = (obj, 'VERTEX', v1.index)
-            parent_info_b = (obj, 'VERTEX', v2.index)
-            
-            # Switch to Object mode to create objects
-            bpy.ops.object.mode_set(mode='OBJECT')
-        else:
-             self.report({'WARNING'}, "Mode not supported.")
-             return {'CANCELLED'}
+                # Regular selection fallback
+                verts = [v for v in bm.verts if v.select]
+                if len(verts) >= 2:
+                    v1, v2 = verts[0], verts[-1]
+                    p1 = obj.matrix_world @ v1.co
+                    p2 = obj.matrix_world @ v2.co
+                    generate_smart_dimension_parametric(context, p1, p2, name="Mesh", parent_a=(obj, 'VERTEX', v1.index))
+                    return {'FINISHED'}
 
-        # Create Collection
-        coll = bpy.data.collections.get("URDF_Dimensions")
-        if not coll:
-            coll = bpy.data.collections.new("URDF_Dimensions")
-            context.scene.collection.children.link(coll)
+        # --- 2. FALLBACK: Bounding Box (Single Selection) ---
+        if obj.type != 'MESH':
+            self.report({'WARNING'}, "Single object selection requires a Mesh for bounding box measurement.")
+            return {'CANCELLED'}
+
+        axis_pref = getattr(scene, 'urdf_dim_axis', 'ALL')
+        axes_to_gen = ['X', 'Y', 'Z'] if axis_pref == 'ALL' else [axis_pref]
+        offset = getattr(scene, 'urdf_dim_offset', 0.1)
+
+        # Get world-space bounding box
+        bb_verts = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
+        xs, ys, zs = [v.x for v in bb_verts], [v.y for v in bb_verts], [v.z for v in bb_verts]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        min_z, max_z = min(zs), max(zs)
+        mid_x, mid_y, mid_z = (min_x + max_x)/2, (min_y + max_y)/2, (min_z + max_z)/2
+
+        for ax in axes_to_gen:
+            if ax == 'X':
+                p1 = mathutils.Vector((min_x, mid_y, max_z + offset))
+                p2 = mathutils.Vector((max_x, mid_y, max_z + offset))
+            elif ax == 'Y':
+                p1 = mathutils.Vector((mid_x, min_y, max_z + offset))
+                p2 = mathutils.Vector((mid_x, max_y, max_z + offset)) 
+            else: # Z
+                p1 = mathutils.Vector((max_x + offset, mid_y, min_z))
+                p2 = mathutils.Vector((max_x + offset, mid_y, max_z))
             
-        # Create Arrow A (Start) - Mesh Object
-        # AI Editor Note: Use wire mesh with origin at tip for better control.
-        arrow_mesh = create_arrow_mesh_data()
-        ea = bpy.data.objects.new("Dim_Arrow_A", arrow_mesh)
-        ea.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
-        coll.objects.link(ea)
-        
-        # Create Arrow B (End) - Mesh Object
-        eb = bpy.data.objects.new("Dim_Arrow_B", arrow_mesh)
-        eb.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
-        coll.objects.link(eb)
-        
-        # Parenting
-        if parent_info_a:
-            p_obj, p_type, p_sub = parent_info_a
-            ea.parent = p_obj
-            if p_type == 'VERTEX':
-                ea.parent_type = 'VERTEX'
-                ea.parent_vertices = (p_sub, 0, 0)
-        else:
-            ea.location = start_loc
-        
-        if parent_info_b:
-            p_obj, p_type, p_sub = parent_info_b
-            eb.parent = p_obj
-            if p_type == 'VERTEX':
-                eb.parent_type = 'VERTEX'
-                eb.parent_vertices = (p_sub, 0, 0)
-        else:
-            eb.location = end_loc
+            generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
 
-        # --- Arrow Orientation ---
-        # AI Editor Note: Mesh is now Tip at Origin (0,0,0), Tail at (0,0,1).
-        # To point Tail along +Z, we align +Z to +Z.
-        direction_map = {
-            'X': mathutils.Vector((1, 0, 0)),
-            'Y': mathutils.Vector((0, 1, 0)),
-            'Z': mathutils.Vector((0, 0, 1)),
-            '-X': mathutils.Vector((-1, 0, 0)),
-            '-Y': mathutils.Vector((0, -1, 0)),
-            '-Z': mathutils.Vector((0, 0, -1)),
-        }
-        
-        target_vec = direction_map.get(context.scene.urdf_dim_direction, mathutils.Vector((0, 0, 1)))
-        
-        # Calculate rotation to align Local Z with target_vec
-        rot_quat = target_vec.to_track_quat('Z', 'Y')
-        rot_euler = rot_quat.to_euler()
-        
-        ea.rotation_euler = rot_euler
-        eb.rotation_euler = rot_euler
-        
-        # AI Editor Note: Location is already set correctly during parenting.
-        # Do not reset to (0,0,0) as that would lose the vertex offset.
-        
-        # --- Create Dynamic Text (Mesh + GN) ---
-        # We use a mesh object to host the Geometry Nodes modifier
-        txt_mesh = bpy.data.meshes.new("Dim_Text_Mesh")
-        txt_obj = bpy.data.objects.new("Dim_Label", txt_mesh)
-        coll.objects.link(txt_obj)
-        txt_obj.show_in_front = True # Always visible (X-Ray)
-        
-        # Assign Material
-        mat = get_or_create_text_material(context)
-        if txt_obj.data.materials:
-            txt_obj.data.materials[0] = mat
-        else:
-            txt_obj.data.materials.append(mat)
-        
-        # --- Create Anchor for Text ---
-        # AI Editor Note: Use an anchor Empty to hold the location constraints.
-        # This allows the text object to be moved locally (G) without fighting constraints.
-        anchor = bpy.data.objects.new(f"Anchor_{txt_obj.name}", None)
-        anchor.empty_display_type = 'PLAIN_AXES'
-        anchor.empty_display_size = 0.1
-        coll.objects.link(anchor)
-        
-        # Constrain Anchor to midpoint
-        # AI Editor Note: Correct midpoint logic: Move to A (100%), then 50% towards B.
-        c = anchor.constraints.new('COPY_LOCATION')
-        c.target = ea
-        c.influence = 1.0
-        c = anchor.constraints.new('COPY_LOCATION')
-        c.target = eb
-        c.influence = 0.5
-        
-        # Parent Text to Anchor
-        txt_obj.parent = anchor
-        # AI Editor Note: Apply initial scale
-        arrow_s = scene.urdf_dim_arrow_scale
-        text_s = scene.urdf_dim_text_scale
-        txt_obj.scale = (text_s, text_s, text_s)
-        # AI Editor Note: Offset text to align with arrow tails.
-        # This places the text "in the middle" of the bracket formed by the arrows (at the tails).
-        txt_obj.location = target_vec * arrow_s
-
-        # Align Text to Creation Axis (Flat 2D Plane)
-        txt_obj.rotation_euler = rot_euler
-            
-        # --- Setup Geometry Nodes for Dynamic Text ---
-        setup_dimension_gn(txt_obj, ea, eb, context)
-        
-        # AI Editor Note: Add driver for Object Scale to GN modifier.
-        # This ensures the displayed dimension is compensated for the object's scale.
-        # FIX: Use socket identifier instead of name for driver path.
-        mod = txt_obj.modifiers.get("Dynamic_Dimension")
-        if mod and mod.node_group and mod.node_group.interface:
-            sock = mod.node_group.interface.items_tree.get("Object Scale")
-            if sock:
-                create_driver(txt_obj, 'scale[0]', "Dynamic_Dimension", sock.identifier)
-
-        # Configure Units for GN
-        # Mark as dimension for updates and trigger initial update
-        txt_obj["urdf_is_dimension"] = True
-        # AI Editor Note: Initialize object direction from scene default
-        txt_obj.urdf_dim_direction = context.scene.urdf_dim_direction
-        
-        txt_obj.urdf_dim_is_manual = False # Initialize as auto-placed
-        update_dimensions(context.scene)
-        
-        # Restore Edit Mode if needed
-        if original_mode == 'EDIT_MESH':
-             bpy.ops.object.mode_set(mode='EDIT')
-             
-        self.report({'INFO'}, "Added dynamic dimension.")
         return {'FINISHED'}
+
 
 class OPS_OT_AddModifier(bpy.types.Operator):
     bl_idname = "urdf.add_parametric_mod"
@@ -5759,7 +5909,7 @@ class URDF_OT_ToonifySelectedLights(bpy.types.Operator):
 
 def register():
     CLASSES = [
-        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCategory, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCategory,
+        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCatalog, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCatalog, URDF_OT_AddAssetLibrary,
         URDF_OT_LightTarget, URDF_OT_ApplyToonShader, URDF_OT_GlobalToonSharpness, URDF_OT_ToonifySelectedLights, 
         OPS_OT_Execute_AI_Prompt, URDF_OT_Generate_Preset, URDF_OT_SetJointType, OPS_OT_CalculateCenterOfMass, 
         OPS_OT_CalculateInertia, OPS_OT_BakeMesh, URDF_OT_ReadJointSettings, URDF_OT_ApplyJointSettings, 
@@ -5787,7 +5937,7 @@ def register():
 
 def unregister():
     CLASSES = [
-        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCategory, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCategory,
+        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCatalog, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCatalog, URDF_OT_AddAssetLibrary,
         URDF_OT_LightTarget, URDF_OT_ApplyToonShader, URDF_OT_GlobalToonSharpness, URDF_OT_ToonifySelectedLights, 
         OPS_OT_Execute_AI_Prompt, URDF_OT_Generate_Preset, URDF_OT_SetJointType, OPS_OT_CalculateCenterOfMass, 
         OPS_OT_CalculateInertia, OPS_OT_BakeMesh, URDF_OT_ReadJointSettings, URDF_OT_ApplyJointSettings, 

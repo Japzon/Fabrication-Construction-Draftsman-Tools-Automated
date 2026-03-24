@@ -1501,13 +1501,15 @@ def get_mat_uniform_scale(self):
 
 
 def update_text_color(self, context):
-    """Updates the shared text material color."""
-    mat = get_or_create_text_material(context)
+    """Updates the dimension material color."""
+    if isinstance(self, bpy.types.Scene):
+        return
     
-    # Force update of GN modifiers that might use this material
-    for obj in bpy.data.objects:
-        if obj.get("urdf_is_dimension"):
-            obj.update_tag()
+    obj = self
+    if obj.get("urdf_is_dimension"):
+        from . import operators
+        operators.get_or_create_text_material(obj)
+        obj.update_tag()
 
 def set_mat_uniform_scale(self, value):
     if not self.use_nodes or not self.node_tree: return
@@ -2007,26 +2009,146 @@ def get_asset_libraries_callback(self, context):
         libs = getattr(context.preferences.filepaths, "asset_libraries", [])
         for i, lib in enumerate(libs):
             if lib.name:
-                # Format: (identifier, name, description, icon, number)
                 items.append((lib.name, lib.name, str(lib.path), 'FILE_FOLDER', i + 1))
     except Exception as e:
         print(f"Error in get_asset_libraries_callback: {e}")
     return items
 
+def get_asset_catalogs_callback(self, context):
+    """Reads blender_assets.cats.txt from the selected library and returns catalog items."""
+    items = [('NONE', "None selected", "", 'X', 0)]
+    try:
+        lib_name = self.target_library
+        if lib_name and lib_name != 'LOCAL':
+            libs = getattr(context.preferences.filepaths, "asset_libraries", [])
+            lib_path = ""
+            for lib in libs:
+                if lib.name == lib_name:
+                    lib_path = lib.path
+                    break
+            if lib_path:
+                cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
+                if os.path.exists(cat_file):
+                    with open(cat_file, "r", encoding='utf-8') as f:
+                        for i, line in enumerate(f):
+                            line = line.strip()
+                            if not line or line.startswith(("#", "VERSION")):
+                                continue
+                            parts = line.split(":")
+                            if len(parts) >= 3:
+                                uid, path, name = parts[0], parts[1], parts[2]
+                                items.append((uid, name, path, 'ASSET_MANAGER', i + 1))
+    except Exception as e:
+        print(f"Error in get_asset_catalogs_callback: {e}")
+    return items
+
+def get_asset_catalogs_for_library(lib_name, context):
+    """Reads blender_assets.cats.txt for a given library name string. Used by import sub-panel."""
+    items = [('NONE', "None selected", "", 'X', 0)]
+    try:
+        if lib_name and lib_name != 'LOCAL':
+            libs = getattr(context.preferences.filepaths, "asset_libraries", [])
+            lib_path = ""
+            for lib in libs:
+                if lib.name == lib_name:
+                    lib_path = lib.path
+                    break
+            if lib_path:
+                cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
+                if os.path.exists(cat_file):
+                    with open(cat_file, "r", encoding='utf-8') as f:
+                        for i, line in enumerate(f):
+                            line = line.strip()
+                            if not line or line.startswith(("#", "VERSION")):
+                                continue
+                            parts = line.split(":")
+                            if len(parts) >= 3:
+                                uid, path, name = parts[0], parts[1], parts[2]
+                                items.append((uid, name, path, 'ASSET_MANAGER', i + 1))
+    except Exception as e:
+        print(f"Error in get_asset_catalogs_for_library: {e}")
+    return items
+
+def update_target_library(self, context):
+    """Auto-selects the first available catalog when the library changes."""
+    try:
+        lib_name = self.target_library
+        if lib_name and lib_name != 'LOCAL':
+            libs = getattr(context.preferences.filepaths, "asset_libraries", [])
+            lib_path = ""
+            for lib in libs:
+                if lib.name == lib_name:
+                    lib_path = lib.path
+                    break
+            if lib_path:
+                cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
+                if os.path.exists(cat_file):
+                    with open(cat_file, "r", encoding='utf-8') as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line or line.startswith(("#", "VERSION")):
+                                continue
+                            parts = line.split(":")
+                            if len(parts) >= 3:
+                                self.selected_catalog = parts[0]
+                                return
+        self.selected_catalog = 'NONE'
+    except Exception as e:
+        print(f"Error in update_target_library: {e}")
+
 class URDF_AssetProperties(bpy.types.PropertyGroup):
     """
     Properties for the Asset Library System.
     """
-    category_name: bpy.props.StringProperty(
-        name="Category Name",
-        description="The name of the new asset category to register",
-        default="New Robot Category"
+    add_library_path: bpy.props.StringProperty(
+        name="Add Library",
+        description="Select Folder",
+        subtype='DIR_PATH'
     )
     
     target_library: bpy.props.EnumProperty(
         name="Target Library",
         description="The Blender Asset Library folder to use",
+        items=get_asset_libraries_callback,
+        update=update_target_library
+    )
+    
+    selected_catalog: bpy.props.EnumProperty(
+        name="Select Catalog",
+        description="Choose an existing catalog from the selected library",
+        items=get_asset_catalogs_callback
+    )
+    
+    new_catalog_name: bpy.props.StringProperty(
+        name="New Catalog Name",
+        description="Name for the new catalog to register in the selected library",
+        default="New Robot Catalog"
+    )
+    
+    # Kept for internal UUID lookup compatibility
+    catalog_name: bpy.props.StringProperty(
+        name="Catalog Name",
+        description="Active catalog name (resolved from selection)",
+        default=""
+    )
+    
+    # --- Import External 3D File dedicated props ---
+    import_source_filepath: bpy.props.StringProperty(
+        name="Source File",
+        description="Path to the external 3D file to import",
+        subtype='FILE_PATH'
+    )
+    
+    import_target_library: bpy.props.EnumProperty(
+        name="Target Library",
+        description="Asset library to import the file into",
         items=get_asset_libraries_callback
+    )
+    
+    import_target_catalog: bpy.props.EnumProperty(
+        name="Target Catalog",
+        description="Catalog inside the selected library to assign the imported asset",
+        items=lambda self, ctx: get_asset_catalogs_for_library(self.import_target_library, ctx)
     )
     
     import_file_path: bpy.props.StringProperty(
@@ -2038,34 +2160,42 @@ class URDF_AssetProperties(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 
 def register():
-    # 0. Register Scene Properties FIRST to ensure UI stability
-    # --- Scene-Level State ---
-    bpy.types.Scene.urdf_show_panel_assets = bpy.props.BoolProperty(default=False)
-    bpy.types.Scene.urdf_panel_enabled_assets = bpy.props.BoolProperty(default=False)
+    from . import operators, core
 
-    from . import operators
-    classes = [URDF_TransmissionProperties, URDF_MaterialProperties, URDF_CollisionProperties, URDF_InertialProperties, URDF_WrapItem, URDF_MechProps, URDF_MimicDriver, URDF_JointEditorSettings, URDF_Properties, URDF_AI_Properties, URDF_LightingProperties]
+    # 1. Register all PropertyGroup classes FIRST
+    classes = [
+        URDF_TransmissionProperties, URDF_MaterialProperties, URDF_CollisionProperties, 
+        URDF_InertialProperties, URDF_WrapItem, URDF_MechProps, URDF_MimicDriver, 
+        URDF_JointEditorSettings, URDF_Properties, URDF_AI_Properties, 
+        URDF_LightingProperties, URDF_AssetProperties
+    ]
     for cls in classes:
         try:
             bpy.utils.register_class(cls)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error registering class {cls}: {e}")
+
+    # 2. Attach Pointer and Data Properties to Blender Types
+    # Object Properties
     bpy.types.Object.urdf_mech_props = bpy.props.PointerProperty(type=URDF_MechProps)
     bpy.types.Object.urdf_dim_is_manual = bpy.props.BoolProperty(name='Manual Text Placement', default=False)
     bpy.types.Object.urdf_dim_direction = bpy.props.EnumProperty(name='Dimension Direction', items=[('X', 'X', ''), ('Y', 'Y', ''), ('Z', 'Z', ''), ('-X', '-X', ''), ('-Y', '-Y', ''), ('-Z', '-Z', '')], default='Z', update=operators.update_arrow_settings)
     
+    # Material Properties
     bpy.types.Material.urdf_uniform_scale = bpy.props.FloatProperty(name='Uniform Scale', min=0.0001, soft_max=100.0, get=get_mat_uniform_scale, set=set_mat_uniform_scale)
     bpy.types.MaterialSlot.urdf_enabled = bpy.props.BoolProperty(name='Enable', default=True, update=operators.update_material_merge_trigger)
     
+    # PoseBone Properties
     bpy.types.PoseBone.urdf_props = bpy.props.PointerProperty(type=URDF_Properties)
-    
-    # --- Pointer Properties ---
+
+    # Scene Pointer Properties
     bpy.types.Scene.urdf_joint_editor_settings = bpy.props.PointerProperty(type=URDF_JointEditorSettings)
     bpy.types.Scene.urdf_ai_props = bpy.props.PointerProperty(type=URDF_AI_Properties)
     bpy.types.Scene.urdf_lighting_props = bpy.props.PointerProperty(type=URDF_LightingProperties)
     bpy.types.Scene.urdf_asset_props = bpy.props.PointerProperty(type=URDF_AssetProperties)
+    bpy.types.Scene.urdf_active_rig = bpy.props.PointerProperty(type=bpy.types.Object)
     
-    # Panel Order
+    # Scene Panel Order
     bpy.types.Scene.urdf_order_ai_factory = bpy.props.IntProperty(default=0)
     bpy.types.Scene.urdf_order_assets = bpy.props.IntProperty(default=1)
     bpy.types.Scene.urdf_order_parts = bpy.props.IntProperty(default=2)
@@ -2081,10 +2211,9 @@ def register():
     bpy.types.Scene.urdf_order_export = bpy.props.IntProperty(default=12)
     bpy.types.Scene.urdf_order_preferences = bpy.props.IntProperty(default=13)
 
-    # Panel Enabled (Persistent)
+    # Scene Panel Enabled (Persistence)
     bpy.types.Scene.urdf_panel_enabled_ai_factory = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_panel_enabled_lighting = bpy.props.BoolProperty(default=True)
-    bpy.types.Scene.urdf_show_panel_lighting = bpy.props.BoolProperty(default=False)
     bpy.types.Scene.urdf_panel_enabled_parts = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_panel_enabled_electronics = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_panel_enabled_parametric = bpy.props.BoolProperty(default=False)
@@ -2097,7 +2226,7 @@ def register():
     bpy.types.Scene.urdf_panel_enabled_export = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_panel_enabled_assets = bpy.props.BoolProperty(default=False)
 
-    # Panel Show (Fold State)
+    # Scene Panel Show (Fold State)
     bpy.types.Scene.urdf_show_panel_ai_factory = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_show_panel_parts = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_show_panel_electronics = bpy.props.BoolProperty(default=False)
@@ -2111,12 +2240,12 @@ def register():
     bpy.types.Scene.urdf_show_panel_export = bpy.props.BoolProperty(default=False)
     bpy.types.Scene.urdf_show_panel_preferences = bpy.props.BoolProperty(default=True)
     bpy.types.Scene.urdf_show_panel_assets = bpy.props.BoolProperty(default=False)
+    bpy.types.Scene.urdf_show_panel_lighting = bpy.props.BoolProperty(default=False)
 
-    # UI Settings
+    # Global UI Settings
     bpy.types.Scene.urdf_auto_collapse_panels = bpy.props.BoolProperty(name="Auto-Collapse Other Panels", default=False)
     bpy.types.Scene.urdf_viz_gizmos = bpy.props.BoolProperty(name="Show Gizmos", default=True, update=core.update_all_gizmos)
     bpy.types.Scene.urdf_show_bones = bpy.props.BoolProperty(name="Show Bones", default=True, update=core.update_global_bones)
-    bpy.types.Scene.urdf_placement_mode = bpy.props.BoolProperty(name="Placement Mode", default=False)
     bpy.types.Scene.urdf_text_placement_mode = bpy.props.BoolProperty(name="Text Placement Mode", default=False)
     bpy.types.Scene.urdf_hook_placement_mode = bpy.props.BoolProperty(name="Hook Placement Mode", default=False)
     bpy.types.Scene.urdf_use_generation_cage = bpy.props.BoolProperty(name="Use Cage", default=False)
@@ -2133,20 +2262,40 @@ def register():
     bpy.types.Scene.urdf_bone_mode = bpy.props.EnumProperty(items=BONE_MODES, default='INDIVIDUAL')
     bpy.types.Scene.urdf_bone_axis = bpy.props.EnumProperty(items=BONE_AXES, default='AUTO')
     
-    # Lighting & Environment
-    bpy.types.Scene.urdf_lighting_props = bpy.props.PointerProperty(type=URDF_LightingProperties)
-    
-    # 2. Add-on Classes Registration
-    classes = [URDF_TransmissionProperties, URDF_MaterialProperties, URDF_CollisionProperties, URDF_InertialProperties, URDF_WrapItem, URDF_MechProps, URDF_MimicDriver, URDF_JointEditorSettings, URDF_Properties, URDF_AI_Properties, URDF_LightingProperties, URDF_AssetProperties]
-    for cls in classes:
-        try:
-            bpy.utils.register_class(cls)
-        except Exception:
-            pass
+    # Dimensions & Measuring Scene Properties
+    # Dimensions & Measuring Properties (on Scene for global/defaults, on Object for per-dim)
+    # Note: These scene properties now serve as defaults for new dimensions
+    bpy.types.Scene.urdf_dim_arrow_scale = bpy.props.FloatProperty(name="Arrow Scale", default=0.1, min=0.001, soft_max=5.0)
+    bpy.types.Scene.urdf_dim_text_scale = bpy.props.FloatProperty(name="Text Scale", default=0.1, min=0.001, soft_max=5.0)
+    bpy.types.Scene.urdf_dim_unit_display = bpy.props.EnumProperty(
+        name="Unit Display", default='SCENE',
+        items=[('SCENE', 'Scene Units', ''), ('METRIC', 'Metric (m)', ''), ('IMPERIAL', 'Imperial (ft)', ''), ('MM', 'Millimeters', ''), ('CM', 'Centimeters', '')])
+    bpy.types.Scene.urdf_text_color = bpy.props.FloatVectorProperty(
+        name="Text Color", subtype='COLOR', size=4, min=0.0, max=1.0, default=(0.0, 0.0, 0.0, 1.0), update=update_text_color)
+    bpy.types.Scene.urdf_dim_line_thickness = bpy.props.FloatProperty(name="Line Thickness", default=0.005, min=0.0001, soft_max=0.1)
+    bpy.types.Scene.urdf_dim_offset = bpy.props.FloatProperty(name="Offset", default=0.05, min=0.0, soft_max=1.0)
+    bpy.types.Scene.urdf_dim_extension = bpy.props.FloatProperty(name="Extension", default=0.02, min=0.0, soft_max=0.5)
+    bpy.types.Scene.urdf_dim_axis = bpy.props.EnumProperty(
+        name="Axis", items=[('X', 'X Axis', ''), ('Y', 'Y Axis', ''), ('Z', 'Z Axis', ''), ('ALL', 'All Axes', '')], default='ALL'
+    )
     
     bpy.types.Object.urdf_mech_props = bpy.props.PointerProperty(type=URDF_MechProps)
     bpy.types.Object.urdf_dim_is_manual = bpy.props.BoolProperty(name='Manual Text Placement', default=False)
     bpy.types.Object.urdf_dim_direction = bpy.props.EnumProperty(name='Dimension Direction', items=[('X', 'X', ''), ('Y', 'Y', ''), ('Z', 'Z', ''), ('-X', '-X', ''), ('-Y', '-Y', ''), ('-Z', '-Z', '')], default='Z', update=operators.update_arrow_settings)
+    
+    # Per-Object Dimension Properties
+    bpy.types.Object.urdf_dim_arrow_scale = bpy.props.FloatProperty(name="Arrow Scale", default=0.1, min=0.001, soft_max=5.0, update=operators.update_arrow_settings)
+    bpy.types.Object.urdf_dim_text_scale = bpy.props.FloatProperty(name="Text Scale", default=0.1, min=0.001, soft_max=5.0, update=operators.update_arrow_settings)
+    bpy.types.Object.urdf_dim_unit_display = bpy.props.EnumProperty(
+        name="Unit Display", default='SCENE',
+        items=[('SCENE', 'Scene Units', ''), ('METRIC', 'Metric (m)', ''), ('IMPERIAL', 'Imperial (ft)', ''), ('MM', 'Millimeters', ''), ('CM', 'Centimeters', '')],
+        update=operators.update_dimensions_trigger)
+    bpy.types.Object.urdf_dim_text_color = bpy.props.FloatVectorProperty(
+        name="Label Color", subtype='COLOR', size=4, min=0.0, max=1.0, default=(0.0, 0.0, 0.0, 1.0), update=update_text_color)
+    bpy.types.Object.urdf_dim_line_thickness = bpy.props.FloatProperty(name="Line Thickness", default=0.005, min=0.0001, soft_max=0.1, update=operators.update_dimensions_trigger)
+    bpy.types.Object.urdf_dim_offset = bpy.props.FloatProperty(name="Offset from Object", default=0.05, min=0.0, soft_max=1.0, update=operators.update_dimensions_trigger)
+    bpy.types.Object.urdf_dim_extension = bpy.props.FloatProperty(name="End Extension", default=0.02, min=0.0, soft_max=0.5, update=operators.update_dimensions_trigger)
+    bpy.types.Object.urdf_dim_length = bpy.props.FloatProperty(name="Length", default=0.0, min=0.0, unit='LENGTH', update=operators.update_dimension_length)
     
     bpy.types.Material.urdf_uniform_scale = bpy.props.FloatProperty(name='Uniform Scale', min=0.0001, soft_max=100.0, get=get_mat_uniform_scale, set=set_mat_uniform_scale)
     bpy.types.MaterialSlot.urdf_enabled = bpy.props.BoolProperty(name='Enable', default=True, update=operators.update_material_merge_trigger)
@@ -2154,30 +2303,65 @@ def register():
     bpy.types.PoseBone.urdf_props = bpy.props.PointerProperty(type=URDF_Properties)
 
 def unregister():
+    # 1. Clean up Object and Scene Properties (Reverse Order)
     try:
-        # 1. Clean up Object and Scene Properties
-        del bpy.types.Object.urdf_mech_props
-        del bpy.types.Object.urdf_dim_is_manual
-        del bpy.types.Object.urdf_dim_direction
-        del bpy.types.Material.urdf_uniform_scale
-        del bpy.types.MaterialSlot.urdf_enabled
-        del bpy.types.PoseBone.urdf_props
+        # Systematic cleanup of Object properties
+        obj_props = [
+            "urdf_mech_props", "urdf_dim_is_manual", "urdf_dim_direction",
+            "urdf_dim_arrow_scale", "urdf_dim_text_scale", "urdf_dim_unit_display",
+            "urdf_dim_text_color", "urdf_dim_line_thickness", "urdf_dim_offset", "urdf_dim_extension",
+            "urdf_dim_length"
+        ]
+        for prop in obj_props:
+            if hasattr(bpy.types.Object, prop):
+                delattr(bpy.types.Object, prop)
+        
+        if hasattr(bpy.types.Material, "urdf_uniform_scale"):
+            del bpy.types.Material.urdf_uniform_scale
+        if hasattr(bpy.types.MaterialSlot, "urdf_enabled"):
+            del bpy.types.MaterialSlot.urdf_enabled
+        if hasattr(bpy.types.PoseBone, "urdf_props"):
+            del bpy.types.PoseBone.urdf_props
         
         del bpy.types.Scene.urdf_joint_editor_settings
         del bpy.types.Scene.urdf_ai_props
         del bpy.types.Scene.urdf_lighting_props
         del bpy.types.Scene.urdf_asset_props
+        del bpy.types.Scene.urdf_active_rig
         
-        del bpy.types.Scene.urdf_show_panel_assets
-        del bpy.types.Scene.urdf_panel_enabled_assets
-        
-        # ... (other scene del calls) ...
-        # Simplified for brevity here, but ensure they match original
-        
+        # Systematic cleanup of all Scene properties
+        scene_props = [
+            "urdf_panel_enabled_ai_factory", "urdf_panel_enabled_lighting", "urdf_panel_enabled_parts",
+            "urdf_panel_enabled_electronics", "urdf_panel_enabled_parametric", "urdf_panel_enabled_dimensions",
+            "urdf_panel_enabled_materials", "urdf_panel_enabled_kinematics", "urdf_panel_enabled_inertial",
+            "urdf_panel_enabled_collision", "urdf_panel_enabled_transmission", "urdf_panel_enabled_export",
+            "urdf_panel_enabled_assets", "urdf_show_panel_ai_factory", "urdf_show_panel_parts",
+            "urdf_show_panel_electronics", "urdf_show_panel_parametric", "urdf_show_panel_dimensions",
+            "urdf_show_panel_materials", "urdf_show_panel_kinematics", "urdf_show_panel_inertial",
+            "urdf_show_panel_collision", "urdf_show_panel_transmission", "urdf_show_panel_export",
+            "urdf_show_panel_preferences", "urdf_show_panel_assets", "urdf_show_panel_lighting",
+            "urdf_auto_collapse_panels", "urdf_viz_gizmos", "urdf_show_bones", "urdf_use_generation_cage",
+            "urdf_generation_cage_size", "urdf_gizmo_style", "urdf_part_category", "urdf_electronics_category",
+            "urdf_placement_mode", "urdf_text_placement_mode", "urdf_hook_placement_mode",
+            "urdf_cursor_local_pos", "urdf_bone_mode", "urdf_bone_axis",
+            "urdf_dim_direction", "urdf_dim_arrow_scale", "urdf_dim_text_scale", "urdf_dim_unit_display",
+            "urdf_text_color", "urdf_dim_line_thickness", "urdf_dim_offset", "urdf_dim_extension",
+            "urdf_dim_axis"
+        ]
+        for prop in scene_props:
+            if hasattr(bpy.types.Scene, prop):
+                delattr(bpy.types.Scene, prop)
+                
     except Exception as e:
         print(f"Error during property deletion: {e}")
         
-    classes = [URDF_TransmissionProperties, URDF_MaterialProperties, URDF_CollisionProperties, URDF_InertialProperties, URDF_WrapItem, URDF_MechProps, URDF_MimicDriver, URDF_JointEditorSettings, URDF_Properties, URDF_AI_Properties, URDF_LightingProperties, URDF_AssetProperties]
+    # 2. Unregister classes in REVERSE order
+    classes = [
+        URDF_TransmissionProperties, URDF_MaterialProperties, URDF_CollisionProperties, 
+        URDF_InertialProperties, URDF_WrapItem, URDF_MechProps, URDF_MimicDriver, 
+        URDF_JointEditorSettings, URDF_Properties, URDF_AI_Properties, 
+        URDF_LightingProperties, URDF_AssetProperties
+    ]
     for cls in reversed(classes):
         try:
             bpy.utils.unregister_class(cls)

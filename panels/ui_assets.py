@@ -3,8 +3,8 @@ from . import ui_common
 
 class URDF_PT_AssetLibrarySystem:
     """
-    Overhauled Asset Library System Panel Drawing Logic.
-    Implements a one-click, step-by-step workflow for asset management.
+    Asset Library System Panel Drawing Logic.
+    Provides a clean workflow for managing Blender asset libraries and catalogs.
     """
     @classmethod
     def poll(cls, context):
@@ -16,16 +16,16 @@ class URDF_PT_AssetLibrarySystem:
         scene = context.scene
         asset_props = scene.urdf_asset_props
         box = layout.box()
-        
-        # 0. Header with auto-collapse support
+
+        # Header with auto-collapse support
         is_expanded = getattr(scene, "urdf_show_panel_assets", False)
         icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
         row = box.row(align=True)
-        
+
         op = row.operator("urdf.toggle_panel_visibility", text="Asset Library System", emboss=False, icon=icon)
         if op:
             op.panel_property = "urdf_show_panel_assets"
-            
+
         if hasattr(scene, "urdf_panel_enabled_assets"):
             close_op = row.operator("urdf.disable_panel", text="", icon='X')
             if close_op: close_op.prop_name = "urdf_panel_enabled_assets"
@@ -33,29 +33,43 @@ class URDF_PT_AssetLibrarySystem:
         if is_expanded:
             col = box.column(align=False)
             col.separator()
-            
-            # --- STEP 1: Register Category ---
+
+            # --- Select Target Library ---
             b1 = col.box()
-            b1.label(text="Step 1: Register Category", icon='FILE_NEW')
-            b1.prop(asset_props, "category_name", text="Name")
-            b1.operator("urdf.register_asset_category", text="One-Click Register", icon='ADD')
-            
-            # --- STEP 2: Mark & Upload ---
+            b1.label(text="Select Target Library", icon='FILE_FOLDER')
+            b1.prop(asset_props, "target_library", text="Library")
+            row_lib = b1.row(align=True)
+            row_lib.prop(asset_props, "add_library_path", text="")
+            row_lib.operator("urdf.add_asset_library", text="Add Library", icon='ADD')
+
+            # --- Register Catalog ---
             b2 = col.box()
-            b2.label(text="Step 2: Mark & Upload Selection", icon='ASSET_MANAGER')
-            b2.prop(asset_props, "target_library", text="To Library")
-            b2.operator("urdf.mark_and_upload_asset", text="Mark Selected as Asset", icon='EXPORT')
-            
-            # --- STEP 3: Open Asset Library ---
+            b2.label(text="Register Catalog", icon='FILE_NEW')
+            b2.prop(asset_props, "new_catalog_name", text="Name")
+            b2.operator("urdf.register_asset_catalog", text="Register Catalog", icon='ADD')
+
+            # --- Select Catalog ---
             b3 = col.box()
-            b3.label(text="Step 3: Open Asset Library", icon='WINDOW')
-            b3.operator("urdf.open_asset_browser", text="Open Browser Window", icon='WINDOW')
-            
-            # --- STEP 4: Import External ---
+            b3.label(text="Select Catalog", icon='ASSET_MANAGER')
+            b3.prop(asset_props, "selected_catalog", text="Catalog")
+
+            # --- Import Selected to Catalog ---
             b4 = col.box()
-            b4.label(text="Step 4: Import External 3D File", icon='IMPORT')
-            # Note: The operator itself handles the file selection via ImportHelper
-            b4.operator("urdf.import_to_asset_category", text="Import & Mark as Asset", icon='APPEND_BLEND')
+            b4.label(text="Mark & Upload Selection", icon='EXPORT')
+            b4.operator("urdf.mark_and_upload_asset", text="Import Selected to Catalog", icon='EXPORT')
+
+            # --- Open Asset Browser ---
+            b5 = col.box()
+            b5.label(text="Open Asset Browser", icon='WINDOW')
+            b5.operator("urdf.open_asset_browser", text="Open Asset Browser", icon='WINDOW')
+
+            # --- Import External 3D File ---
+            b6 = col.box()
+            b6.label(text="Import External 3D File", icon='IMPORT')
+            b6.prop(asset_props, "import_source_filepath", text="Import Target")
+            b6.prop(asset_props, "import_target_library", text="Library")
+            b6.prop(asset_props, "import_target_catalog", text="Catalog")
+            b6.operator("urdf.import_to_asset_catalog", text="Import & Register as Asset", icon='APPEND_BLEND')
 
 def register():
     # Registration is handled by the main panel loop or __init__.py

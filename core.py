@@ -2785,99 +2785,76 @@ def update_chain_driver_settings(self: 'URDF_MechProps', context: bpy.types.Cont
     # Formula: offset = rotation * radius * manual_ratio * direction
     driver.expression = f"rotation * {radius:.4f} * {ratio:.4f} * {invert:.1f}"
 
-def update_dimensions(scene: bpy.types.Scene) -> None:
-    """Updates all URDF dimension objects with the current scene unit settings."""
+def update_dimensions_for_object(obj: bpy.types.Object) -> None:
+    """Updates a single dimension object (label or arrow) based on its local properties."""
+    if not obj or not obj.get("urdf_is_dimension"):
+        return
+
+    mod = obj.modifiers.get("Dynamic_Dimension")
+    # If it has a GN modifier, update the GN parameters
+    if mod and mod.node_group:
+        unit_display = getattr(obj, "urdf_dim_unit_display", 'SCENE')
+        gn_scale, gn_suffix = get_dimension_unit_settings(bpy.context.scene, unit_display)
+
+        scale_id = None
+        suffix_id = None
+        if hasattr(mod.node_group, "interface"):
+            for item in mod.node_group.interface.items_tree:
+                if item.name == "Scale":
+                    scale_id = item.identifier
+                elif item.name == "Suffix":
+                    suffix_id = item.identifier
+        
+        if scale_id: mod[scale_id] = gn_scale
+        if suffix_id: mod[suffix_id] = gn_suffix
+    
+    # Update color / materials
+    from . import operators
+    mat = operators.get_or_create_text_material(obj)
+    if obj.data and hasattr(obj.data, "materials"):
+        if not obj.data.materials:
+            obj.data.materials.append(mat)
+        else:
+            obj.data.materials[0] = mat
+            
+    obj.update_tag()
+
+def get_dimension_unit_settings(scene, unit_display):
+    """Helper to convert unit enum to scale and suffix."""
     unit_settings = scene.unit_settings
     unit_sys = unit_settings.system
     u_type = unit_settings.length_unit
     scale_length = unit_settings.scale_length
+
+    if unit_display == 'MM':
+        return 1000.0, "mm"
+    elif unit_display == 'CM':
+        return 100.0, "cm"
+    elif unit_display == 'IMPERIAL':
+        return 3.28084, "ft"
+    elif unit_display == 'METRIC':
+        return 1.0, "m"
     
-    display_mode = getattr(scene, "urdf_dim_unit_display", 'SCENE')
-    
+    # Fallback to SCENE units
     gn_scale = 1.0
     gn_suffix = "m"
+    if unit_sys == 'METRIC':
+        if u_type == 'MILLIMETERS': gn_scale = 1000.0; gn_suffix = "mm"
+        elif u_type == 'CENTIMETERS': gn_scale = 100.0; gn_suffix = "cm"
+        elif u_type == 'KILOMETERS': gn_scale = 0.001; gn_suffix = "km"
+        gn_scale *= scale_length
+    elif unit_sys == 'IMPERIAL':
+        if u_type == 'FEET': gn_scale = 3.28084; gn_suffix = "ft"
+        elif u_type == 'INCHES': gn_scale = 39.3701; gn_suffix = "in"
+        gn_scale *= scale_length
+    
+    return gn_scale, gn_suffix
 
-    if display_mode == 'METRIC_M':
-        gn_scale = 1.0
-        gn_suffix = "m"
-    elif display_mode == 'METRIC_MM':
-        gn_scale = 1000.0
-        gn_suffix = "mm"
-    elif display_mode == 'IMPERIAL_FT':
-        gn_scale = 3.28084
-        gn_suffix = "ft"
-    elif display_mode == 'IMPERIAL_IN':
-        gn_scale = 39.3701
-        gn_suffix = "in"
-    elif display_mode == 'SCENE':
-        if unit_sys == 'METRIC':
-            if u_type == 'MILLIMETERS':
-                gn_scale = 1000.0
-                gn_suffix = "mm"
-            elif u_type == 'CENTIMETERS':
-                gn_scale = 100.0
-                gn_suffix = "cm"
-            elif u_type == 'METERS':
-                gn_scale = 1.0
-                gn_suffix = "m"
-            elif u_type == 'KILOMETERS':
-                gn_scale = 0.001
-                gn_suffix = "km"
-            elif u_type == 'MICROMETERS':
-                gn_scale = 1000000.0
-                gn_suffix = "µm"
-                
-            # AI Editor Note: Apply Unit Scale for Metric
-            gn_scale *= scale_length
-        elif unit_sys == 'IMPERIAL':
-            if u_type == 'FEET':
-                gn_scale = 3.28084
-                gn_suffix = "ft"
-            elif u_type == 'INCHES':
-                gn_scale = 39.3701
-                gn_suffix = "in"
-                
-            # AI Editor Note: Apply Unit Scale for Imperial
-            gn_scale *= scale_length
-        else:
-            # No unit system (None)
-            gn_scale = 1.0
-            gn_suffix = ""
-            
+def update_dimensions(scene: bpy.types.Scene) -> None:
+    """Updates all URDF dimension objects."""
     for obj in scene.objects:
         if obj.get("urdf_is_dimension"):
-            mod = obj.modifiers.get("Dynamic_Dimension")
-            if mod and mod.node_group:
-                # AI Editor Note: Robustly find socket identifiers by name.
-                # Accessing modifier properties by name (e.g. mod["Scale"]) fails if the
-                # internal identifier differs. We must look up the identifier from the interface.
-                scale_id = None
-                suffix_id = None
-                
-                if hasattr(mod.node_group, "interface"):
-                    for item in mod.node_group.interface.items_tree:
-                        if item.name == "Scale":
-                            scale_id = item.identifier
-                        elif item.name == "Suffix":
-                            suffix_id = item.identifier
-                
-                # Update Scale
-                if scale_id:
-                    mod[scale_id] = gn_scale
-                else:
-                    # Fallback for older Blender versions or if interface lookup fails
-                    try: mod["Scale"] = gn_scale
-                    except: pass
-                
-                # Update Suffix
-                if suffix_id:
-                    mod[suffix_id] = gn_suffix
-                else:
-                    try: mod["Suffix"] = gn_suffix
-                    except: pass
-                
-                # AI Editor Note: Force update to ensure changes are visible immediately
-                obj.update_tag()
+            update_dimensions_for_object(obj)
 
 @persistent
 def dimension_update_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:

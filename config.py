@@ -40,6 +40,7 @@ URDF_PANEL_PROPS: List[str] = [
     "urdf_show_panel_parametric",
     "urdf_show_panel_materials",
     "urdf_show_panel_lighting",
+    "urdf_show_panel_dimensions", 
     "urdf_show_panel_ai_factory",
     "urdf_show_panel_kinematics",
     "urdf_show_panel_inertial",

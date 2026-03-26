@@ -1,13 +1,13 @@
 # --------------------------------------------------------------------------------
 # Copyright (c) 2026 Greenlex Systems Services Incorporated. All rights reserved.
 #
-# A C K N O W L E D G M E N T (GPL COMPLIANT)
-# This add-on is protected under the GNU General Public License (GPL) to ensure 
-# fair use and free distribution. The original architecture, source code, and 
-# design logic are the intellectual property of Greenlex Systems Services Incorporated. 
+# Licensed under the GNU General Public License (GPL).
+# Original Architecture & Logic by Greenlex Systems Services Incorporated.
 #
-# No party is authorized to claim authorship or ownership of this original work.
+# No person or organization is authorized to misrepresent this work or claim 
+# original authorship for themselves. Proper attribution is mandatory.
 # --------------------------------------------------------------------------------
+
 
 
 

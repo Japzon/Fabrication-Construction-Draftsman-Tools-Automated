@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 from . import ui_common
 from . import ui_ai_factory
 from . import ui_parts
@@ -41,3 +47,4 @@ def register():
 def unregister():
     for mod in reversed(modules):
         mod.unregister()
+

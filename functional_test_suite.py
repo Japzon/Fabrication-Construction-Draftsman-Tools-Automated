@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import bpy
 import sys
 import os
@@ -166,3 +172,4 @@ def run_comprehensive_tests():
 
 if __name__ == "__main__":
     run_comprehensive_tests()
+

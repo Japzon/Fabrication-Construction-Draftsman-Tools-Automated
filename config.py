@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import math
 from operator import itemgetter
 from typing import List, Tuple, Set, Dict
@@ -221,3 +227,4 @@ BONE_AXES: List[Tuple[str, str, str]] = [
     ('Y', "Local Y", "Align bone along local Y axis"),
     ('Z', "Local Z", "Align bone along local Z axis")
 ]
+

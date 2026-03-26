@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import ast
 
 def replace_function(file_path, func_name, new_func_code):
@@ -213,3 +219,4 @@ def setup_native_rope_gn(rope_obj):
     if synth_sock: create_driver(rope_obj, '["rope_is_synthetic"]', mod.name, synth_sock.identifier)
     '''
     replace_function('core.py', 'setup_native_rope_gn', new_body)
+

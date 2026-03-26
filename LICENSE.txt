@@ -1,0 +1,20 @@
+# PROPRIETARY LICENSE AGREEMENT
+
+## OWNERSHIP AND COPYRIGHT
+This software, "Fabrication & Construction Draftsman Tools (Automated)," including all source code, algorithms, assets, and documentation, is the exclusive intellectual property of **Japzon**. 
+
+Copyright (c) 2026 Japzon. All rights reserved.
+
+## RESTRICTIONS
+1. **No Unauthorized Licensing**: No person, organization, or entity other than the original author (Japzon) is permitted to license, sub-license, or grant use rights for this software or any part of it.
+2. **No Claiming Authorship**: Any attempt to claim authorship, ownership, or the right to distribute this work as one's own is strictly prohibited. 
+3. **No Commercial Use**: You may not use this software for commercial purposes, including but not limited to selling, leasing, or using it as part of a paid service, without express written permission from Japzon.
+4. **No Derivative Works**: You may not modify, adapt, translate, or create derivative works based on this software for public distribution without consent.
+
+## ENFORCEMENT
+Any unauthorized use, reproduction, or distribution of this software will be subject to legal action under international copyright law and intellectual property statutes. 
+
+---
+**AUTHOR**: Japzon
+**REPOSITORY**: https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Automated
+**CONTACT**: [Japzon's Contact Info via GitHub]

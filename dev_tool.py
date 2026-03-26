@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import os
 import subprocess
 import sys
@@ -272,3 +278,4 @@ if __name__ == "__main__":
             time.sleep(2)
     else:
         print(f"Unknown command: {cmd}")
+

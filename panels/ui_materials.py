@@ -1,4 +1,10 @@
-﻿import bpy
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
+import bpy
 import bmesh
 import math
 import mathutils
@@ -175,3 +181,4 @@ def unregister():
     for cls in reversed([URDF_PT_MaterialsAndTextures]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
+

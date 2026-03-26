@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import os
 import re
 
@@ -74,3 +80,4 @@ if os.path.exists(ui_dir):
 for f in target_files:
     if os.path.exists(f):
         replace_in_file(f)
+

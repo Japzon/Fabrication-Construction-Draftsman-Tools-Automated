@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import re
 
 prop_file = 'properties.py'
@@ -77,3 +83,4 @@ if 'gear_radius: bpy.props.FloatProperty' not in content:
         print('Could not find insertion point.')
 else:
     print('Properties already exist.')
+

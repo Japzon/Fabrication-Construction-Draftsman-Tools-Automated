@@ -1,3 +1,9 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# THIS WORK IS EXCLUSIVE PROPERTY OF JAPZON.
+# --------------------------------------------------------------------------------
+
 import bpy
 import bmesh
 import math
@@ -5411,3 +5417,4 @@ def create_parametric_chain(context: bpy.types.Context, chain_type: str) -> bpy.
     path_obj["urdf_native_anim_offset"] = 0.0 
     
     return path_obj
+

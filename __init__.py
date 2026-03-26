@@ -1,6 +1,11 @@
+# --------------------------------------------------------------------------------
+# Copyright (c) 2026 Japzon. All rights reserved.
+# PROPRIETARY LICENSE. NOT AUTHORIZED FOR PUBLIC DISTRIBUTION WITHOUT CONSENT.
+# --------------------------------------------------------------------------------
+
 bl_info = {
     "name": "Fabrication & Construction Draftsman Tools (Automated)",
-    "author": "Gemini",
+    "author": "Japzon",
     "version": (7, 45, 0),
     "blender": (4, 5, 6),
     "location": "View3D > Sidebar > Draftsman Tools",

@@ -29,6 +29,15 @@ from typing import List, Tuple, Optional, Set, Any, Dict, Union
 from . import config
 from .config import *
 
+# ------------------------------------------------------------------------
+#   Guard Variables (FCD Internal State)
+# ------------------------------------------------------------------------
+_prop_update_guard = False
+_joint_editor_update_guard = False
+_last_active_bone_name = None
+_update_gizmo_guard = False
+_local_cursor_update_guard = False
+
 #   PART 0: UI UPDATES & COLLAPSE HELPER
 # ------------------------------------------------------------------------
 
@@ -516,6 +525,51 @@ def fcd_placement_handler(scene, depsgraph=None):
     Note: Heavy parenting logic is offloaded to property updates to maintain FPS.
     """
     pass
+
+def ensure_material_mapping_nodes(mat: bpy.types.Material) -> None:
+    """
+    Ensures that the material has a 'Mapping' node and it is properly linked
+    to the 'Base Color' of the Principled BSDF.
+    Used for the 'Always Available' transform controls.
+    """
+    if not mat.use_nodes:
+        mat.use_nodes = True
+    
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    
+    # 1. Ensure BSDF exists
+    bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    if not bsdf:
+        mat.node_tree.nodes.clear() # Reset corrupted material
+        bsdf = nodes.new('BSDF_PRINCIPLED')
+        output = nodes.new('ShaderNodeOutputMaterial')
+        links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+
+    # 2. Find or Create Mapping
+    mapping = next((n for n in nodes if n.type == 'MAPPING'), None)
+    if not mapping:
+        mapping = nodes.new('ShaderNodeMapping')
+        mapping.location = (bsdf.location.x - 400, bsdf.location.y)
+    
+    # 3. Find or Create TexCoord
+    tex_coord = next((n for n in nodes if n.type == 'TEX_COORD'), None)
+    if not tex_coord:
+        tex_coord = nodes.new('ShaderNodeTexCoord')
+        tex_coord.location = (mapping.location.x - 200, mapping.location.y)
+    
+    # Link them up
+    if not any(l for l in mapping.inputs['Vector'].links):
+        links.new(tex_coord.outputs['UV'], mapping.inputs['Vector'])
+    
+    # 4. Find anything currently plugged into BSDF Base Color (e.g. an image)
+    # and ensure the mapping node is feeding into its 'Vector' input.
+    base_color_input = bsdf.inputs['Base Color']
+    if base_color_input.links:
+        source_node = base_color_input.links[0].from_node
+        if hasattr(source_node, "inputs") and "Vector" in source_node.inputs:
+            if not any(l for l in source_node.inputs['Vector'].links if l.from_node == mapping):
+                links.new(mapping.outputs['Vector'], source_node.inputs['Vector'])
 
 def update_global_bones(self: bpy.types.Scene, context: bpy.types.Context) -> None:
     """
@@ -1178,25 +1232,35 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
     if bpy.app.is_job_running("RENDER"):
         return None
     try:
-        # AI Editor Note: Base gizmo is axis-independent. Include style in name to allow switching.
+        # AI Editor Note: Direct data access is safer in background threads/timers than bpy.context.
         shape_name = f"{WIDGET_PREFIX}_{style}_{shape_type}" if shape_type == 'BASE' else f"{WIDGET_PREFIX}_{style}_{shape_type}_{target_axis}"
 
-        # If the gizmo object already exists, return it immediately.
-        existing_obj = bpy.data.objects.get(shape_name)
-        if existing_obj:
-            return existing_obj
+        # If the gizmo object already exists and has mesh data, return it immediately.
+        obj = bpy.data.objects.get(shape_name)
+        if obj and obj.data:
+            return obj
 
         # Create the mesh and object if they don't exist.
-        mesh = bpy.data.meshes.new(shape_name)
-        obj = bpy.data.objects.new(shape_name, mesh)
-        obj.location = (0, 0, 0)
+        mesh = bpy.data.meshes.get(shape_name)
+        if not mesh:
+            mesh = bpy.data.meshes.new(shape_name)
+            
+        if not obj:
+            obj = bpy.data.objects.new(shape_name, mesh)
+            obj.location = (0, 0, 0)
 
-        # Organize widgets into a dedicated collection.
+        # Robust collection management.
         coll = bpy.data.collections.get(WIDGETS_COLLECTION_NAME)
         if not coll:
             coll = bpy.data.collections.new(WIDGETS_COLLECTION_NAME)
-            if bpy.context.scene:
-                bpy.context.scene.collection.children.link(coll)
+            # Link to the main scene collection if we have a context, otherwise it stays in data.
+            # widgets do not need to be in the scene to be custom_shapes.
+            if bpy.context and bpy.context.scene:
+                try: 
+                    if coll.name not in bpy.context.scene.collection.children:
+                        bpy.context.scene.collection.children.link(coll)
+                except: pass
+        
         if obj.name not in coll.objects:
             coll.objects.link(obj)
 
@@ -1286,13 +1350,17 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
             bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=rot_matrix)
 
         bm.to_mesh(mesh)
+        mesh.update()
         bm.free()
 
-        # Hide the widget from viewport, render, and selection. It's only a template.
-        # The user interacts with the bone that USES the shape, not the shape object itself.
-        obj.hide_viewport = True
+        # Hide the template from selection and rendering, but keep it available for gizmo referencing.
         obj.hide_render = True
         obj.hide_select = True
+        
+        # Note: Do not use hide_viewport = True here, as some versions of Blender 
+        # may stop displaying custom shapes if their source object is globally hidden.
+        # Instead, we rely on the collection being excluded or hidden from the main view.
+        
         return obj
     except Exception as e:
         # If anything goes wrong, return None to prevent errors upstream.
@@ -4589,23 +4657,15 @@ def get_all_children_objects(bone: bpy.types.PoseBone, context: bpy.types.Contex
             
     return list(all_objs)
 
-def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> None:
+def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style: str = 'MODERN_3D') -> None:
     """
     Updates the custom shape (widget or "gizmo") for a single bone to visually
     represent its joint properties.
 
-    This function is responsible for the visual feedback of the kinematic setup.
-    It retrieves or creates the appropriate gizmo object using `create_flat_gizmo`
-    and assigns it to the bone's `custom_shape` property.
-
-    It also calculates a sensible scale for the gizmo based on the joint type,
-    the bone's physical properties (like length and radius), and a user-controlled
-    visual scale multiplier.
-
     Args:
         bone: The `PoseBone` whose gizmo needs to be updated.
-        show_gizmos: A boolean from the global UI toggle indicating whether
-                     gizmos should be visible at all.
+        show_gizmos: A boolean indicating whether gizmos should be visible.
+        style: The visual style of the gizmo ('DEFAULT', 'MODERN_3D', 'LILY_2D').
     """
     props = bone.fcd_pg_kinematic_props
     if not show_gizmos or props.joint_type == 'none':
@@ -4634,8 +4694,8 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
 
     if gizmo_type == 'BASE': target_axis = 'Z'
 
-    # AI Editor Note: Retrieve the global gizmo style setting.
-    style = bpy.context.scene.fcd_gizmo_style
+    # AI Editor Note: Retrieve the gizmo style. 
+    # Use the passed style argument to avoid context issues in callbacks/timers.
     wgt = create_flat_gizmo(gizmo_type, target_axis, style)
 
     if wgt:
@@ -4656,8 +4716,8 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
                         return obj.fcd_pg_mech_props
             return None
         # --- ACTION: Calculate Bone-Local Bounding Box ---
-        local_min = mathutils.Vector((float('inf'), float('inf'), float('inf')))
-        local_max = mathutils.Vector((float('-inf'), float('-inf'), float('-inf')))
+        local_min = mathutils.Vector((0.0, 0.0, 0.0))
+        local_max = mathutils.Vector((0.0, 0.0, 0.0))
         has_meshes = False
         
         # Access the Armature object to get its world transform
@@ -4665,16 +4725,27 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
         bone_world_matrix = armature_obj.matrix_world @ bone.matrix
         bone_world_mat_inv = bone_world_matrix.inverted()
         
-        child_meshes = get_all_children_objects(bone, bpy.context)
+        # Robust context handling for background updates.
+        # If bpy.context is restricted, we fall back to scene-wide search.
+        search_ctx = bpy.context if bpy.context and hasattr(bpy.context, "scene") else None
+        target_scene = search_ctx.scene if search_ctx else (bone.id_data.users_scene[0] if bone.id_data.users_scene else bpy.data.scenes[0])
+        
+        child_meshes = []
+        # Find objects parented to this bone.
+        rig = bone.id_data
+        for o in target_scene.objects:
+            if o.parent == rig and o.parent_type == 'BONE' and o.parent_bone == bone.name:
+                child_meshes.append(o)
+                # Quick recursive check for children of the mesh
+                for c in o.children_recursive:
+                    if c.type == 'MESH': child_meshes.append(c)
+
         for mesh_obj in child_meshes:
             if mesh_obj.type != 'MESH': continue
             has_meshes = True
             
-            # Use evaluated object to get final mesh state (including modifiers/GN)
-            depsgraph = bpy.context.evaluated_depsgraph_get()
-            eval_obj = mesh_obj.evaluated_get(depsgraph)
-            
-            for point in eval_obj.bound_box:
+            # Bound box sync
+            for point in mesh_obj.bound_box:
                 world_point = mesh_obj.matrix_world @ mathutils.Vector(point)
                 local_point = bone_world_mat_inv @ world_point
                 
@@ -4683,7 +4754,7 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
                     local_max[i] = max(local_max[i], local_point[i])
 
         # Access variables for scaling
-        unit_scale = bpy.context.scene.unit_settings.scale_length
+        unit_scale = target_scene.unit_settings.scale_length
         s = 1.0 / unit_scale if unit_scale > 0 else 1.0
 
         # --- ACTION: Determine Base Scale ---
@@ -4724,8 +4795,11 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
                 if bone.length < 0.2 and props.joint_radius < 0.2:
                     base_scale = max(bone.length, props.joint_radius * 2.0)
                 
-        # Apply the user's visual radius as a multiplier on top of the calculated base scale.
-        # base_scale is in Blender Units (meters * s), ensuring the gizmo matches the part.
+        # AI Editor Note: Revised Scaling Logic. 
+        # Increase the base multiplier for prismatic joints to ensure visibility relative to bone length.
+        if gizmo_type == 'SLIDER' and not has_meshes:
+            base_scale = base_scale * 2.0  # Double the bone-length based default
+            
         final_scale = base_scale * props.gizmo_radius
         
         # Ensure the scale is never zero to prevent invisible gizmos.
@@ -4962,10 +5036,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     bone.ik_min_y, bone.ik_max_y = ik_rot_limits[1]
     bone.ik_min_z, bone.ik_max_z = ik_rot_limits[2]
 
-_prop_update_guard = False
-
 # --- AI Editor Note: Guard and Handler for Local Cursor Tool ---
-_local_cursor_update_guard = False
 
 def update_local_cursor_from_tool(self, context):
     """
@@ -5319,14 +5390,15 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
         return
     
     # AI Editor Note: Robustness update.
-    # Iterate through ALL bones to ensure the entire rig is consistent.
+    # Retrieve settings once to pass to all bones, avoiding Context errors in loop.
+    show = context.scene.fcd_viz_gizmos
+    style = context.scene.fcd_gizmo_style
+
     for bone in rig.pose.bones:
         # 1. Update the visual gizmo
-        update_single_bone_gizmo(bone, context.scene.fcd_viz_gizmos)
+        update_single_bone_gizmo(bone, show, style)
         
         # 2. Re-apply constraints to ensure physics match visuals.
-        # This prevents "drift" where the constraint direction might mismatch
-        # if the bone was manipulated in a way that confused the state.
         clean_conflicting_mechanics(bone)
         apply_native_constraints(bone)
 
@@ -5370,19 +5442,6 @@ def update_ik_chain_length(self: 'FCD_Properties', context: bpy.types.Context) -
     # If the user's value was clamped, update the UI property to reflect the change.
     if self.ik_chain_length != new_length:
         self.ik_chain_length = new_length
-
-# This is a global variable, which is simple and effective for this purpose.
-_update_gizmo_guard = False
-
-# --- AI Editor Note: Guard for Joint Editor Callback ---
-# This global guard prevents the joint editor's update callback from firing
-# when properties are being set programmatically, which was causing an
-# unwanted switch to Pose Mode after part generation.
-_joint_editor_update_guard = False
-
-# --- AI Editor Note: Global for Active Bone Change Handler ---
-# Stores the name of the last active bone to detect changes.
-_last_active_bone_name = None
 
 # ------------------------------------------------------------------------
 

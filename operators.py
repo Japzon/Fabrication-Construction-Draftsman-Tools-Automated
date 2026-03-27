@@ -448,16 +448,24 @@ class FCD_OT_SetJointType(bpy.types.Operator):
             # Fallback for older Blender versions
             bones_to_update = context.selected_pose_bones
 
-        for pbone in bones_to_update:
-            # 1. Set the property value directly.
-            pbone.fcd_pg_kinematic_props.joint_type = self.type
-            
-            # 2. Manually call all state update functions for each bone.
-            # This ensures the changes are immediately reflected in the viewport
-            # and the rig's behavior, bypassing the need for an update callback.
-            clean_conflicting_mechanics(pbone)
-            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
-            apply_native_constraints(pbone)
+        # Guard to prevent the update callback from firing redundant operators
+        core._prop_update_guard = True
+        try:
+            # Retrieve style once for efficiency
+            show = context.scene.fcd_viz_gizmos
+            style = context.scene.fcd_gizmo_style
+
+            for pbone in bones_to_update:
+                # 1. Set the property value directly.
+                pbone.fcd_pg_kinematic_props.joint_type = self.type
+                
+                # 2. Update state.
+                clean_conflicting_mechanics(pbone)
+                update_single_bone_gizmo(pbone, show, style)
+                apply_native_constraints(pbone)
+        finally:
+            core._prop_update_guard = False
+            context.view_layer.update()
         
         self.report({'INFO'}, f"Set joint type to '{self.type}' for {len(bones_to_update)} bones.")
         return {'FINISHED'}
@@ -802,38 +810,10 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        # AI Editor Note: Relaxed poll to allow execution in Object Mode if a valid bone-parented mesh is selected.
-        if context.mode == 'POSE':
-            if hasattr(context, 'selected_pose_bones_from_active_object'):
-                return len(context.selected_pose_bones_from_active_object) > 0
-            return len(context.selected_pose_bones) > 0
-        if context.mode == 'OBJECT':
-            rig = context.scene.fcd_active_rig
-            if not rig:
-                return False
-            if rig in context.selected_objects:
-                return True
-            # Check if any selected object (or its hierarchical descendants/ancestors) is connected to a rig bone
-            for obj in context.selected_objects:
-                curr = obj
-                while curr:
-                    if curr.parent == rig and curr.parent_type == 'BONE':
-                        return True
-                    curr = curr.parent
-                # Also check descendants
-                def has_bone_connection(o):
-                    if o.parent == rig and o.parent_type == 'BONE':
-                        return True
-                    for child in o.children:
-                        if has_bone_connection(child):
-                            return True
-                    return False
-                if has_bone_connection(obj):
-                    return True
-                    
-            if core._last_active_bone_name and rig.pose.bones.get(core._last_active_bone_name):
-                return True
-        return False
+        # AI Editor Note: Relaxed poll for timer-based stability.
+        # Operators called via bpy.ops in a timer must have a permissive poll.
+        if not context or not hasattr(context, 'scene'): return False
+        return True
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         tool_props = context.scene.fcd_pg_joint_editor_settings
@@ -853,27 +833,40 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
                     if obj.parent and obj.parent.type == 'ARMATURE':
                         rig = obj.parent; break
 
-        if context.mode == 'POSE':
-            # AI Editor Note: Access selected_pose_bones from the current operator context
-            # for maximum reliability across different interaction methods.
-            sel_bones = getattr(context, 'selected_pose_bones', [])
-            if not sel_bones:
-                sel_bones = getattr(bpy.context, 'selected_pose_bones', [])
+        # Use a hybrid context for maximum reliability (Local > Global)
+        ctx = context if context and hasattr(context, 'mode') else bpy.context
+        mode = getattr(ctx, 'mode', 'OBJECT')
+        sel_objs = getattr(ctx, 'selected_objects', [])
+        active_obj = getattr(ctx, 'active_object', None)
+
+        if mode == 'POSE':
+            # 1. Broad Selection from all Armatures
+            rigs = [obj for obj in sel_objs if obj.type == 'ARMATURE']
+            if active_obj and active_obj.type == 'ARMATURE' and active_obj not in rigs:
+                rigs.append(active_obj)
             
-            # Also check the rig specifically mentioned in the scene if nothing else is found
-            if not sel_bones and rig and rig.type == 'ARMATURE':
-                sel_bones = [b for b in rig.pose.bones if b.bone.select]
+            for rig_obj in rigs:
+                for pb in rig_obj.pose.bones:
+                    if pb.bone.select and pb not in bones_to_update:
+                        bones_to_update.append(pb)
             
-            for pb in sel_bones:
-                if pb not in bones_to_update:
-                    bones_to_update.append(pb)
+            # 2. Precise context fallback
+            if not bones_to_update:
+                sel_bones = getattr(ctx, 'selected_pose_bones', [])
+                for pb in sel_bones:
+                    if pb not in bones_to_update:
+                        bones_to_update.append(pb)
+            
+            # 3. Active Bone Fallback (Last resort for click-selection)
+            if not bones_to_update and getattr(ctx, 'active_pose_bone', None):
+                 bones_to_update.append(ctx.active_pose_bone)
         
-        elif context.mode == 'OBJECT':
+        elif mode == 'OBJECT':
             # Look for bones based on the objects that are parented/attached to them
-            search_scope = context.selected_objects
-            # If no objects are selected, check the active rig's selection history
-            if not search_scope and rig:
-                search_scope = [rig]
+            search_scope = list(sel_objs)
+            if active_obj and active_obj not in search_scope: search_scope.append(active_obj)
+            
+            if not search_scope and rig: search_scope = [rig]
 
             for obj in search_scope:
                 # 1. Check if the object is an armature itself - treat it as a bone search
@@ -922,7 +915,7 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
 
                 # AI Editor Note: Manually trigger state updates ONCE per bone after setting all properties.
                 clean_conflicting_mechanics(bone)
-                update_single_bone_gizmo(bone, context.scene.fcd_viz_gizmos)
+                update_single_bone_gizmo(bone, context.scene.fcd_viz_gizmos, context.scene.fcd_gizmo_style)
                 apply_native_constraints(bone)
                 update_ik_chain_length(props, context)
         finally:
@@ -936,6 +929,67 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
         # when editing from Object Mode. Users should stay in their current mode.
         return {'FINISHED'}
 
+
+class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
+    """Propagates the properties of the active bone to all other selected bones."""
+    bl_idname = "fcd.apply_bone_constraints"
+    bl_label = "Propagate Settings"
+    bl_description = "Copy the FCD properties of the active bone to all selected bones"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context) -> bool:
+        return context.mode == 'POSE' and context.active_pose_bone is not None
+
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        source_bone = context.active_pose_bone
+        if not source_bone:
+            return {'CANCELLED'}
+        source_props = source_bone.fcd_pg_kinematic_props
+        
+        # 1. Gather bones to update (selection + active)
+        bones_to_update = []
+        rigs = [obj for obj in context.selected_objects if obj.type == 'ARMATURE']
+        if context.active_object and context.active_object.type == 'ARMATURE' and context.active_object not in rigs:
+            rigs.append(context.active_object)
+        
+        for rig_obj in rigs:
+            for pb in rig_obj.pose.bones:
+                if pb.bone.select and pb != source_bone:
+                    bones_to_update.append(pb)
+        
+        # Guard to prevent feedback loops
+        core._prop_update_guard = True
+        try:
+            show = context.scene.fcd_viz_gizmos
+            style = context.scene.fcd_gizmo_style
+
+            for bone in bones_to_update:
+                target_props = bone.fcd_pg_kinematic_props
+                # Sync properties
+                target_props.joint_type = source_props.joint_type
+                target_props.axis_enum = source_props.axis_enum
+                target_props.joint_radius = source_props.joint_radius
+                target_props.gizmo_radius = source_props.gizmo_radius
+                target_props.lower_limit = source_props.lower_limit
+                target_props.upper_limit = source_props.upper_limit
+                target_props.ik_chain_length = source_props.ik_chain_length
+                
+                # Update mechanics for each bone
+                clean_conflicting_mechanics(bone)
+                update_single_bone_gizmo(bone, show, style)
+                apply_native_constraints(bone)
+            
+            # Apply to active as well just to be sure
+            clean_conflicting_mechanics(source_bone)
+            update_single_bone_gizmo(source_bone, show, style)
+            apply_native_constraints(source_bone)
+
+        finally:
+            core._prop_update_guard = False
+            context.view_layer.update()
+
+        return {'FINISHED'}
 
 class FCD_OT_SetupIK(bpy.types.Operator):
     """
@@ -1137,6 +1191,11 @@ class FCD_OT_Material_AddSmart(bpy.types.Operator):
     )
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
+        # Use scene property if not explicitly set (e.g. from the dropdown)
+        mat_type = self.mat_type
+        if not self.properties.is_property_set("mat_type"):
+            mat_type = context.scene.fcd_smart_material_type
+
         obj = context.active_object
         if not obj or obj.type != 'MESH':
             self.report({'WARNING'}, "Active object must be a mesh.")
@@ -1147,7 +1206,7 @@ class FCD_OT_Material_AddSmart(bpy.types.Operator):
         slot = obj.material_slots[obj.active_material_index]
         
         # 2. Create Material
-        mat = bpy.data.materials.new(name=f"{self.mat_type.capitalize()}_{obj.name}")
+        mat = bpy.data.materials.new(name=f"{mat_type.capitalize()}_{obj.name}")
         mat.use_nodes = True
         slot.material = mat
         
@@ -1547,7 +1606,10 @@ class FCD_OT_Material_Merge(bpy.types.Operator):
                 val.location = (g_out.location.x - 200, g_out.location.y - 200)
                 group_tree.links.new(val.outputs[0], g_out.inputs['Alpha'])
 
-        for i, slot in enumerate(source_slots):
+        # Layer stacking: We iterate from bottom to top of the UI list.
+        # To make the top-most item in the list the top-most visual layer,
+        # we start from the bottom items as the base and stack upwards.
+        for i, slot in enumerate(reversed(source_slots)):
             mat = slot.material
             if not mat or not mat.use_nodes: continue
             
@@ -1557,9 +1619,7 @@ class FCD_OT_Material_Merge(bpy.types.Operator):
             group_node.label = mat.name
             
             # Create a unique node group for this layer to preserve settings
-            # We use a unique name to avoid conflicts if the material is edited later
             group_name = f"FCD_Layer_{mat.name}_{obj.name}_{i}"
-            # Remove old group if it exists to ensure fresh copy
             if group_name in bpy.data.node_groups:
                 bpy.data.node_groups.remove(bpy.data.node_groups[group_name])
             
@@ -1595,6 +1655,12 @@ class FCD_OT_Material_Merge(bpy.types.Operator):
         if current_shader_socket:
             tree.links.new(current_shader_socket, output_node.inputs['Surface'])
 
+        # AI Editor Note: Ensure the core composite material is Opaque.
+        # This follows the user's request that alpha controls layer transparency
+        # but not the global object transparency (unless they manually override it).
+        comp_mat.blend_method = 'OPAQUE'
+        comp_mat.shadow_method = 'OPAQUE'
+
         # Assign Composite Material to a new slot if needed
         comp_slot_index = obj.material_slots.find(comp_mat_name)
         if comp_slot_index == -1:
@@ -1603,27 +1669,18 @@ class FCD_OT_Material_Merge(bpy.types.Operator):
         
         obj.material_slots[comp_slot_index].material = comp_mat
         
-        # Move composite slot to the bottom to ensure stable indices for removal
-        if comp_slot_index != len(obj.material_slots) - 1:
-            obj.active_material_index = comp_slot_index
-            while obj.active_material_index < len(obj.material_slots) - 1:
-                bpy.ops.object.material_slot_move(direction='DOWN')
-            comp_slot_index = len(obj.material_slots) - 1
+        # Ensure the composite slot is at the very bottom (base index) but assigned to all faces
+        # Note: We keep the source slots for non-destructive editing.
         
         # Assign all faces to composite
         for poly in obj.data.polygons:
             poly.material_index = comp_slot_index
             
-        # Remove source slots (iterate backwards to avoid index shifting issues)
-        # We exclude the last slot (which is our new composite)
-        for i in range(len(obj.material_slots) - 2, -1, -1):
-            slot = obj.material_slots[i]
-            # Only remove if it was enabled and is not the composite itself
-            if getattr(slot, "fcd_enabled", True) and slot.material.name != comp_mat_name:
-                obj.active_material_index = i
-                bpy.ops.object.material_slot_remove()
+        # AI Editor Note: Removed destructive slot removal loop to allow real-time preview 
+        # and editing of individual layers. The composite material now acts as the 
+        # "flattened" output while preserving the working layers in the slot list.
             
-        self.report({'INFO'}, f"Composited layers into '{comp_mat_name}'")
+        self.report({'INFO'}, f"Updated composite material '{comp_mat_name}'")
         return {'FINISHED'}
 
 class FCD_OT_Material_Add(bpy.types.Operator):
@@ -5433,7 +5490,7 @@ def _process_bones_in_pose_mode(rig: bpy.types.Object, bones_to_process: list, c
             pbone.fcd_pg_kinematic_props.axis_enum = 'Z' if axis == 'AUTO' else axis
             pbone.fcd_pg_kinematic_props.joint_type = 'none'
             pbone.fcd_pg_kinematic_props.joint_radius = radius
-            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos, context.scene.fcd_gizmo_style)
 
             # Parent all meshes in the group to the bone while keeping their world transforms
             for obj, original_matrix in objs_data:

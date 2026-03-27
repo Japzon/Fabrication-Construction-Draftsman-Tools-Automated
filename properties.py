@@ -53,7 +53,10 @@ def update_joint_tool_live(self, context):
         # Individual bone update
         if not core._prop_update_guard:
             if hasattr(self.id_data, "pose") and context.mode == 'POSE':
-                bpy.ops.fcd.apply_bone_constraints()
+                # AI Editor Note: Use a timer for stability! 
+                # Property callbacks cannot safely create meshes/objects for gizmos 
+                # in the current thread. Transitioning to a timer avoids "readonly mode" errors.
+                bpy.app.timers.register(lambda: bpy.ops.fcd.apply_bone_constraints() or None, first_interval=0.01)
 
 def update_placement_mode_wrapper(self, context):
     """Lean dispatcher for placement mode state change."""
@@ -408,12 +411,84 @@ def register():
     bpy.types.Scene.fcd_export_mesh_format = bpy.props.EnumProperty(name="Format", items=[('STL', "STL", ""), ('DAE', "DAE", ""), ('OBJ', "OBJ", "")], default='STL')
     bpy.types.Scene.fcd_quick_export_format = bpy.props.EnumProperty(name="Quick Format", items=[('STL', "STL", ""), ('DAE', "DAE", ""), ('OBJ', "OBJ", "")], default='STL')
     
+    # 3. Material Properties
+    bpy.types.Scene.fcd_smart_material_type = bpy.props.EnumProperty(
+        name="Material Type",
+        items=[
+            ('PLASTIC', "Plastic", ""),
+            ('METAL', "Metal", ""),
+            ('RUBBER', "Rubber", ""),
+            ('EMISSIVE', "Emissive", ""),
+            ('GLASS', "Glass", ""),
+            ('CARBON', "Carbon Fiber", ""),
+            ('PRINTED', "3D Printed", ""),
+            ('ALUMINUM', "Brushed Aluminum", ""),
+        ],
+        default='PLASTIC'
+    )
+    
+    def update_material_alpha(self, context):
+        """Update active material alpha and trigger composite refresh."""
+        obj = context.active_object
+        if obj and obj.active_material:
+            mat = obj.active_material
+            if mat.use_nodes and mat.node_tree:
+                bsdf = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+                if bsdf:
+                    # Update the shader alpha value
+                    bsdf.inputs['Alpha'].default_value = self.fcd_material_transparency
+                    
+                    # AI Editor Note: Removed automatic blend_method = 'BLEND' to support 
+                    # non-destructive layering. This allows alpha to control the mix 
+                    # factor in the Composite material without making the whole object 
+                    # transparent to the world background.
+                    
+                    # Trigger a background re-merge to update the composite preview
+                    from . import operators
+                    operators.update_material_merge_trigger(self, context)
+    def update_tex_transform(self, context):
+        """Update active material mapping nodes instantly."""
+        from . import core
+        obj = context.active_object
+        if obj and obj.active_material:
+            core.ensure_material_mapping_nodes(obj.active_material)
+            mat = obj.active_material
+            mapping = next((n for n in mat.node_tree.nodes if n.type == 'MAPPING'), None)
+            if mapping:
+                mapping.inputs['Location'].default_value = self.fcd_tex_pos
+                mapping.inputs['Rotation'].default_value = (0, 0, self.fcd_tex_rot)
+                mapping.inputs['Scale'].default_value = self.fcd_tex_scale
+
+    bpy.types.Scene.fcd_tex_pos = bpy.props.FloatVectorProperty(name="Position", size=3, update=update_tex_transform)
+    bpy.types.Scene.fcd_tex_rot = bpy.props.FloatProperty(name="Rotation", update=update_tex_transform)
+    bpy.types.Scene.fcd_tex_scale = bpy.props.FloatVectorProperty(name="Scale", size=3, default=(1.0, 1.0, 1.0), update=update_tex_transform)
+
+    bpy.types.Scene.fcd_material_transparency = bpy.props.FloatProperty(
+        name="Transparency",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        update=update_material_alpha
+    )
+    
     # 3. Order Properties
     prop_names = [
-        "fcd_order_ai_factory", "fcd_order_parts", "fcd_order_architectural", "fcd_order_vehicle",
-        "fcd_order_electronics", "fcd_order_parametric", "fcd_order_dimensions", "fcd_order_materials",
-        "fcd_order_lighting", "fcd_order_kinematics", "fcd_order_inertial", "fcd_order_collision",
-        "fcd_order_transmission", "fcd_order_assets", "fcd_order_export", "fcd_order_preferences"
+        "fcd_order_ai_factory",    # 1: Generate
+        "fcd_order_assets",        # 2: Asset Library
+        "fcd_order_parts",         # 3: Mechanical Presets
+        "fcd_order_electronics",   # 4: Electronic Presets
+        "fcd_order_architectural", # 5: Architectural Presets
+        "fcd_order_vehicle",       # 6: Vehicle Presets
+        "fcd_order_parametric",    # 7: Parametric Toolkit
+        "fcd_order_dimensions",    # 8: Dimensions & Measuring
+        "fcd_order_kinematics",    # 9: Kinematics Setup
+        "fcd_order_inertial",      # 10: Inertial
+        "fcd_order_collision",     # 11: Collision
+        "fcd_order_transmission",  # 12: Transmission
+        "fcd_order_materials",     # 13: Materials & Textures
+        "fcd_order_lighting",      # 14: Environment & Lighting
+        "fcd_order_export",        # 15: Export System
+        "fcd_order_preferences"    # 16: Preferences
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))
@@ -445,7 +520,9 @@ def unregister():
             "fcd_use_generation_cage", "fcd_generation_cage_size", "fcd_gizmo_style", "fcd_bone_mode",
             "fcd_bone_axis", "fcd_cursor_local_pos", "fcd_export_list_index", "fcd_export_check_meshes",
             "fcd_export_check_textures", "fcd_export_check_config", "fcd_export_check_launch",
-            "fcd_export_mesh_format", "fcd_quick_export_format"
+            "fcd_export_mesh_format", "fcd_quick_export_format",
+            "fcd_smart_material_type", "fcd_material_transparency",
+            "fcd_tex_pos", "fcd_tex_rot", "fcd_tex_scale"
         ]
         # Add order props
         prop_names = [

@@ -237,20 +237,20 @@ class FCD_OT_ResetPanelOrder(bpy.types.Operator):
     
     def execute(self, context):
         scene = context.scene
-        scene.fcd_order_ai_factory = 0
-        scene.fcd_order_parts = 1
-        scene.fcd_order_architectural = 2
-        scene.fcd_order_vehicle = 3
-        scene.fcd_order_electronics = 4
-        scene.fcd_order_parametric = 5
-        scene.fcd_order_dimensions = 6
-        scene.fcd_order_materials = 7
-        scene.fcd_order_lighting = 8
-        scene.fcd_order_kinematics = 9
-        scene.fcd_order_inertial = 10
-        scene.fcd_order_collision = 11
-        scene.fcd_order_transmission = 12
-        scene.fcd_order_assets = 13
+        scene.fcd_order_ai_factory = 0     # 1: Generate
+        scene.fcd_order_assets = 1         # 2: Asset Library
+        scene.fcd_order_parts = 2          # 3: Mechanical Presets
+        scene.fcd_order_electronics = 3    # 4: Electronic Presets
+        scene.fcd_order_architectural = 4  # 5: Architectural Presets
+        scene.fcd_order_vehicle = 5        # 6: Vehicle Presets
+        scene.fcd_order_parametric = 6     # 7: Parametric Toolkit
+        scene.fcd_order_dimensions = 7     # 8: Dimensions & Measuring
+        scene.fcd_order_kinematics = 8     # 9: Kinematics Setup
+        scene.fcd_order_inertial = 9
+        scene.fcd_order_collision = 10
+        scene.fcd_order_transmission = 11
+        scene.fcd_order_materials = 12
+        scene.fcd_order_lighting = 13
         scene.fcd_order_export = 14
         scene.fcd_order_preferences = 15
         

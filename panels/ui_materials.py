@@ -56,41 +56,21 @@ class FCD_PT_Materials_And_Textures:
                 box.label(text="Select a Mesh Object", icon='INFO')
                 return
             
-            # --- SECTION: MATERIAL TRANSFORM (MOVED TO TOP) ---
-            active_mat = obj.active_material
-            if active_mat and active_mat.use_nodes and active_mat.node_tree:
-                tex_box = box.box()
-                tex_box.label(text="Material Transform", icon='UV_DATA')
-                
-                nodes = active_mat.node_tree.nodes
-                # AI Editor Note: Simplified search logic. Instead of tracing from the BSDF,
-                # just find the first available Mapping node in the tree. This is more robust
-                # for materials that are not set up in the standard "TexCoord->Mapping->Image->BSDF" way.
-                mapping_node = next((n for n in nodes if n.type == 'MAPPING'), None)
-                
-                if mapping_node:
-                    col_tex = tex_box.column(align=True)
-                    col_tex.prop(mapping_node.inputs['Location'], "default_value", text="Location")
-                    col_tex.prop(mapping_node.inputs['Rotation'], "default_value", index=2, text="Rotation")
-                    col_tex.separator()
-                    col_tex.prop(active_mat, "fcd_uniform_scale", slider=True)
-                    col_tex.prop(mapping_node.inputs['Scale'], "default_value", text="Scale (Axis)")
-                else:
-                    tex_box.operator("fcd.add_mapping_nodes", icon='ADD')
-
+            # --- SECTION: MATERIAL TRANSFORM (ALWAYS AVAILABLE) ---
+            tex_box = box.box()
+            tex_box.label(text="Material Transform", icon='UV_DATA')
             
-            # --- SECTION: SMART PRESETS ---
+            col_tex = tex_box.column(align=True)
+            col_tex.prop(scene, "fcd_tex_pos", text="Location")
+            col_tex.prop(scene, "fcd_tex_rot", text="Rotation (Z)")
+            col_tex.prop(scene, "fcd_tex_scale", text="Scale")
+            
+            # --- SECTION: SMART PRESETS (DROPDOWN MOD) ---
             preset_box = box.box()
             preset_box.label(text="Add Smart Material", icon='SHADING_TEXTURE')
-            grid = preset_box.grid_flow(columns=2, align=True)
-            grid.operator("fcd.material_add_smart", text="Plastic").mat_type = 'PLASTIC'
-            grid.operator("fcd.material_add_smart", text="Metal").mat_type = 'METAL'
-            grid.operator("fcd.material_add_smart", text="Rubber").mat_type = 'RUBBER'
-            grid.operator("fcd.material_add_smart", text="Glass").mat_type = 'GLASS'
-            grid.operator("fcd.material_add_smart", text="Carbon Fiber").mat_type = 'CARBON'
-            grid.operator("fcd.material_add_smart", text="Aluminum").mat_type = 'ALUMINUM'
-            grid.operator("fcd.material_add_smart", text="3D Printed").mat_type = 'PRINTED'
-            grid.operator("fcd.material_add_smart", text="Emissive").mat_type = 'EMISSIVE'
+            row = preset_box.row(align=True)
+            row.prop(scene, "fcd_smart_material_type", text="")
+            row.operator("fcd.material_add_smart", text="Add Layer", icon='ADD')
             
             # --- AI Editor Note: Add "New from Image" operator here ---
             preset_box.operator("fcd.material_from_image", text="New from Image File", icon='IMAGE_DATA')
@@ -103,8 +83,8 @@ class FCD_PT_Materials_And_Textures:
             col.operator("fcd.material_add", icon='ADD', text="").mode = 'NEW'
             col.operator("object.material_slot_remove", icon='REMOVE', text="")
             col.separator()
-            col.operator("object.material_slot_move", icon='TRIA_UP', text="").direction = 'DOWN'
-            col.operator("object.material_slot_move", icon='TRIA_DOWN', text="").direction = 'UP'
+            col.operator("object.material_slot_move", icon='TRIA_UP', text="").direction = 'UP'
+            col.operator("object.material_slot_move", icon='TRIA_DOWN', text="").direction = 'DOWN'
 
             # --- SECTION: ASSIGNMENT TOOLS ---
             if obj.mode == 'EDIT':
@@ -131,7 +111,10 @@ class FCD_PT_Materials_And_Textures:
                         col.prop(bsdf.inputs['Base Color'], "default_value", text="Base Color")
                         col.prop(bsdf.inputs['Metallic'], "default_value", text="Metallic", slider=True)
                         col.prop(bsdf.inputs['Roughness'], "default_value", text="Roughness", slider=True)
-                        col.prop(bsdf.inputs['Alpha'], "default_value", text="Alpha", slider=True)
+                        
+                        col.separator()
+                        # Task 3: Robust Transparency Control
+                        col.prop(scene, "fcd_material_transparency", text="Transparency (Alpha)", slider=True)
                         
                         col.separator()
                         col.prop(bsdf.inputs['Emission Color'], "default_value", text="Emission")
@@ -141,13 +124,14 @@ class FCD_PT_Materials_And_Textures:
                         col.operator("fcd.material_load_texture", text="Load Texture to Color", icon='IMAGE_DATA')
 
                         sett_box = prop_box.box()
-                        sett_box.label(text="Settings", icon='PREFERENCES')
+                        sett_box.label(text="Advanced Settings", icon='PREFERENCES')
                         sett_box.prop(active_mat, "blend_method")
                         sett_box.prop(active_mat, "shadow_method")
                     else:
                         prop_box.label(text="No Principled BSDF Node", icon='ERROR')
                 else:
                     prop_box.label(text="Material does not use nodes", icon='ERROR')
+
 
             # --- SECTION: TEXTURE PAINT ---
             brush_box = box.box()

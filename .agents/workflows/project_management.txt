@@ -15,6 +15,15 @@ Follow these exact, descriptive steps meticulously to robustly update or create 
 * Synchronize GUI Classes in Panel Files: Panel class names must perfectly mirror their string display tag while adhering to Blender's structural naming conventions (PREFIX_PT_name). For example, a panel displaying the text "Mechanical Presets" strictly dictates that the underlying Python class title must be FCD_PT_Mechanical_Presets.
 * Trace GUI Identity in Operators (operators.py): Action classes and bl_idname identicality must logically trace the GUI text using Blender's operator conventions (PREFIX_OT_name). For a button displaying "Generate Robot with AI", the operator class must be FCD_OT_Generate_Robot_With_AI and its identifier must be fcd.generate_robot_with_ai.
 
+2.1 Standardized Naming Conventions (Mandatory)
+* Operators: PREFIX_OT_Description (e.g., FCD_OT_Apply_Joint_Settings).
+* Panels: PREFIX_PT_Description (e.g., FCD_PT_Kinematics_Setup).
+* PropertyGroups: PREFIX_PG_Description (e.g., FCD_PG_Kinematic_Props).
+* UILists: PREFIX_UL_Description (e.g., FCD_UL_Mat_List).
+* Scene Properties: fcd_lowercased_name (e.g., fcd_active_rig).
+* Bone/Object Properties: fcd_pg_internal_props (Pointer to PG).
+* Member Properties: lowercased_literal_name (e.g., joint_type).
+
 3. Core Architecture Rules (Strict Separation of Concerns)
 Know exactly where Python logic belongs before writing code. You must never mix module responsibilities. Note: BMesh generation logic is strictly forbidden in properties.py to prevent circular import loops.
  * __init__.py: Handles addon metadata, imports all submodules, and manages the central registration/unregistration loops via bpy.utils.register_class.
@@ -51,7 +60,7 @@ When asked to implement or update a function, execute these exact critical steps
    * Handler Discipline: All app handlers (depsgraph_update, load_post, etc.) must be defined in core.py.
    * Registration Safety: Always use `if handler not in bpy.app.handlers.X: bpy.app.handlers.X.append(handler)` to prevent recursive duplication during reloads.
    * Signature Compliance: Enforce the (scene, depsgraph) signature for all depsgraph handlers to ensure stability across Blender 4.5+ releases.
-
+* Propagative Update Guards: To prevent recursive loops and feedback during multi-bone editing, you MUST use `core._prop_update_guard = True` and `core._joint_editor_update_guard = True` within operators, while wrapping the logic in try/finally to ensure they are reset. In core.py, these must be defined as module-level globals and accessed via `global` within the setter functions.
 
 5. Procedural Safety Limitations
  * Boolean Cut Data Purging: If a feature generates procedural cut planes or boolean objects (like Bore Holes inside gears), you must explicitly clear the previous cutter data geometry via bpy.data.objects.remove() before appending the new shape. Overlapping legacy geometry triggers Blender boolean z-fighting, resulting in corrupted, half-rendered meshes during parametric slider adjustments.

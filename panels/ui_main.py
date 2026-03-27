@@ -32,31 +32,31 @@ from .. import core
 from .. import properties
 from .. import operators
 from . import ui_common
-from .ui_ai_factory import URDF_PT_Generate
-from .ui_parts import URDF_PT_MechanicalPresets
-from .ui_materials import URDF_PT_MaterialsAndTextures
-from .ui_lighting import URDF_PT_LightingAndAtmosphere
+from .ui_ai_factory import FCD_PT_Generate
+from .ui_parts import FCD_PT_Mechanical_Presets
+from .ui_materials import FCD_PT_Materials_And_Textures
+from .ui_lighting import FCD_PT_Lighting_And_Atmosphere
 from . import ui_electronics
-from .ui_electronics import URDF_PT_ElectronicPresets
-from .ui_dimensions import URDF_PT_DimensionsAndMeasuring
-from .ui_parametric import URDF_PT_ParametricToolkit
-from .ui_architectural import URDF_PT_ArchitecturalPresets
-from .ui_vehicle import URDF_PT_VehiclePresets
-from .ui_inertial import URDF_PT_PhysicsInertial
-from .ui_collision import URDF_PT_PhysicsCollision
-from .ui_transmission import URDF_PT_Transmission
-from .ui_kinematics import URDF_PT_KinematicsSetup
-from .ui_assets import URDF_PT_AssetLibrarySystem
-from .ui_export import URDF_PT_ImportExportSystem
-from .ui_preferences import URDF_PT_Preferences
+from .ui_electronics import FCD_PT_Electronic_Presets
+from .ui_dimensions import FCD_PT_Dimensions_And_Measuring
+from .ui_parametric import FCD_PT_Parametric_Toolkit
+from .ui_architectural import FCD_PT_Architectural_Presets
+from .ui_vehicle import FCD_PT_Vehicle_Presets
+from .ui_inertial import FCD_PT_Physics_Inertial
+from .ui_collision import FCD_PT_Physics_Collision
+from .ui_transmission import FCD_PT_Transmission
+from .ui_kinematics import FCD_PT_Kinematics_Setup
+from .ui_assets import FCD_PT_Asset_Library_System
+from .ui_export import FCD_PT_Import_Export_System
+from .ui_preferences import FCD_PT_Preferences
 
-class URDF_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
+class FCD_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
     """
     The Master Panel that acts as a container for all other panels.
     It dynamically draws the sub-panels in the order defined by the user.
     """
     bl_label = "Fabrication & Construction Draftsman Tools (Automated)"
-    bl_idname = "VIEW3D_PT_urdf_main"
+    bl_idname = "VIEW3D_PT_fcd_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Draftsman Tools'
@@ -65,22 +65,22 @@ class URDF_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
     def draw(self, context):
         # Define the mapping of panels to their order properties
         panel_map = [
-            (URDF_PT_Generate, "urdf_order_ai_factory"),
-            (URDF_PT_MechanicalPresets, "urdf_order_parts"),
-            (URDF_PT_ArchitecturalPresets, "urdf_order_architectural"),
-            (URDF_PT_VehiclePresets, "urdf_order_vehicle"),
-            (URDF_PT_ElectronicPresets, "urdf_order_electronics"),
-            (URDF_PT_ParametricToolkit, "urdf_order_parametric"),
-            (URDF_PT_DimensionsAndMeasuring, "urdf_order_dimensions"),
-            (URDF_PT_MaterialsAndTextures, "urdf_order_materials"),
-            (URDF_PT_LightingAndAtmosphere, "urdf_order_lighting"),
-            (URDF_PT_KinematicsSetup, "urdf_order_kinematics"),
-            (URDF_PT_PhysicsInertial, "urdf_order_inertial"),
-            (URDF_PT_PhysicsCollision, "urdf_order_collision"),
-            (URDF_PT_Transmission, "urdf_order_transmission"),
-            (URDF_PT_AssetLibrarySystem, "urdf_order_assets"),
-            (URDF_PT_ImportExportSystem, "urdf_order_export"),
-            (URDF_PT_Preferences, "urdf_order_preferences"),
+            (FCD_PT_Generate, "fcd_order_ai_factory"),
+            (FCD_PT_Mechanical_Presets, "fcd_order_parts"),
+            (FCD_PT_Architectural_Presets, "fcd_order_architectural"),
+            (FCD_PT_Vehicle_Presets, "fcd_order_vehicle"),
+            (FCD_PT_Electronic_Presets, "fcd_order_electronics"),
+            (FCD_PT_Parametric_Toolkit, "fcd_order_parametric"),
+            (FCD_PT_Dimensions_And_Measuring, "fcd_order_dimensions"),
+            (FCD_PT_Materials_And_Textures, "fcd_order_materials"),
+            (FCD_PT_Lighting_And_Atmosphere, "fcd_order_lighting"),
+            (FCD_PT_Kinematics_Setup, "fcd_order_kinematics"),
+            (FCD_PT_Physics_Inertial, "fcd_order_inertial"),
+            (FCD_PT_Physics_Collision, "fcd_order_collision"),
+            (FCD_PT_Transmission, "fcd_order_transmission"),
+            (FCD_PT_Asset_Library_System, "fcd_order_assets"),
+            (FCD_PT_Import_Export_System, "fcd_order_export"),
+            (FCD_PT_Preferences, "fcd_order_preferences"),
         ]
 
         # Sort panels based on user-defined order
@@ -111,7 +111,7 @@ class URDF_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
 
 
 def register():
-    for cls in [URDF_PT_FabricationConstructionDraftsmanToolsAutomated]:
+    for cls in [FCD_PT_FabricationConstructionDraftsmanToolsAutomated]:
         if hasattr(cls, 'bl_rna'):
             try:
                 bpy.utils.register_class(cls)
@@ -119,7 +119,7 @@ def register():
                 pass
 
 def unregister():
-    for cls in reversed([URDF_PT_FabricationConstructionDraftsmanToolsAutomated]):
+    for cls in reversed([FCD_PT_FabricationConstructionDraftsmanToolsAutomated]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

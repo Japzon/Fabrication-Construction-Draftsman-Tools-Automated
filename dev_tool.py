@@ -22,7 +22,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from zip_addon import zip_addon
 
 ADDON_NAME = "fabrication_construction_draftsman_tools_automated"
-OLD_ADDON_NAME = "automated_robot_cnc_dev_kit"
+OLD_ADDON_NAME = "auto_robot_cnc_dev_kit"
 BLENDER_DEFAULT_PATH = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 
 def find_blender():
@@ -104,21 +104,23 @@ def setup_dev():
             os.makedirs(addons_dir, exist_ok=True)
             
         # Robust Cleanup
-        if os.path.exists(target_dir) or os.path.islink(target_dir):
-            print(f"[INFO] Cleaning old add-on files...")
-            # Attempt multiple ways to remove it
-            subprocess.run(f'cmd /c "rmdir /S /Q \"{target_dir}\""', shell=True, capture_output=True)
-            if os.path.exists(target_dir):
-                # If still exists, try deleting it as a file (in case it's a broken symlink)
-                try:
-                    if os.path.islink(target_dir):
-                        os.unlink(target_dir)
-                    else:
-                        shutil.rmtree(target_dir, ignore_errors=True)
-                except:
-                    pass
+        for target in [target_dir, os.path.join(addons_dir, OLD_ADDON_NAME)]:
+            if os.path.exists(target) or os.path.islink(target):
+                print(f"[INFO] Cleaning old add-on files at: {target}")
+                # Attempt primary cleanup via shell
+                subprocess.run(f'cmd /c "rmdir /S /Q \"{target}\""', shell=True, capture_output=True)
+                
+                # If still exists (e.g. broken symlink), try direct unlink
+                if os.path.exists(target) or os.path.islink(target):
+                    try:
+                        if os.path.islink(target):
+                            os.unlink(target)
+                        else:
+                            shutil.rmtree(target, ignore_errors=True)
+                    except:
+                        pass
         
-        # Double check cleanup
+        # Double check cleanup of the main target directory for linking
         if os.path.exists(target_dir):
             print(f"\n[ERROR] FAILED TO CLEANUP TARGET DIRECTORY!")
             print("Reason: Folder is likely locked by Blender or another program.")

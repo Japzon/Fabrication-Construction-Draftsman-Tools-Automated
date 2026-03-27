@@ -14,7 +14,7 @@
 import bpy
 from . import ui_common
 
-class URDF_PT_DimensionsAndMeasuring:
+class FCD_PT_Dimensions_And_Measuring:
     """
     Dimensions & Measuring panel.
     Generates parametric mesh-based dimension displays from selected object bounding boxes,
@@ -23,7 +23,7 @@ class URDF_PT_DimensionsAndMeasuring:
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return getattr(context.scene, "urdf_panel_enabled_dimensions", False)
+        return getattr(context.scene, "fcd_panel_enabled_dimensions", False)
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
@@ -36,49 +36,47 @@ class URDF_PT_DimensionsAndMeasuring:
         box, is_expanded = ui_common.draw_panel_header(
             layout, context, 
             "Dimensions & Measuring", 
-            "urdf_show_panel_dimensions", 
-            "urdf_panel_enabled_dimensions"
+            "fcd_show_panel_dimensions", 
+            "fcd_panel_enabled_dimensions"
         )
         
-        if not is_expanded:
-            return
-
-        # --- Smart Dimension Generator ---
-        gen_box = box.box()
-        col = gen_box.column(align=True)
-        col.operator("urdf.add_dimension", text="Generate Dimensions for Selected", icon='DRIVER_DISTANCE')
-        
-        # --- Remove Selected Dimension ---
-        active_obj = context.active_object
-        is_dim = active_obj and active_obj.get("urdf_is_dimension")
-        
-        if is_dim:
-            col.separator()
-            col.operator("urdf.remove_dimension", text="Remove Selected Dimension", icon='TRASH')
-
-        # --- Display Properties ---
-        prop_box = box.box()
-        # The display properties should only fully appear when an arrow is selected
-        if is_dim:
-            prop_box.label(text="Display Properties", icon='PROPERTIES')
-            col2 = prop_box.column(align=True)
+        if is_expanded:
+            # --- Smart Dimension Generator ---
+            gen_box = box.box()
+            col = gen_box.column(align=True)
+            col.operator("fcd.add_dimension", text="Generate Dimensions for Selected", icon='DRIVER_DISTANCE')
             
-            # AI Editor Note: 'Length' allows for precise input of dimensions.
-            col2.prop(active_obj, "urdf_dim_length", text="Length")
+            # --- Remove Selected Dimension ---
+            active_obj = context.active_object
+            is_dim = active_obj and active_obj.get("fcd_is_dimension")
             
-            row2 = col2.row(align=True)
-            row2.prop(active_obj, "urdf_dim_arrow_scale", text="Arrow")
-            row2.prop(active_obj, "urdf_dim_text_scale", text="Label")
-            col2.prop(active_obj, "urdf_dim_line_thickness", text="Line Thickness")
-            col2.prop(active_obj, "urdf_dim_offset", text="Offset from Object")
-            col2.prop(active_obj, "urdf_dim_extension", text="End Extension")
-            col2.prop(active_obj, "urdf_dim_text_color", text="Label Color")
-            col2.prop(active_obj, "urdf_dim_unit_display", text="Units")
-        else:
-            # A display to select a dimension arrow is shown when no arrows are selected
-            row = prop_box.row(align=True)
-            row.alignment = 'CENTER'
-            row.label(text="Select a dimension arrow to adjust", icon='INFO')
+            if is_dim:
+                col.separator()
+                col.operator("fcd.remove_dimension", text="Remove Selected Dimension", icon='TRASH')
+
+            # --- Display Properties ---
+            prop_box = box.box()
+            # The display properties should only fully appear when an arrow is selected
+            if is_dim:
+                prop_box.label(text="Display Properties", icon='PROPERTIES')
+                col2 = prop_box.column(align=True)
+                
+                # AI Editor Note: 'Length' allows for precise input of dimensions.
+                col2.prop(active_obj, "fcd_dim_length", text="Length")
+                
+                row2 = col2.row(align=True)
+                row2.prop(active_obj, "fcd_dim_arrow_scale", text="Arrow")
+                row2.prop(active_obj, "fcd_dim_text_scale", text="Label")
+                col2.prop(active_obj, "fcd_dim_line_thickness", text="Line Thickness")
+                col2.prop(active_obj, "fcd_dim_offset", text="Offset from Object")
+                col2.prop(active_obj, "fcd_dim_extension", text="End Extension")
+                col2.prop(active_obj, "fcd_dim_text_color", text="Label Color")
+                col2.prop(active_obj, "fcd_dim_unit_display", text="Units")
+            else:
+                # A display to select a dimension arrow is shown when no arrows are selected
+                row = prop_box.row(align=True)
+                row.alignment = 'CENTER'
+                row.label(text="Select a dimension arrow to adjust", icon='INFO')
 
 def register():
     pass

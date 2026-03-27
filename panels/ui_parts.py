@@ -33,11 +33,11 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_MechanicalPresets:
+class FCD_PT_Mechanical_Presets:
     """
     AI Editor Note:
     This class is a drawing helper for the 'Mechanical Presets' panel. It is not a
-    registered bpy.types.Panel, but is called by the main URDF_PT_FabricationConstructionDraftsmanToolsAutomated
+    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanToolsAutomated
     to draw its content. This structure allows for dynamic reordering of panels.
     """
 
@@ -89,7 +89,7 @@ class URDF_PT_MechanicalPresets:
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         # This panel is only drawn if its corresponding visibility toggle is enabled.
-        return getattr(context.scene, "urdf_panel_enabled_parts", True)
+        return getattr(context.scene, "fcd_panel_enabled_parts", True)
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
@@ -102,37 +102,33 @@ class URDF_PT_MechanicalPresets:
         box, is_expanded = ui_common.draw_panel_header(
             layout, context, 
             "Mechanical Presets", 
-            "urdf_show_panel_parts", 
-            "urdf_panel_enabled_parts"
+            "fcd_show_panel_parts", 
+            "fcd_panel_enabled_parts"
         )
         
-        if not is_expanded:
-            return
-
-
         if is_expanded:
             # --- NEW: Generation Size Constraint ---
             # This allows the user to define a bounding box to scale newly created parts.
             cage_box = box.box()
             cage_box.label(text="Generation Size Constraint", icon='SHADING_BBOX')
-            cage_box.prop(scene, "urdf_use_generation_cage")
+            cage_box.prop(scene, "fcd_use_generation_cage")
             row = cage_box.row()
-            row.enabled = scene.urdf_use_generation_cage
-            row.prop(scene, "urdf_generation_cage_size")
+            row.enabled = scene.fcd_use_generation_cage
+            row.prop(scene, "fcd_generation_cage_size")
 
             row = box.row(align=True)
-            row.prop(scene, "urdf_part_category", text="")
-            row.prop(scene, "urdf_part_type", text="")
+            row.prop(scene, "fcd_part_category", text="")
+            row.prop(scene, "fcd_part_type", text="")
             r2 = box.row()
-            r2.operator("urdf.create_part", text="Generate", icon='ADD')
+            r2.operator("fcd.create_part", text="Generate", icon='ADD')
             
             obj = context.active_object
-            if obj and hasattr(obj, "urdf_mech_props") and obj.urdf_mech_props.is_part:
+            if obj and hasattr(obj, "fcd_pg_mech_props") and obj.fcd_pg_mech_props.is_part:
                 box.separator()
                 edit_box = box.box()
 
                 # The 'props' are on the active object (e.g., the chain proxy).
-                props = obj.urdf_mech_props
+                props = obj.fcd_pg_mech_props
                 
                 # --- UI CLEANUP: Display a clear, specific title for the part being edited. ---
                 title = f"Edit {props.category.capitalize()}"
@@ -228,11 +224,11 @@ class URDF_PT_MechanicalPresets:
                         hook_box = edit_box.box()
                         hook_box.label(text="Path Hooks (Middle)", icon='HOOK')
                         row = hook_box.row()
-                        row.template_list("URDF_UL_SlinkyHooks_List", "slinky_hooks", props, "slinky_hooks", props, "slinky_active_index")
+                        row.template_list("FCD_UL_SlinkyHooks_List", "slinky_hooks", props, "slinky_hooks", props, "slinky_active_index")
                         
                         col = row.column(align=True)
-                        col.operator("urdf.slinky_add_hook", icon='ADD', text="")
-                        col.operator("urdf.slinky_remove_hook", icon='REMOVE', text="")
+                        col.operator("fcd.slinky_add_hook", icon='ADD', text="")
+                        col.operator("fcd.slinky_remove_hook", icon='REMOVE', text="")
                     # The 'length' property is hidden as it is dynamically controlled
                     # by the distance between the start and end helper objects.
                 elif props.category == 'CHAIN':
@@ -253,7 +249,7 @@ class URDF_PT_MechanicalPresets:
                     anim_box.label(text="Drive System", icon='DRIVER')
                     row = anim_box.row(align=True)
                     row.prop(props, "chain_drive_target", text="")
-                    row.operator("urdf.link_chain_driver", text="Update Driver", icon='FILE_REFRESH')
+                    row.operator("fcd.link_chain_driver", text="Update Driver", icon='FILE_REFRESH')
                     
                     # --- AI Editor Note: Manual Drive Controls ---
                     row = anim_box.row(align=True)
@@ -269,10 +265,10 @@ class URDF_PT_MechanicalPresets:
                     # NEW: Picker UI for easier selection
                     row = wrap_box.row(align=True)
                     row.prop(props, "wrap_picker")
-                    row.operator("urdf.chain_add_picked_wrap_object", text="", icon='ADD')
+                    row.operator("fcd.chain_add_picked_wrap_object", text="", icon='ADD')
                     
                     # Legacy operator for selection-based adding
-                    wrap_box.operator("urdf.chain_add_wrap_object", icon='SELECT_SET', text="Add Selected Objects")
+                    wrap_box.operator("fcd.chain_add_wrap_object", icon='SELECT_SET', text="Add Selected Objects")
                     
                     # This UIList displays the collection of hooks.
                     wrap_box.template_list(
@@ -449,7 +445,7 @@ class URDF_PT_MechanicalPresets:
                 # This button applies to all parametric part types
                 edit_box.separator()
                 # DEBUG FIX: The Bake Mesh operator was missing from the UI. This restores it.
-                edit_box.operator("urdf.bake_mesh", icon='CHECKMARK')
+                edit_box.operator("fcd.bake_mesh", icon='CHECKMARK')
 
                 # --- Material Properties (Kept here for context) ---
                 material_box = edit_box.box()
@@ -464,12 +460,15 @@ class URDF_PT_MechanicalPresets:
 # ------------------------------------------------------------------------
 
 def register():
-    for cls in [URDF_PT_MechanicalPresets]:
+    for cls in [FCD_PT_Mechanical_Presets]:
         if hasattr(cls, 'bl_rna'):
-            bpy.utils.register_class(cls)
+            try:
+                bpy.utils.register_class(cls)
+            except Exception:
+                pass
 
 def unregister():
-    for cls in reversed([URDF_PT_MechanicalPresets]):
+    for cls in reversed([FCD_PT_Mechanical_Presets]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

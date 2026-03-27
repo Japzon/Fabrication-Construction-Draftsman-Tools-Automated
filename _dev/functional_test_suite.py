@@ -62,9 +62,9 @@ def run_comprehensive_tests():
     print("\n[TEST 1] Testing 'Generate Robot with AI' (Local)...")
     try:
         clear_scene()
-        bpy.context.scene.urdf_ai_props.ai_source = 'FREE'
-        bpy.context.scene.urdf_ai_props.api_prompt = "Generate a six-wheeled rover with a robotic arm"
-        res = bpy.ops.urdf.execute_ai_prompt()
+        bpy.context.scene.fcd_pg_ai_props.ai_source = 'FREE'
+        bpy.context.scene.fcd_pg_ai_props.api_prompt = "Generate a six-wheeled rover with a robotic arm"
+        res = bpy.ops.fcd.execute_ai_prompt()
         if 'FINISHED' in res:
             print("[SUCCESS] AI generation finished.")
             print(f"  Objects created: {len(bpy.data.objects)}")
@@ -80,8 +80,8 @@ def run_comprehensive_tests():
         print(f"\n[TEST 2] Testing Template: {t}...")
         try:
             clear_scene()
-            bpy.context.scene.urdf_ai_props.robot_template = t
-            res = bpy.ops.urdf.generate_preset()
+            bpy.context.scene.fcd_pg_ai_props.robot_template = t
+            res = bpy.ops.fcd.generate_preset()
             if 'FINISHED' in res:
                 print(f"[SUCCESS] Template {t} generated.")
             else:
@@ -96,13 +96,13 @@ def run_comprehensive_tests():
         clear_scene()
         bpy.context.scene.urdf_part_category = 'GEAR'
         bpy.context.scene.urdf_part_type = 'SPUR'
-        res = bpy.ops.urdf.create_part()
+        res = bpy.ops.fcd.create_part()
         if 'FINISHED' in res:
             obj = bpy.context.active_object
             print(f"[SUCCESS] Created part: {obj.name}")
             # Test Baking
             print("  Testing Bake...")
-            res_bake = bpy.ops.urdf.bake_mesh()
+            res_bake = bpy.ops.fcd.bake_mesh()
             if 'FINISHED' in res_bake:
                 print(f"  [SUCCESS] Baked part: {bpy.context.active_object.name}")
             else:
@@ -138,16 +138,16 @@ def run_comprehensive_tests():
         pbone.bone.select = True
         
         # Calculate COM
-        res_com = bpy.ops.urdf.calculate_center_of_mass()
+        res_com = bpy.ops.fcd.calculate_center_of_mass()
         print(f"  COM Calculation: {res_com}")
-        print(f"  Resulting COM: {pbone.urdf_props.inertial.center_of_mass}")
+        print(f"  Resulting COM: {pbone.fcd_pg_kinematic_props.inertial.center_of_mass}")
         
         # Calculate Inertia
-        pbone.urdf_props.collision.shape = 'BOX'
-        pbone.urdf_props.inertial.mass = 1.0
-        res_inertia = bpy.ops.urdf.calculate_inertia()
+        pbone.fcd_pg_kinematic_props.collision.shape = 'BOX'
+        pbone.fcd_pg_kinematic_props.inertial.mass = 1.0
+        res_inertia = bpy.ops.fcd.calculate_inertia()
         print(f"  Inertia Calculation: {res_inertia}")
-        print(f"  Resulting ixx: {pbone.urdf_props.inertial.ixx}")
+        print(f"  Resulting ixx: {pbone.fcd_pg_kinematic_props.inertial.ixx}")
         
     except Exception as e:
         print(f"[FAILURE] Calculation tests crashed: {e}")
@@ -160,7 +160,7 @@ def run_comprehensive_tests():
         bpy.context.view_layer.objects.active = rig
         bpy.ops.object.mode_set(mode='POSE')
         pbone = rig.pose.bones["TestBone"]
-        res_ik = bpy.ops.urdf.setup_ik()
+        res_ik = bpy.ops.fcd.setup_ik()
         if 'FINISHED' in res_ik:
             print("[SUCCESS] IK setup finished.")
             # Check if target bone exists

@@ -33,41 +33,38 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_PhysicsInertial:
+class FCD_PT_Physics_Inertial:
     """
     AI Editor Note:
     This class is a drawing helper for the 'Physics: Inertial' panel. It is not a
-    registered bpy.types.Panel, but is called by the main URDF_PT_FabricationConstructionDraftsmanToolsAutomated
+    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanToolsAutomated
     to draw its content. This structure allows for dynamic reordering of panels.
     """
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         # AI Editor Note: Panel is now always available if enabled in preferences, regardless of selection.
-        return context.scene.urdf_panel_enabled_inertial
+        return context.scene.fcd_panel_enabled_inertial
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
-        box = layout.box()
         
-        is_expanded = scene.urdf_show_panel_inertial
-        icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
-        row = box.row(align=True)
-        op = row.operator("urdf.toggle_panel_visibility", text="Physics: Inertial", emboss=False, icon=icon)
-        op.panel_property = "urdf_show_panel_inertial"
-        row.prop(scene, "urdf_show_panel_inertial", text="", emboss=False, toggle=True)
-        close_op = row.operator("urdf.disable_panel", text="", icon='X')
-        close_op.prop_name = "urdf_panel_enabled_inertial"
-
-
+        # 1. Standardized Header
+        box, is_expanded = ui_common.draw_panel_header(
+            layout, context, 
+            "Physics: Inertial", 
+            "fcd_show_panel_inertial", 
+            "fcd_panel_enabled_inertial"
+        )
+        
         if is_expanded:
             # Determine the property owner
             props_owner = None
             if context.mode == 'POSE' and context.active_pose_bone:
-                props_owner = context.active_pose_bone.urdf_props
-            elif context.active_object and hasattr(context.active_object, "urdf_mech_props") and context.active_object.urdf_mech_props.is_part:
-                props_owner = context.active_object.urdf_mech_props
+                props_owner = context.active_pose_bone.fcd_pg_kinematic_props
+            elif context.active_object and hasattr(context.active_object, "fcd_pg_mech_props") and context.active_object.fcd_pg_mech_props.is_part:
+                props_owner = context.active_object.fcd_pg_mech_props
             
             if props_owner:
                 inertial_props = props_owner.inertial
@@ -75,8 +72,8 @@ class URDF_PT_PhysicsInertial:
                 col = box.column(align=True)
                 col.prop(inertial_props, "center_of_mass")
                 row = box.row(align=True)
-                row.operator("urdf.calculate_center_of_mass")
-                row.operator("urdf.calculate_inertia")
+                row.operator("fcd.calculate_center_of_mass")
+                row.operator("fcd.calculate_inertia")
                 
                 tensor_box = box.box()
                 tensor_box.label(text="Inertia Tensor", icon='DRIVER_ROTATIONAL_DIFFERENCE')
@@ -92,12 +89,12 @@ class URDF_PT_PhysicsInertial:
 
 
 def register():
-    for cls in [URDF_PT_PhysicsInertial]:
+    for cls in [FCD_PT_Physics_Inertial]:
         if hasattr(cls, 'bl_rna'):
             bpy.utils.register_class(cls)
 
 def unregister():
-    for cls in reversed([URDF_PT_PhysicsInertial]):
+    for cls in reversed([FCD_PT_Physics_Inertial]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

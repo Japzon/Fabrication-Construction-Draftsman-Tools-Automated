@@ -33,11 +33,11 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_Preferences:
+class FCD_PT_Preferences:
     """
     AI Editor Note:
     This class is a drawing helper for the 'Preferences' panel. It is not a
-    registered bpy.types.Panel, but is called by the main URDF_PT_FabricationConstructionDraftsmanToolsAutomated
+    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanToolsAutomated
     to draw its content. This structure allows for dynamic reordering of panels.
     """
 
@@ -57,20 +57,17 @@ class URDF_PT_Preferences:
         box, is_expanded = ui_common.draw_panel_header(
             layout, context, 
             "Preferences", 
-            "urdf_show_panel_preferences", 
-            "urdf_panel_enabled_preferences"
+            "fcd_show_panel_preferences", 
+            "fcd_panel_enabled_preferences"
         )
         
-        if not is_expanded:
-            return
-
         if is_expanded:
             # --- Viewport Display Settings ---
             display_box = box.box()
             display_box.label(text="Viewport Display", icon='VIEW3D')
             row = display_box.row(align=True)
-            row.prop(scene, "urdf_viz_gizmos", text="Show Gizmos")
-            row.prop(scene, "urdf_show_bones", text="Show Bones")
+            row.prop(scene, "fcd_viz_gizmos", text="Show Gizmos")
+            row.prop(scene, "fcd_show_bones", text="Show Bones")
 
             # --- Scene Units ---
             units_box = box.box()
@@ -88,44 +85,44 @@ class URDF_PT_Preferences:
             # --- UI Behavior ---
             behavior_box = box.box()
             behavior_box.label(text="UI Behavior", icon='PREFERENCES')
-            behavior_box.prop(scene, "urdf_auto_collapse_panels")
+            behavior_box.prop(scene, "fcd_auto_collapse_panels")
 
             # --- Panel Order & Visibility Data ---
             names = {
-                "urdf_order_ai_factory": "Generate",
-                "urdf_order_assets": "Asset Library",
-                "urdf_order_parts": "Mechanical Presets",
-                "urdf_order_architectural": "Architectural Presets",
-                "urdf_order_vehicle": "Vehicle Presets",
-                "urdf_order_electronics": "Electronic Presets",
-                "urdf_order_dimensions": "Dimensions & Measuring",
-                "urdf_order_parametric": "Parametric Toolkit",
-                "urdf_order_kinematics": "Kinematics Setup",
-                "urdf_order_inertial": "Inertial",
-                "urdf_order_collision": "Collision",
-                "urdf_order_transmission": "Transmission",
-                "urdf_order_materials": "Materials & Textures",
-                "urdf_order_lighting": "Environment & Lighting",
-                "urdf_order_export": "Export System",
-                "urdf_order_preferences": "Preferences",
+                "fcd_order_ai_factory": "Generate",
+                "fcd_order_assets": "Asset Library",
+                "fcd_order_parts": "Mechanical Presets",
+                "fcd_order_architectural": "Architectural Presets",
+                "fcd_order_vehicle": "Vehicle Presets",
+                "fcd_order_electronics": "Electronic Presets",
+                "fcd_order_dimensions": "Dimensions & Measuring",
+                "fcd_order_parametric": "Parametric Toolkit",
+                "fcd_order_kinematics": "Kinematics Setup",
+                "fcd_order_inertial": "Inertial",
+                "fcd_order_collision": "Collision",
+                "fcd_order_transmission": "Transmission",
+                "fcd_order_materials": "Materials & Textures",
+                "fcd_order_lighting": "Environment & Lighting",
+                "fcd_order_export": "Export System",
+                "fcd_order_preferences": "Preferences",
             }
             
             order_to_visibility = {
-                "urdf_order_ai_factory": "urdf_panel_enabled_ai_factory",
-                "urdf_order_parts": "urdf_panel_enabled_parts",
-                "urdf_order_architectural": "urdf_panel_enabled_architectural",
-                "urdf_order_vehicle": "urdf_panel_enabled_vehicle",
-                "urdf_order_electronics": "urdf_panel_enabled_electronics",
-                "urdf_order_parametric": "urdf_panel_enabled_parametric",
-                "urdf_order_dimensions": "urdf_panel_enabled_dimensions",
-                "urdf_order_materials": "urdf_panel_enabled_materials",
-                "urdf_order_lighting": "urdf_panel_enabled_lighting",
-                "urdf_order_kinematics": "urdf_panel_enabled_kinematics",
-                "urdf_order_inertial": "urdf_panel_enabled_inertial",
-                "urdf_order_collision": "urdf_panel_enabled_collision",
-                "urdf_order_transmission": "urdf_panel_enabled_transmission",
-                "urdf_order_export": "urdf_panel_enabled_export",
-                "urdf_order_assets": "urdf_panel_enabled_assets",
+                "fcd_order_ai_factory": "fcd_panel_enabled_ai_factory",
+                "fcd_order_parts": "fcd_panel_enabled_parts",
+                "fcd_order_architectural": "fcd_panel_enabled_architectural",
+                "fcd_order_vehicle": "fcd_panel_enabled_vehicle",
+                "fcd_order_electronics": "fcd_panel_enabled_electronics",
+                "fcd_order_parametric": "fcd_panel_enabled_parametric",
+                "fcd_order_dimensions": "fcd_panel_enabled_dimensions",
+                "fcd_order_materials": "fcd_panel_enabled_materials",
+                "fcd_order_lighting": "fcd_panel_enabled_lighting",
+                "fcd_order_kinematics": "fcd_panel_enabled_kinematics",
+                "fcd_order_inertial": "fcd_panel_enabled_inertial",
+                "fcd_order_collision": "fcd_panel_enabled_collision",
+                "fcd_order_transmission": "fcd_panel_enabled_transmission",
+                "fcd_order_export": "fcd_panel_enabled_export",
+                "fcd_order_assets": "fcd_panel_enabled_assets",
             }
 
             props = {k: getattr(scene, k, 0) for k in names.keys()}
@@ -148,26 +145,26 @@ class URDF_PT_Preferences:
             for prop_name, _ in sorted_props:
                 row = order_box.row(align=True)
                 row.label(text=names[prop_name])
-                op_up = row.operator("urdf.move_panel", text="", icon='TRIA_UP')
+                op_up = row.operator("fcd.move_panel", text="", icon='TRIA_UP')
                 op_up.direction = 'UP'
                 op_up.prop_name = prop_name
                 
-                op_down = row.operator("urdf.move_panel", text="", icon='TRIA_DOWN')
+                op_down = row.operator("fcd.move_panel", text="", icon='TRIA_DOWN')
                 op_down.direction = 'DOWN'
                 op_down.prop_name = prop_name
                 
             row = order_box.row(align=True)
-            row.operator("urdf.reset_panel_order", icon='LOOP_BACK', text="Reset")
+            row.operator("fcd.reset_panel_order", icon='LOOP_BACK', text="Reset")
 
 
 
 def register():
-    for cls in [URDF_PT_Preferences]:
+    for cls in [FCD_PT_Preferences]:
         if hasattr(cls, 'bl_rna'):
             bpy.utils.register_class(cls)
 
 def unregister():
-    for cls in reversed([URDF_PT_Preferences]):
+    for cls in reversed([FCD_PT_Preferences]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

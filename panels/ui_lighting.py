@@ -33,7 +33,7 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_LightingAndAtmosphere:
+class FCD_PT_Lighting_And_Atmosphere:
     """
     Drawing helper for the 'Lighting & Atmosphere' panel.
     Now focused on individual light editing for Anime-style flexibility.
@@ -41,29 +41,21 @@ class URDF_PT_LightingAndAtmosphere:
 
     @staticmethod
     def poll(context: bpy.types.Context) -> bool:
-        return context.scene.urdf_panel_enabled_lighting
+        return context.scene.fcd_panel_enabled_lighting
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
-        props = getattr(scene, "urdf_lighting_props", None)
+        props = getattr(scene, "fcd_pg_lighting_props", None)
         
-        # Master Box
-        box = layout.box()
+        # 1. Standardized Header
+        box, is_expanded = ui_common.draw_panel_header(
+            layout, context, 
+            "Lighting & Atmosphere", 
+            "fcd_show_panel_lighting", 
+            "fcd_panel_enabled_lighting"
+        )
         
-        # Header Row
-        is_expanded = getattr(scene, "urdf_show_panel_lighting", False)
-        icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
-        row = box.row(align=True)
-        row.scale_y = 1.1
-        
-        op = row.operator("urdf.toggle_panel_visibility", text="Lighting & Atmosphere", emboss=False, icon=icon)
-        if op: op.panel_property = "urdf_show_panel_lighting"
-        
-        row.prop(scene, "urdf_show_panel_lighting", text="", emboss=False, toggle=True)
-        close_op = row.operator("urdf.disable_panel", text="", icon='X')
-        if close_op: close_op.prop_name = "urdf_panel_enabled_lighting"
-
         if is_expanded:
             # --- GLOBAL ENVIRONMENT ---
             if props:
@@ -85,9 +77,9 @@ class URDF_PT_LightingAndAtmosphere:
                 ebbox.separator()
                 row = ebbox.row(align=True)
                 row.label(text="Batch Styling:", icon='LIGHT')
-                op_t = row.operator("urdf.global_toon_sharpness", text="Toon-Ready Scene", icon='SHADING_SOLID')
+                op_t = row.operator("fcd.global_toon_sharpness", text="Toon-Ready Scene", icon='SHADING_SOLID')
                 if op_t: op_t.mode = 'TOON'
-                op_r = row.operator("urdf.global_toon_sharpness", text="Realistic Scene", icon='SHADING_RENDERED')
+                op_r = row.operator("fcd.global_toon_sharpness", text="Realistic Scene", icon='SHADING_RENDERED')
                 if op_r: op_r.mode = 'REALISTIC'
             else:
                 box.label(text="Error: Lighting Settings (props) not found.", icon='ERROR')
@@ -95,7 +87,7 @@ class URDF_PT_LightingAndAtmosphere:
             # --- MATERIAL UTILITIES ---
             mbox = box.box()
             mbox.label(text="Material Utilities", icon='NODE_MATERIAL')
-            mbox.operator("urdf.apply_toon_shader", text="Prepare Object for Toon Style", icon='SHADING_RENDERED')
+            mbox.operator("fcd.apply_toon_shader", text="Prepare Object for Toon Style", icon='SHADING_RENDERED')
 
             # --- SMART LIGHT EDITOR (INDIVIDUAL CONTROL) ---
             box.separator()
@@ -108,7 +100,7 @@ class URDF_PT_LightingAndAtmosphere:
                 main_col = lbox.column(align=True)
                 
                 # Simplified Toon Setup
-                main_col.operator("urdf.toonify_selected_lights", text="Toonify Selected Light", icon='SHADING_SOLID')
+                main_col.operator("fcd.toonify_selected_lights", text="Toonify Selected Light", icon='SHADING_SOLID')
                 
                 main_col.separator()
                 
@@ -127,7 +119,7 @@ class URDF_PT_LightingAndAtmosphere:
                     tbox = main_col.box()
                     tbox.label(text="Targeting (Eyedropper)", icon='TRACKING')
                     tbox.prop(props, "selected_light_target", text="")
-                    tbox.operator("urdf.light_target", text="Add selected lighting to track", icon='ADD')
+                    tbox.operator("fcd.light_target", text="Add selected lighting to track", icon='ADD')
                 
                 # Status Detection (Super-Safe Check)
                 lbox.separator()

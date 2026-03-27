@@ -42,7 +42,7 @@ def setup_native_rope_gn(rope_obj):
     Creates a dynamic Geometry Nodes setup for a physics-enabled rope.
     Generates either a tube or twisted strands along the deformed mesh.
     """
-    gn_group_name = f"URDF_Native_{rope_obj.name}_Rope_GN"
+    gn_group_name = f"FCD_Native_{rope_obj.name}_Rope_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:

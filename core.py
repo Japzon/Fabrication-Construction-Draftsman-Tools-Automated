@@ -35,13 +35,13 @@ from .config import *
 def update_panel_collapse(self, context):
     """Callback for all panel visibility properties to support Auto-Collapse"""
     if not context or not context.scene: return
-    if not context.scene.urdf_auto_collapse_panels: return
+    if not context.scene.fcd_auto_collapse_panels: return
     
     # Identify which property changed. self is the Scene.
     # We find which one is True and collapse all others.
     # Note: Property name is not passed as arg, so we check which one became True
     # in the context of the current Redraw.
-    from .config import URDF_PANEL_PROPS
+    from .config import FCD_PANEL_PROPS
     
     # We find which panel was just opened (it will be True)
     # BUT wait, this update runs AFTER the value is set.
@@ -53,9 +53,9 @@ def update_panel_collapse(self, context):
 #   PART 1: LOGIC, HELPERS & HANDLERS
 # ------------------------------------------------------------------------
 
-class URDF_OT_Core_DisablePanel(bpy.types.Operator):
+class FCD_OT_Core_DisablePanel(bpy.types.Operator):
     """Disables (hides) a panel from the UI. Re-enable it in Preferences > Visible Panels."""
-    bl_idname = "urdf.disable_panel"
+    bl_idname = "fcd.disable_panel"
     bl_label = "Close Panel"
     bl_options = {'INTERNAL'}
     
@@ -66,7 +66,7 @@ class URDF_OT_Core_DisablePanel(bpy.types.Operator):
             setattr(context.scene, self.prop_name, False)
         return {'FINISHED'}
 
-class URDF_OT_Core_TogglePanelVisibility(bpy.types.Operator):
+class FCD_OT_Core_TogglePanelVisibility(bpy.types.Operator):
     """
     Toggles the visibility of a specified UI panel.
 
@@ -74,14 +74,14 @@ class URDF_OT_Core_TogglePanelVisibility(bpy.types.Operator):
     that explicitly controls the panel's expanded/collapsed state. It works by
     flipping a boolean scene property that the panel's `draw` method checks.
     """
-    bl_idname = "urdf.toggle_panel_visibility"
+    bl_idname = "fcd.toggle_panel_visibility"
     bl_label = "Toggle Panel Visibility"
     bl_description = "Expands or collapses a UI panel"
     bl_options = {'INTERNAL'}
 
     panel_property: bpy.props.StringProperty(
         name="Panel Property",
-        description="The name of the boolean scene property to toggle (e.g., 'urdf_show_panel_parts')"
+        description="The name of the boolean scene property to toggle (e.g., 'fcd_show_panel_parts')"
     )
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
@@ -104,21 +104,21 @@ class URDF_OT_Core_TogglePanelVisibility(bpy.types.Operator):
 
         # AI Editor Note: Handle auto-collapse logic here explicitly.
         # This avoids the complexity and potential recursion of property update callbacks.
-        if new_value and context.scene.urdf_auto_collapse_panels:
-            # AI Editor Note: Access URDF_PANEL_PROPS via the config module
+        if new_value and context.scene.fcd_auto_collapse_panels:
+            # AI Editor Note: Access FCD_PANEL_PROPS via the config module
             # to ensure we have the latest version even after partial reloads.
-            panel_props = getattr(config, "URDF_PANEL_PROPS", [])
+            panel_props = getattr(config, "FCD_PANEL_PROPS", [])
             for prop_name in panel_props:
-                if prop_name != self.panel_property:
+                if prop_name != self.panel_property and prop_name.startswith("fcd_show_panel_"):
                     # Double check if scene has the property
                     if hasattr(context.scene, prop_name):
                         setattr(context.scene, prop_name, False)
 
         return {'FINISHED'}
 
-class URDF_OT_Core_SnapCursorToActive(bpy.types.Operator):
+class FCD_OT_Core_SnapCursorToActive(bpy.types.Operator):
     """Snap 3D cursor to the active object's origin"""
-    bl_idname = "urdf.snap_cursor_to_active"
+    bl_idname = "fcd.snap_cursor_to_active"
     bl_label = "Snap Cursor to Active"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -177,10 +177,10 @@ def update_scene_lighting(self, context: bpy.types.Context):
     AI Editor Note: This function is triggered by property updates to provide
     immediate visual feedback.
     """
-    props = context.scene.urdf_lighting_props
+    props = context.scene.fcd_pg_lighting_props
     world = context.scene.world
     if not world:
-        world = bpy.data.worlds.new("URDF_World")
+        world = bpy.data.worlds.new("FCD_World")
         context.scene.world = world
     
     # --- 1. World Background ---
@@ -203,7 +203,7 @@ def update_scene_lighting(self, context: bpy.types.Context):
 
     # --- 2. Lighting Rig Management ---
     # Prefix for identifying addon-managed lights
-    prefix = "URDF_ENV_"
+    prefix = "FCD_ENV_"
     
     # Cleanup old lights
     for obj in list(bpy.data.objects):
@@ -262,11 +262,11 @@ def update_scene_lighting(self, context):
     Applies global scene-wide lighting adjustments (Tint, Background).
     """
     scene = context.scene
-    props = scene.urdf_lighting_props
+    props = scene.fcd_pg_lighting_props
     
     # 1. Update World Background Color
     if not scene.world:
-        scene.world = bpy.data.worlds.new("URDF_World")
+        scene.world = bpy.data.worlds.new("FCD_World")
     
     # Check if using nodes for world
     if scene.world.use_nodes:
@@ -288,7 +288,7 @@ def update_selected_light(self, context: bpy.types.Context):
     if not obj or obj.type != 'LIGHT':
         return
         
-    props = context.scene.urdf_lighting_props
+    props = context.scene.fcd_pg_lighting_props
     light = obj.data
     
     # 1. Type Change
@@ -332,7 +332,7 @@ def update_selected_light(self, context: bpy.types.Context):
         if hasattr(light, 'use_contact_shadow'): light.use_contact_shadow = False
 
 @persistent
-def sync_light_props_handler(scene):
+def sync_light_props_handler(scene, depsgraph=None):
     """
     Synchronizes the UI properties with the currently selected light.
     AI Editor Note: This is triggered on every depsgraph update (selection change).
@@ -343,7 +343,7 @@ def sync_light_props_handler(scene):
     if not obj or obj.type != 'LIGHT':
         return
         
-    props = scene.urdf_lighting_props
+    props = scene.fcd_pg_lighting_props
     light = obj.data
     
     # Avoid updating if we are currently in the middle of a manual property change
@@ -392,7 +392,7 @@ def ensure_default_rig(context: bpy.types.Context) -> Optional[bpy.types.Object]
 
     This function is a cornerstone of the addon's stability. Many operators and UI
     elements depend on having an active rig to work with. This function guarantees
-    that `context.scene.urdf_active_rig` always points to a valid armature.
+    that `context.scene.fcd_active_rig` always points to a valid armature.
 
     The logic is as follows:
     1. If an active rig is already set and exists in the scene, do nothing.
@@ -408,13 +408,13 @@ def ensure_default_rig(context: bpy.types.Context) -> Optional[bpy.types.Object]
         The active rig object, or None if one could not be found or created.
     """
     # 1. Check if the currently set rig is valid and in the view layer.
-    if context.scene.urdf_active_rig and context.scene.urdf_active_rig.name in context.view_layer.objects:
-        return context.scene.urdf_active_rig
+    if context.scene.fcd_active_rig and context.scene.fcd_active_rig.name in context.view_layer.objects:
+        return context.scene.fcd_active_rig
 
     # 2. Search for any existing armature in the view layer.
     for obj in context.view_layer.objects:
         if obj.type == 'ARMATURE':
-            context.scene.urdf_active_rig = obj
+            context.scene.fcd_active_rig = obj
             return obj
 
     # 3. If no armatures exist, create a new one.
@@ -430,7 +430,7 @@ def ensure_default_rig(context: bpy.types.Context) -> Optional[bpy.types.Object]
         # Set display properties for better visibility.
         rig.display_type = 'WIRE'
         rig.show_in_front = True
-        context.scene.urdf_active_rig = rig
+        context.scene.fcd_active_rig = rig
         return rig
     except Exception as e:
         print(f"Error creating default rig: {e}")
@@ -462,7 +462,7 @@ def load_panel_order_handler(dummy: Any) -> None:
     Applies the saved panel order from scene properties after loading a file.
     """
     # Use a timer to ensure context is ready
-    bpy.app.timers.register(lambda: bpy.ops.urdf.update_panel_order() or None, first_interval=0.2)
+    bpy.app.timers.register(lambda: bpy.ops.fcd.update_panel_order() or None, first_interval=0.2)
 
 @persistent
 def set_scene_units_handler(dummy: Any) -> None:
@@ -471,42 +471,57 @@ def set_scene_units_handler(dummy: Any) -> None:
         bpy.context.scene.unit_settings.length_unit = 'MILLIMETERS'
 
 @persistent
-def urdf_placement_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
+def toggle_placement_parenting(scene, context):
     """
-    A persistent handler that runs on every dependency graph update.
-
-    This function is the core of the "Joint Placement Mode". When this mode is active,
-    it automatically snaps any mesh object that is parented to a bone to that bone's
-    position and orientation. This provides an intuitive, "what you see is what you
-    get" workflow for arranging the physical parts of the robot.
-
-    **Optimization:**
-    A naive implementation would be to loop through every bone and then loop
-    through every object to find its children. This handler uses a much more
-    efficient approach by iterating through the scene's objects just once. It
-    directly checks if an object is parented to a bone of the active rig, avoiding
-    nested loops and significantly reducing lag in complex scenes.
-
-    Args:
-        scene: The scene being updated.
-        depsgraph: The dependency graph for the update.
+    Toggles parenting relationship for placement mode.
+    On: Unparents meshes from bones (keeping world transform).
+    Off: Reparents meshes back to their original bones.
     """
-    if not scene.urdf_placement_mode:
-        return
-    rig = scene.urdf_active_rig
-    if not rig or rig.mode != 'POSE':
-        return
+    rig = scene.fcd_active_rig
+    if not rig: return
+    
+    is_active = scene.fcd_placement_mode
+    
+    # AI Editor Note: Using a robust collection search to handle all parts.
+    if is_active:
+        # 1. Store and Detach
+        for obj in bpy.data.objects:
+            if obj.parent == rig and obj.parent_type == 'BONE' and obj.parent_bone:
+                obj["fcd_temp_bone"] = obj.parent_bone
+                # Store world matrix to preserve it exactly
+                old_matrix = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = old_matrix
+    else:
+        # 2. Restore and Reattach
+        for obj in bpy.data.objects:
+            if "fcd_temp_bone" in obj:
+                bone_name = obj["fcd_temp_bone"]
+                if bone_name in rig.pose.bones:
+                    old_matrix = obj.matrix_world.copy()
+                    obj.parent = rig
+                    obj.parent_type = 'BONE'
+                    obj.parent_bone = bone_name
+                    obj.matrix_world = old_matrix
+                del obj["fcd_temp_bone"]
+    
+    # Refresh constraints to reflect placement state (unlock/lock)
+    for bone in rig.pose.bones:
+        apply_native_constraints(bone)
 
-    # AI Editor Note: Per user request, placement mode should NOT influence object alignment.
-    # It should only allow bones to be moved freely (handled by constraint unlocking).
-    # The snapping logic is therefore disabled.
-    return
+@persistent
+def fcd_placement_handler(scene, depsgraph=None):
+    """
+    Persistent handler to ensure placement mode state consistency across view layers.
+    Note: Heavy parenting logic is offloaded to property updates to maintain FPS.
+    """
+    pass
 
 def update_global_bones(self: bpy.types.Scene, context: bpy.types.Context) -> None:
     """
     Update callback for the global "Show Bones" toggle in the UI.
 
-    This function is triggered when the `scene.urdf_show_bones` property is changed.
+    This function is triggered when the `scene.fcd_show_bones` property is changed.
     It iterates through all 3D Viewport spaces in the current screen and sets their
     `overlay.show_bones` property to match the new value. This ensures that the
     visibility of bones is consistent across all viewports.
@@ -521,7 +536,7 @@ def update_global_bones(self: bpy.types.Scene, context: bpy.types.Context) -> No
         if area.type == 'VIEW_3D':
             for space in area.spaces:
                 if space.type == 'VIEW_3D':
-                    space.overlay.show_bones = self.urdf_show_bones
+                    space.overlay.show_bones = self.fcd_show_bones
 
 def get_asset_libraries(self, context):
     items = [('LOCAL', "Current File", "Assets in the current file")]
@@ -544,38 +559,38 @@ def update_category_enum(self: bpy.types.Scene, context: bpy.types.Context) -> N
         self: The scene object.
         context: The current Blender context.
     """
-    cat = context.scene.urdf_part_category
+    cat = context.scene.fcd_part_category
     if cat == 'GEAR':
-        context.scene.urdf_part_type = 'BEVEL'
+        context.scene.fcd_part_type = 'BEVEL'
     elif cat == 'RACK':
-        context.scene.urdf_part_type = 'RACK_BEVEL'
+        context.scene.fcd_part_type = 'RACK_BEVEL'
     elif cat == 'FASTENER':
-        context.scene.urdf_part_type = 'BOLT'
+        context.scene.fcd_part_type = 'BOLT'
     elif cat == 'SPRING':
-        context.scene.urdf_part_type = 'DAMPER'
+        context.scene.fcd_part_type = 'DAMPER'
     elif cat == 'CHAIN':
-        context.scene.urdf_part_type = 'BELT'
+        context.scene.fcd_part_type = 'BELT'
     elif cat == 'WHEEL':
-        context.scene.urdf_part_type = 'WHEEL_CASTER'
+        context.scene.fcd_part_type = 'WHEEL_CASTER'
     elif cat == 'PULLEY':
-        context.scene.urdf_part_type = 'PULLEY_UGROOVE'
+        context.scene.fcd_part_type = 'PULLEY_UGROOVE'
     elif cat == 'ROPE':
-        context.scene.urdf_part_type = 'ROPE_TUBE'
+        context.scene.fcd_part_type = 'ROPE_TUBE'
     elif cat == 'BASIC_JOINT':
-        context.scene.urdf_part_type = 'JOINT_CONTINUOUS'
+        context.scene.fcd_part_type = 'JOINT_CONTINUOUS'
     elif cat == 'ARCHITECTURAL':
-        context.scene.urdf_part_type = 'WALL'
+        context.scene.fcd_part_type = 'WALL'
     elif cat == 'BASIC_SHAPE':
-        context.scene.urdf_part_type = 'SHAPE_CIRCLE'
+        context.scene.fcd_part_type = 'SHAPE_CIRCLE'
 
 def get_mech_types_callback(self: bpy.types.Scene, context: bpy.types.Context) -> List[Tuple[str, str, str]]:
     """
     Callback function to dynamically populate the part sub-type enum property.
 
     This function is essential for the two-level part selection UI. It is called
-    by the `urdf_part_type` EnumProperty to get the list of items to display in
+    by the `fcd_part_type` EnumProperty to get the list of items to display in
     the dropdown. The list it returns depends on the currently selected main
-    category (`urdf_part_category`).
+    category (`fcd_part_category`).
 
     Args:
         self: The Scene object.
@@ -589,7 +604,7 @@ def get_mech_types_callback(self: bpy.types.Scene, context: bpy.types.Context) -
     if not context or not hasattr(context, 'scene'):
         return []
 
-    cat = context.scene.urdf_part_category
+    cat = context.scene.fcd_part_category
     if cat == 'GEAR':
         return GEAR_TYPES
     elif cat == 'RACK':
@@ -609,7 +624,7 @@ def get_mech_types_callback(self: bpy.types.Scene, context: bpy.types.Context) -
     elif cat == 'BASIC_JOINT':
         return BASIC_JOINT_TYPES
     elif cat == 'ARCHITECTURAL':
-        context.scene.urdf_part_type = 'WALL'
+        context.scene.fcd_part_type = 'WALL'
     elif cat == 'BASIC_SHAPE':
         return BASIC_SHAPE_TYPES
     return []
@@ -619,17 +634,17 @@ def update_electronics_category_enum(self: bpy.types.Scene, context: bpy.types.C
     Update callback for the electronics category dropdown.
     Resets the sub-type to a default for the new category.
     """
-    cat = context.scene.urdf_electronics_category
+    cat = context.scene.fcd_electronics_category
     if cat == 'MOTOR':
-        context.scene.urdf_electronics_type = 'MOTOR_BLDC_OUTRUNNER'
+        context.scene.fcd_electronics_type = 'MOTOR_BLDC_OUTRUNNER'
     elif cat == 'SENSOR':
-        context.scene.urdf_electronics_type = 'SENSOR_CONTACT'
+        context.scene.fcd_electronics_type = 'SENSOR_CONTACT'
     elif cat == 'PCB':
-        context.scene.urdf_electronics_type = 'PCB_ARDUINO'
+        context.scene.fcd_electronics_type = 'PCB_ARDUINO'
     elif cat == 'IC':
-        context.scene.urdf_electronics_type = 'IC_CAPACITOR'
+        context.scene.fcd_electronics_type = 'IC_CAPACITOR'
     elif cat == 'CAMERA':
-        context.scene.urdf_electronics_type = 'CAMERA_DEFAULT'
+        context.scene.fcd_electronics_type = 'CAMERA_DEFAULT'
 
 def get_electronics_types_callback(self: bpy.types.Scene, context: bpy.types.Context) -> List[Tuple[str, str, str]]:
     """
@@ -638,7 +653,7 @@ def get_electronics_types_callback(self: bpy.types.Scene, context: bpy.types.Con
     if not context or not hasattr(context, 'scene'):
         return []
 
-    cat = context.scene.urdf_electronics_category
+    cat = context.scene.fcd_electronics_category
     if cat == 'MOTOR':
         return MOTOR_TYPES
     elif cat == 'SENSOR':
@@ -757,8 +772,8 @@ def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
     cursor_loc = context.scene.cursor.location
 
     # --- 1. Create a new rig ---
-    bpy.ops.urdf.create_rig()
-    rig = context.scene.urdf_active_rig
+    bpy.ops.fcd.create_rig()
+    rig = context.scene.fcd_active_rig
     if not rig:
         raise Exception("Failed to create a new rig.")
 
@@ -775,7 +790,7 @@ def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
     # Add a bone for the base. This will be the root.
     context.view_layer.objects.active = base
     base.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     base_bone_name = f"Bone_{base.name.replace('.', '_')}"
 
     # --- 3. Create Arm Links ---
@@ -819,7 +834,7 @@ def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
 
         context.view_layer.objects.active = link_obj
         link_obj.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         link_bone_name = f"Bone_{link_obj.name.replace('.', '_')}"
 
         context.view_layer.objects.active = rig
@@ -830,9 +845,9 @@ def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
 
         pbone = rig.pose.bones.get(link_bone_name)
         if pbone:
-            pbone.urdf_props.joint_type = link_info['joint']
-            pbone.urdf_props.axis_enum = link_info['axis']
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            pbone.fcd_pg_kinematic_props.joint_type = link_info['joint']
+            pbone.fcd_pg_kinematic_props.axis_enum = link_info['axis']
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone)
 
         parent_bone_name = link_bone_name
@@ -872,8 +887,8 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
     cursor_loc = context.scene.cursor.location
 
     # --- 1. Create a new rig ---
-    bpy.ops.urdf.create_rig()
-    rig = context.scene.urdf_active_rig
+    bpy.ops.fcd.create_rig()
+    rig = context.scene.fcd_active_rig
     if not rig:
         raise Exception("Failed to create a new rig.")
 
@@ -889,7 +904,7 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
     # Add a bone for the chassis. This will be the root.
     context.view_layer.objects.active = chassis
     chassis.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     chassis_bone_name = f"Bone_{chassis.name.replace('.', '_')}"
 
     # --- 3. Create Wheels (6-Wheel Configuration) ---
@@ -916,7 +931,7 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
         # Add a bone for the wheel
         context.view_layer.objects.active = wheel
         wheel.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         wheel_bone_name = f"Bone_{wheel.name.replace('.', '_')}"
         wheel_bones.append(wheel_bone_name)
 
@@ -931,9 +946,9 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
     for wheel_bone_name in wheel_bones:
         pbone = rig.pose.bones.get(wheel_bone_name)
         if pbone:
-            pbone.urdf_props.joint_type = 'continuous'
-            pbone.urdf_props.axis_enum = 'Y'
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            pbone.fcd_pg_kinematic_props.joint_type = 'continuous'
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone)
 
     # --- 5. Create Arm ---
@@ -955,7 +970,7 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
 
         context.view_layer.objects.active = link_obj
         link_obj.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         link_bone_name = f"Bone_{link_obj.name.replace('.', '_')}"
 
         context.view_layer.objects.active = rig
@@ -966,9 +981,9 @@ def build_example_rover(context: bpy.types.Context, scale_factor: float = 1.0):
 
         pbone = rig.pose.bones.get(link_bone_name)
         if pbone:
-            pbone.urdf_props.joint_type = link_info['joint']
-            pbone.urdf_props.axis_enum = link_info['axis']
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            pbone.fcd_pg_kinematic_props.joint_type = link_info['joint']
+            pbone.fcd_pg_kinematic_props.axis_enum = link_info['axis']
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone)
 
         parent_bone_name = link_bone_name
@@ -991,8 +1006,8 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
 
     cursor_loc = context.scene.cursor.location
 
-    bpy.ops.urdf.create_rig()
-    rig = context.scene.urdf_active_rig
+    bpy.ops.fcd.create_rig()
+    rig = context.scene.fcd_active_rig
     if not rig: return
 
     # Chassis
@@ -1005,7 +1020,7 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
     
     context.view_layer.objects.active = chassis
     chassis.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     chassis_bone = f"Bone_{chassis.name.replace('.', '_')}"
 
     # Wheels
@@ -1025,7 +1040,7 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
         
         context.view_layer.objects.active = wheel
         wheel.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         w_bone = f"Bone_{wheel.name.replace('.', '_')}"
         
         context.view_layer.objects.active = rig
@@ -1036,9 +1051,9 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
         
         pbone = rig.pose.bones.get(w_bone)
         if pbone:
-            pbone.urdf_props.joint_type = 'continuous'
-            pbone.urdf_props.axis_enum = 'Y'
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            pbone.fcd_pg_kinematic_props.joint_type = 'continuous'
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone)
 
     # Caster
@@ -1050,7 +1065,7 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
     
     context.view_layer.objects.active = caster
     caster.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     c_bone = f"Bone_{caster.name.replace('.', '_')}"
     
     context.view_layer.objects.active = rig
@@ -1061,8 +1076,8 @@ def build_mobile_base_diff_drive(context: bpy.types.Context, scale_factor: float
     
     pbone = rig.pose.bones.get(c_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'fixed'
-        update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+        pbone.fcd_pg_kinematic_props.joint_type = 'fixed'
+        update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
         apply_native_constraints(pbone)
 
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -1079,8 +1094,8 @@ def build_quadruped_spider(context: bpy.types.Context, scale_factor: float = 1.0
 
     cursor_loc = context.scene.cursor.location
     
-    bpy.ops.urdf.create_rig()
-    rig = context.scene.urdf_active_rig
+    bpy.ops.fcd.create_rig()
+    rig = context.scene.fcd_active_rig
     if not rig: return
 
     # Body
@@ -1092,13 +1107,13 @@ def build_quadruped_spider(context: bpy.types.Context, scale_factor: float = 1.0
     
     context.view_layer.objects.active = body
     body.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     body_bone = f"Bone_{body.name.replace('.', '_')}"
     
     pbone = rig.pose.bones.get(body_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
-        update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
+        update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
 
     # --- ADD LEGS ---
     leg_w = 0.04 * scale_factor
@@ -1113,7 +1128,7 @@ def build_quadruped_spider(context: bpy.types.Context, scale_factor: float = 1.0
             leg.name = get_unique_name(f'leg_{side_str}')
             
             context.view_layer.objects.active = leg; leg.select_set(True)
-            bpy.ops.urdf.add_bone()
+            bpy.ops.fcd.add_bone()
             leg_bone = f"Bone_{leg.name.replace('.', '_')}"
             
             # Parent
@@ -1123,8 +1138,8 @@ def build_quadruped_spider(context: bpy.types.Context, scale_factor: float = 1.0
             
             pbone = rig.pose.bones.get(leg_bone)
             if pbone:
-                 pbone.urdf_props.joint_type = 'fixed'
-                 update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+                 pbone.fcd_pg_kinematic_props.joint_type = 'fixed'
+                 update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
     
     # Select rig again
     context.view_layer.objects.active = rig
@@ -1353,7 +1368,7 @@ def setup_and_update_material(obj: bpy.types.Object, color: mathutils.Color) -> 
         return
 
     # 1. Use a unique material name to avoid conflicts.
-    mat_name = f"URDF_{obj.name}_VPMaterial"
+    mat_name = f"FCD_{obj.name}_VPMaterial"
     mat = bpy.data.materials.get(mat_name)
     if not mat:
         mat = bpy.data.materials.new(name=mat_name)
@@ -1398,20 +1413,20 @@ def setup_and_update_material(obj: bpy.types.Object, color: mathutils.Color) -> 
             # This prevents changing the color of one spring from affecting duplicates.
             if mod.node_group.users > 1:
                 new_group = mod.node_group.copy()
-                new_group.name = f"URDF_Native_{obj.name}_Spring_GN"
+                new_group.name = f"FCD_Native_{obj.name}_Spring_GN"
                 mod.node_group = new_group
             
             for node in mod.node_group.nodes:
                 if node.type == 'SET_MATERIAL':
                     node.inputs['Material'].default_value = mat
 
-def update_viewport_material(self: 'URDF_MaterialProperties', context: bpy.types.Context) -> None:
+def update_viewport_material(self: 'FCD_MaterialProperties', context: bpy.types.Context) -> None:
     """
     Update callback for the material color property. This function finds the
     associated object(s) and calls the material setup function.
     """
-    # 'self' is the URDF_MaterialProperties group.
-    # 'self.id_data' is the PropertyGroup that owns it (e.g., URDF_Properties).
+    # 'self' is the FCD_MaterialProperties group.
+    # 'self.id_data' is the PropertyGroup that owns it (e.g., FCD_Properties).
     owner_prop_group = self.id_data
     if not owner_prop_group: return
 
@@ -1422,7 +1437,7 @@ def update_viewport_material(self: 'URDF_MaterialProperties', context: bpy.types
     objects_to_update = []
     if isinstance(owner_datablock, bpy.types.Object):
         # This is a parametric part (e.g., a gear or a chain curve).
-        props = owner_datablock.urdf_mech_props
+        props = owner_datablock.fcd_pg_mech_props
         if props.category == 'CHAIN' and props.instanced_link_obj:
             # For chains, the material is applied to the hidden link object.
             objects_to_update.append(props.instanced_link_obj)
@@ -1536,7 +1551,7 @@ def setup_native_spring(spring_obj: bpy.types.Object, start_empty: bpy.types.Obj
     # --- UNIQUE NODE GROUP ---
     # A unique name based on the spring object's name ensures each spring has its
     # own node group, guaranteeing independence from other springs.
-    gn_group_name = f"URDF_Native_{spring_obj.name}_Spring_GN"
+    gn_group_name = f"FCD_Native_{spring_obj.name}_Spring_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:
@@ -1671,7 +1686,7 @@ def setup_native_damper(damper_obj: bpy.types.Object, start_empty: bpy.types.Obj
     Creates a dynamic, procedural Geometry Nodes setup for a damper.
     Generates a housing tube, piston rod, mounting eyes, and a coilover spring.
     """
-    gn_group_name = f"URDF_Native_{damper_obj.name}_Damper_GN"
+    gn_group_name = f"FCD_Native_{damper_obj.name}_Damper_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     # AI Editor Note: Always clear and recreate the node tree to ensure the latest logic is applied.
@@ -1927,7 +1942,7 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
     The spring path is defined by a start object, an end object, and 
     optional middle hooks.
     """
-    gn_group_name = f"URDF_Native_Slinky_GN"
+    gn_group_name = f"FCD_Native_Slinky_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
     
     if not gn_group:
@@ -2053,7 +2068,7 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
     mod.node_group = gn_group
     
     # Drivers
-    props = slinky_obj.urdf_mech_props
+    props = slinky_obj.fcd_pg_mech_props
     mod["Socket_2"] = start_empty # Start Object
     mod["Socket_3"] = end_empty # End Object
     
@@ -2061,7 +2076,7 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
     if props.slinky_hooks:
         # AI Editor Note: In Blender 4.0+, we can directly assign the collection.
         # However, for robustness we ensure the collection exists and is linked.
-        coll_name = f"URDF_SlinkyHooks_{slinky_obj.name}"
+        coll_name = f"FCD_SlinkyHooks_{slinky_obj.name}"
         coll = bpy.data.collections.get(coll_name)
         if not coll:
             coll = bpy.data.collections.new(coll_name)
@@ -2084,9 +2099,9 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
         v.targets[0].data_path = prop_path
         d.expression = "var"
 
-    add_driver(mod, '["Socket_5"]', slinky_obj, "urdf_mech_props.radius")
-    add_driver(mod, '["Socket_6"]', slinky_obj, "urdf_mech_props.teeth")
-    add_driver(mod, '["Socket_7"]', slinky_obj, "urdf_mech_props.tooth_depth") # Repurposed as wire radius
+    add_driver(mod, '["Socket_5"]', slinky_obj, "fcd_pg_mech_props.radius")
+    add_driver(mod, '["Socket_6"]', slinky_obj, "fcd_pg_mech_props.teeth")
+    add_driver(mod, '["Socket_7"]', slinky_obj, "fcd_pg_mech_props.tooth_depth") # Repurposed as wire radius
     
     # Auto-smooth
     apply_auto_smooth(slinky_obj)
@@ -2103,8 +2118,8 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
     
     if rad_sock: create_driver(damper_obj, '["spring_radius"]', mod.name, rad_sock.identifier)
     if wire_sock: create_driver(damper_obj, '["spring_wire_thickness"]', mod.name, wire_sock.identifier)
-    if len_sock: create_driver(damper_obj, 'urdf_mech_props.height', mod.name, len_sock.identifier)
-    if piston_len_sock: create_driver(damper_obj, 'urdf_mech_props.height', mod.name, piston_len_sock.identifier)
+    if len_sock: create_driver(damper_obj, 'fcd_pg_mech_props.height', mod.name, len_sock.identifier)
+    if piston_len_sock: create_driver(damper_obj, 'fcd_pg_mech_props.height', mod.name, piston_len_sock.identifier)
     if turns_sock: create_driver(damper_obj, '["spring_teeth"]', mod.name, turns_sock.identifier)
     if housing_rad_sock: create_driver(damper_obj, '["damper_housing_radius"]', mod.name, housing_rad_sock.identifier)
     if rod_rad_sock: create_driver(damper_obj, '["damper_rod_radius"]', mod.name, rod_rad_sock.identifier)
@@ -2116,7 +2131,7 @@ def setup_native_rope_gn(rope_obj: bpy.types.Object) -> None:
     High-Fidelity Rope Generator.
     Restores generation by ensuring stable GN linkage and driver assignment.
     """
-    gn_group_name = f"URDF_Native_{rope_obj.name}_Rope_GN"
+    gn_group_name = f"FCD_Native_{rope_obj.name}_Rope_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:
@@ -2339,7 +2354,7 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     It is placed at the top of the modifier stack so that it feeds this generated
     path into the subsequent 'Chain' modifier.
     """
-    gn_group_name = f"URDF_Native_{path_obj.name}_Wrap_GN"
+    gn_group_name = f"FCD_Native_{path_obj.name}_Wrap_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:
@@ -2556,15 +2571,15 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     with bpy.context.temp_override(object=path_obj):
         bpy.ops.object.modifier_move_to_index(modifier=mod_name, index=0)
 
-    if hasattr(path_obj.urdf_mech_props, "chain_wrap_collection"):
+    if hasattr(path_obj.fcd_pg_mech_props, "chain_wrap_collection"):
         wrap_socket = gn_group.interface.items_tree.get("Wrap Collection")
         if wrap_socket:
-            mod[wrap_socket.identifier] = path_obj.urdf_mech_props.chain_wrap_collection
+            mod[wrap_socket.identifier] = path_obj.fcd_pg_mech_props.chain_wrap_collection
 
     # ADDED: Connect Resolution driver
     res_socket = gn_group.interface.items_tree.get("Resolution")
     if res_socket:
-        create_driver(path_obj, '["urdf_native_chain_res"]', mod.name, res_socket.identifier)
+        create_driver(path_obj, '["fcd_native_chain_res"]', mod.name, res_socket.identifier)
 
 def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object) -> None:
     """
@@ -2595,7 +2610,7 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     # --- UNIQUE NODE GROUP ---
     # Create a unique name for the node group based on the path object's name.
     # This ensures that each chain has its own independent node group.
-    gn_group_name = f"URDF_Native_{path_obj.name}_GN"
+    gn_group_name = f"FCD_Native_{path_obj.name}_GN"
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:
@@ -2747,7 +2762,7 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     # The modifier name is kept constant for a given chain type. This is robust
     # because even if the user renames the path object, the drivers that target
     # the modifier by this name will not break.
-    mod_name = f"{MOD_PREFIX}Native_{path_obj.urdf_mech_props.type_chain.capitalize()}Chain"
+    mod_name = f"{MOD_PREFIX}Native_{path_obj.fcd_pg_mech_props.type_chain.capitalize()}Chain"
     mod = path_obj.modifiers.get(mod_name)
     if not mod:
         mod = path_obj.modifiers.new(name=mod_name, type='NODES')
@@ -2766,13 +2781,13 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     if link_len_socket:
         # Create a native driver to link the modifier's input to a persistent, native
         # custom property. This ensures the chain works even if the addon is disabled.
-        create_driver(path_obj, '["urdf_native_chain_pitch"]', mod.name, link_len_socket.identifier)
+        create_driver(path_obj, '["fcd_native_chain_pitch"]', mod.name, link_len_socket.identifier)
 
     if anim_socket:
         # Create a native driver for the animation offset.
-        create_driver(path_obj, '["urdf_native_anim_offset"]', mod.name, anim_socket.identifier)
+        create_driver(path_obj, '["fcd_native_anim_offset"]', mod.name, anim_socket.identifier)
 
-def update_chain_driver_settings(self: 'URDF_MechProps', context: bpy.types.Context) -> None:
+def update_chain_driver_settings(self: 'FCD_PG_Mech_Props', context: bpy.types.Context) -> None:
     """
     Updates the chain driver expression based on radius, ratio, and invert settings.
     AI Editor Note: This allows for real-time manual adjustment of the drive system
@@ -2786,7 +2801,7 @@ def update_chain_driver_settings(self: 'URDF_MechProps', context: bpy.types.Cont
     if not obj.animation_data or not obj.animation_data.drivers:
         return
         
-    fcurve = obj.animation_data.drivers.find('["urdf_native_anim_offset"]')
+    fcurve = obj.animation_data.drivers.find('["fcd_native_anim_offset"]')
     if not fcurve:
         return
 
@@ -2804,13 +2819,13 @@ def update_chain_driver_settings(self: 'URDF_MechProps', context: bpy.types.Cont
 
 def update_dimensions_for_object(obj: bpy.types.Object) -> None:
     """Updates a single dimension object (label or arrow) based on its local properties."""
-    if not obj or not obj.get("urdf_is_dimension"):
+    if not obj or not obj.get("fcd_is_dimension"):
         return
 
     mod = obj.modifiers.get("Dynamic_Dimension")
     # If it has a GN modifier, update the GN parameters
     if mod and mod.node_group:
-        unit_display = getattr(obj, "urdf_dim_unit_display", 'SCENE')
+        unit_display = getattr(obj, "fcd_dim_unit_display", 'SCENE')
         gn_scale, gn_suffix = get_dimension_unit_settings(bpy.context.scene, unit_display)
 
         scale_id = None
@@ -2870,7 +2885,7 @@ def get_dimension_unit_settings(scene, unit_display):
 def update_dimensions(scene: bpy.types.Scene) -> None:
     """Updates all URDF dimension objects."""
     for obj in scene.objects:
-        if obj.get("urdf_is_dimension"):
+        if obj.get("fcd_is_dimension"):
             update_dimensions_for_object(obj)
 
 @persistent
@@ -2881,9 +2896,9 @@ def dimension_update_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgr
     # AI Editor Note: Include scale_length in key to detect unit scale changes
     current_unit_key = f"{unit_settings.system}_{unit_settings.length_unit}_{unit_settings.scale_length}"
     
-    if scene.get("urdf_last_unit_key") != current_unit_key:
+    if scene.get("fcd_last_unit_key") != current_unit_key:
         update_dimensions(scene)
-        scene["urdf_last_unit_key"] = current_unit_key
+        scene["fcd_last_unit_key"] = current_unit_key
 
 # ------------------------------------------------------------------------
 #   PART 1.2: AI GENERATION LOGIC (LOCAL)
@@ -2944,7 +2959,7 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         coll.objects.link(new_obj)
 
         # AI Editor Note: Initial length of spring should match size cage
-        props = new_obj.urdf_mech_props
+        props = new_obj.fcd_pg_mech_props
         props.length = scale_factor
         
         # Helper empties for positioning
@@ -2995,10 +3010,10 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         bm.free()
         
         # Initialize properties
-        new_obj.urdf_mech_props.is_part = True
-        new_obj.urdf_mech_props.category = 'ROPE'
+        new_obj.fcd_pg_mech_props.is_part = True
+        new_obj.fcd_pg_mech_props.category = 'ROPE'
         # length property in props should stay in sync
-        new_obj.urdf_mech_props.length = rope_len
+        new_obj.fcd_pg_mech_props.length = rope_len
     else:
         # Standard Mesh Parts
         mesh = bpy.data.meshes.new(name)
@@ -3012,7 +3027,7 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
     context.view_layer.update()
     
     # --- 2. Set Properties ---
-    props = new_obj.urdf_mech_props
+    props = new_obj.fcd_pg_mech_props
     props.is_part = True
     props.category = category
     
@@ -3275,27 +3290,25 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         e_empty.empty_display_size = 0.2 * scale_factor * s
         
         if type_sub == 'DAMPER':
-            # AI Editor Note: Adjusted to maximize cage. Base max dim approx 0.05m.
-            # Multiplier logic: scale_factor / 0.05.
-            # 0.025 * (scale / 0.05) = 0.5 * scale.
-            props.height = 0.5 * scale_factor # Housing & Piston (combined)
-            props.radius = 0.08 * scale_factor # Radius
-            props.tooth_depth = 0.015 * scale_factor # Wire
-            props.teeth = 9 # Turns
-            props.outer_radius = 0.06 * scale_factor # Housing Radius (Thicker)
-            props.bore_radius = 0.03 * scale_factor # Rod Radius (Thicker)
-            props.damper_seat_radius = 0.1 * scale_factor # Seat Radius (0.01m at 0.1 scale)
-            props.damper_seat_thickness = 0.03 * scale_factor # Seat Thickness (0.003m at 0.1 scale)
+            # Housing & Piston (combined)
+            props.height = 0.5 * scale_factor 
+            props.radius = 0.08 * scale_factor # Housing Radius
+            props.tooth_depth = 0.015 * scale_factor # Rod Radius
+            props.teeth = 9 # Piston Segments
+            props.outer_radius = 0.06 * scale_factor # Thicker Housing
+            props.bore_radius = 0.03 * scale_factor # Rod
+            props.damper_seat_radius = 0.1 * scale_factor
+            props.damper_seat_thickness = 0.03 * scale_factor
         elif type_sub == 'SPRING':
-            props.radius = 0.2 * scale_factor # Spring Radius (0.02m at 0.1 scale)
-            props.tooth_depth = 0.03 * scale_factor # Wire Thickness (0.003m at 0.1 scale)
-            props.teeth = 10 # Turns
+            props.spring_radius = 0.2 * scale_factor
+            props.spring_wire_thickness = 0.03 * scale_factor
+            props.spring_turns = 10
         
         # Setup Driver
         # AI Editor Note: The original code was trying to drive a non-existent custom property '["spring_length"]'.
         # The correct target is the 'length' property within the object's URDF property group.
         # This ensures the data model is kept in sync with the dynamic length of the spring.
-        fcurve = new_obj.driver_add('urdf_mech_props.length')
+        fcurve = new_obj.driver_add('fcd_pg_mech_props.length')
         driver = fcurve.driver; driver.type = 'AVERAGE'
         var = driver.variables.new(); var.name = "dist"; var.type = 'LOC_DIFF'
         var.targets[0].id = s_empty; var.targets[1].id = e_empty
@@ -3313,7 +3326,7 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         setup_native_rope_gn(new_obj)
 
     # --- 6. Final Regeneration ---
-    from .properties import regenerate_mech_mesh
+    from .generators import regenerate_mech_mesh
     regenerate_mech_mesh(new_obj, context)
     
     # AI Editor Note: Ensure the new object is active and selected for immediate operations.
@@ -3452,14 +3465,14 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
     Creates base and joint bones, parents the stator and rotor, and sets constraints.
     Returns the names of the created (base_bone, joint_bone).
     """
-    props = obj.urdf_mech_props
+    props = obj.fcd_pg_mech_props
     if props.category != 'BASIC_JOINT': return None, None
 
     rig = ensure_default_rig(context)
     if not rig: return None, None
 
     # 1. Calculate bone geometry from the rotor object
-    head, tail, roll, radius = _calculate_bone_geometry(obj, context.scene.urdf_bone_axis)
+    head, tail, roll, radius = _calculate_bone_geometry(obj, context.scene.fcd_bone_axis)
 
     unit_scale = context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
@@ -3532,18 +3545,18 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
             stator_obj.parent_bone = pbone_base.name
             stator_obj.matrix_world = original_matrix
         
-        pbone_base.urdf_props.joint_type = 'base'
-        update_single_bone_gizmo(pbone_base, context.scene.urdf_viz_gizmos)
+        pbone_base.fcd_pg_kinematic_props.joint_type = 'base'
+        update_single_bone_gizmo(pbone_base, context.scene.fcd_viz_gizmos)
         apply_native_constraints(pbone_base)
 
     # Configure screw bone (Prismatic only)
     if props.type_basic_joint == 'JOINT_PRISMATIC':
         pbone_screw = rig.pose.bones.get(screw_bone_name)
         if pbone_screw:
-            pbone_screw.urdf_props.joint_type = 'continuous'
-            pbone_screw.urdf_props.axis_enum = 'Z'
-            pbone_screw.urdf_props.joint_radius = radius
-            update_single_bone_gizmo(pbone_screw, context.scene.urdf_viz_gizmos)
+            pbone_screw.fcd_pg_kinematic_props.joint_type = 'continuous'
+            pbone_screw.fcd_pg_kinematic_props.axis_enum = 'Z'
+            pbone_screw.fcd_pg_kinematic_props.joint_radius = radius
+            update_single_bone_gizmo(pbone_screw, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone_screw)
             screw_obj = props.joint_screw_obj
             if screw_obj:
@@ -3582,16 +3595,16 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
             'JOINT_PRISMATIC_WHEELS_ROT': 'prismatic',
             'JOINT_SPHERICAL': 'base',
         }
-        pbone_joint.urdf_props.joint_type = joint_type_map.get(props.type_basic_joint, 'fixed')
-        pbone_joint.urdf_props.axis_enum = 'Z'
-        pbone_joint.urdf_props.joint_radius = radius
+        pbone_joint.fcd_pg_kinematic_props.joint_type = joint_type_map.get(props.type_basic_joint, 'fixed')
+        pbone_joint.fcd_pg_kinematic_props.axis_enum = 'Z'
+        pbone_joint.fcd_pg_kinematic_props.joint_radius = radius
 
         # AI Editor Note: Set default limits for Revolute joints as requested (-115 to 115)
         if props.type_basic_joint == 'JOINT_REVOLUTE':
-            pbone_joint.urdf_props.lower_limit = -115.0
-            pbone_joint.urdf_props.upper_limit = 115.0
+            pbone_joint.fcd_pg_kinematic_props.lower_limit = -115.0
+            pbone_joint.fcd_pg_kinematic_props.upper_limit = 115.0
 
-        update_single_bone_gizmo(pbone_joint, context.scene.urdf_viz_gizmos)
+        update_single_bone_gizmo(pbone_joint, context.scene.fcd_viz_gizmos)
         apply_native_constraints(pbone_joint)
         
         if props.type_basic_joint == 'JOINT_PRISMATIC':
@@ -3600,8 +3613,8 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
             calc_ratio = props.radius * 3.0
             
             add_native_driver_relation(pbone_joint, screw_bone_name, ratio=calc_ratio, invert=False)
-            if not any(m.target_bone == screw_bone_name for m in pbone_joint.urdf_props.mimic_drivers):
-                mimic_entry = pbone_joint.urdf_props.mimic_drivers.add()
+            if not any(m.target_bone == screw_bone_name for m in pbone_joint.fcd_pg_kinematic_props.mimic_drivers):
+                mimic_entry = pbone_joint.fcd_pg_kinematic_props.mimic_drivers.add()
                 mimic_entry.target_bone = screw_bone_name
                 mimic_entry.ratio = calc_ratio
 
@@ -3611,7 +3624,7 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
 
 def _build_procedural_drone(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Procedurally builds a quadcopter drone."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     # Body
@@ -3623,13 +3636,13 @@ def _build_procedural_drone(context: bpy.types.Context, config: Dict[str, Any], 
     
     context.view_layer.objects.active = body
     body.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     body_bone = f"Bone_{body.name.replace('.', '_')}"
     
     # Base joint
     pbone = rig.pose.bones.get(body_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
 
     # Arms & Motors
@@ -3670,7 +3683,7 @@ def _build_procedural_drone(context: bpy.types.Context, config: Dict[str, Any], 
         
         context.view_layer.objects.active = motor
         motor.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         motor_bone = f"Bone_{motor.name.replace('.', '_')}"
         
         # Parent motor bone to body bone
@@ -3682,14 +3695,14 @@ def _build_procedural_drone(context: bpy.types.Context, config: Dict[str, Any], 
         
         pbone = rig.pose.bones.get(motor_bone)
         if pbone:
-            pbone.urdf_props.joint_type = 'continuous'
-            pbone.urdf_props.axis_enum = 'Z'
+            pbone.fcd_pg_kinematic_props.joint_type = 'continuous'
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Z'
             update_single_bone_gizmo(pbone, True)
             apply_native_constraints(pbone)
 
 def _build_procedural_plane(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Procedurally builds a simple airplane."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     # Fuselage
@@ -3703,12 +3716,12 @@ def _build_procedural_plane(context: bpy.types.Context, config: Dict[str, Any], 
     
     context.view_layer.objects.active = fuselage
     fuselage.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     base_bone = f"Bone_{fuselage.name.replace('.', '_')}"
     
     pbone = rig.pose.bones.get(base_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
         
     # Wings
@@ -3735,7 +3748,7 @@ def _build_procedural_plane(context: bpy.types.Context, config: Dict[str, Any], 
     
     context.view_layer.objects.active = motor
     motor.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     motor_bone = f"Bone_{motor.name.replace('.', '_')}"
     
     context.view_layer.objects.active = rig
@@ -3748,14 +3761,14 @@ def _build_procedural_plane(context: bpy.types.Context, config: Dict[str, Any], 
     
     pbone = rig.pose.bones.get(motor_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'continuous'
-        pbone.urdf_props.axis_enum = '-Y'
+        pbone.fcd_pg_kinematic_props.joint_type = 'continuous'
+        pbone.fcd_pg_kinematic_props.axis_enum = '-Y'
         update_single_bone_gizmo(pbone, True)
         apply_native_constraints(pbone)
 
 def _build_procedural_furniture(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Procedurally builds a closet/cabinet."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     # Cabinet Body
@@ -3771,12 +3784,12 @@ def _build_procedural_furniture(context: bpy.types.Context, config: Dict[str, An
     
     context.view_layer.objects.active = cabinet
     cabinet.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     base_bone = f"Bone_{cabinet.name.replace('.', '_')}"
     
     pbone = rig.pose.bones.get(base_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
         
     # Doors (Left and Right)
@@ -3811,7 +3824,7 @@ def _build_procedural_furniture(context: bpy.types.Context, config: Dict[str, An
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
         cursor.location = saved_loc
         
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         door_bone = f"Bone_{door.name.replace('.', '_')}"
         
         # Parent to cabinet
@@ -3823,16 +3836,16 @@ def _build_procedural_furniture(context: bpy.types.Context, config: Dict[str, An
         
         pbone = rig.pose.bones.get(door_bone)
         if pbone:
-            pbone.urdf_props.joint_type = 'revolute'
-            pbone.urdf_props.axis_enum = 'Z'
-            pbone.urdf_props.lower_limit = 0 if side > 0 else -90
-            pbone.urdf_props.upper_limit = 90 if side > 0 else 0
+            pbone.fcd_pg_kinematic_props.joint_type = 'revolute'
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Z'
+            pbone.fcd_pg_kinematic_props.lower_limit = 0 if side > 0 else -90
+            pbone.fcd_pg_kinematic_props.upper_limit = 90 if side > 0 else 0
             update_single_bone_gizmo(pbone, True)
             apply_native_constraints(pbone)
 
 def _build_procedural_conveyor(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Procedurally builds an escalator/conveyor."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     # Ramp/Base
@@ -3849,12 +3862,12 @@ def _build_procedural_conveyor(context: bpy.types.Context, config: Dict[str, Any
     
     context.view_layer.objects.active = ramp
     ramp.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     base_bone = f"Bone_{ramp.name.replace('.', '_')}"
     
     pbone = rig.pose.bones.get(base_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
         
     # Steps
@@ -3870,7 +3883,7 @@ def _build_procedural_conveyor(context: bpy.types.Context, config: Dict[str, Any
     
     context.view_layer.objects.active = step
     step.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     step_bone = f"Bone_{step.name.replace('.', '_')}"
     
     # Parent to base
@@ -3887,10 +3900,10 @@ def _build_procedural_conveyor(context: bpy.types.Context, config: Dict[str, Any
     
     pbone = rig.pose.bones.get(step_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'prismatic'
-        pbone.urdf_props.axis_enum = 'Y' # Bone Y is length/direction
-        pbone.urdf_props.lower_limit = 0.0
-        pbone.urdf_props.upper_limit = math.sqrt(length**2 + height**2)
+        pbone.fcd_pg_kinematic_props.joint_type = 'prismatic'
+        pbone.fcd_pg_kinematic_props.axis_enum = 'Y' # Bone Y is length/direction
+        pbone.fcd_pg_kinematic_props.lower_limit = 0.0
+        pbone.fcd_pg_kinematic_props.upper_limit = math.sqrt(length**2 + height**2)
         update_single_bone_gizmo(pbone, True)
         apply_native_constraints(pbone)
 
@@ -4003,7 +4016,7 @@ def parse_natural_language_prompt(prompt: str) -> Dict[str, Any]:
 
 def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Procedurally builds a simple humanoid robot."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
 
     # --- FOUNDATION: Torso ---
@@ -4021,12 +4034,12 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
     
     context.view_layer.objects.active = torso
     torso.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     torso_bone = f"Bone_{torso.name.replace('.', '_')}"
     
     pbone = rig.pose.bones.get(torso_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
 
     # --- ACTION: LEGS ---
@@ -4042,10 +4055,10 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
         rig.data.edit_bones[base_bone].parent = rig.data.edit_bones[parent_bone_name]
         bpy.ops.object.mode_set(mode='POSE')
-        pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Z'
+        pbone = rig.pose.bones.get(joint_bone); pbone.fcd_pg_kinematic_props.axis_enum = 'Z'
         parent_bone_name = joint_bone
         context.view_layer.update() # Update for next calculation
-        current_pos = hip_joint.matrix_world @ mathutils.Vector((hip_joint.urdf_mech_props.radius + hip_joint.urdf_mech_props.rotor_arm_length, 0, 0))
+        current_pos = hip_joint.matrix_world @ mathutils.Vector((hip_joint.fcd_pg_mech_props.radius + hip_joint.fcd_pg_mech_props.rotor_arm_length, 0, 0))
 
         # --- Knee Joint (Y-axis rotation) ---
         knee_joint = create_parametric_part_object(context, 'BASIC_JOINT', 'JOINT_REVOLUTE', current_pos, scale_factor=scale_factor*0.7, rotor_arm_length=0.3*scale_factor)
@@ -4055,10 +4068,10 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
         rig.data.edit_bones[base_bone].parent = rig.data.edit_bones[parent_bone_name]
         bpy.ops.object.mode_set(mode='POSE')
-        pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Y'
+        pbone = rig.pose.bones.get(joint_bone); pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
         parent_bone_name = joint_bone
         context.view_layer.update() # Update for next calculation
-        current_pos = knee_joint.matrix_world @ mathutils.Vector((knee_joint.urdf_mech_props.radius + knee_joint.urdf_mech_props.rotor_arm_length, 0, 0))
+        current_pos = knee_joint.matrix_world @ mathutils.Vector((knee_joint.fcd_pg_mech_props.radius + knee_joint.fcd_pg_mech_props.rotor_arm_length, 0, 0))
 
         # --- Foot ---
         foot_pos = current_pos + mathutils.Vector((0.05*scale_factor, 0, 0))
@@ -4067,12 +4080,12 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         foot.name = get_unique_name(f"Foot_{side_str}")
         foot.dimensions = (0.15 * scale_factor, 0.1 * scale_factor, 0.04 * scale_factor)
         bpy.ops.object.transform_apply(scale=True)
-        context.view_layer.objects.active = foot; foot.select_set(True); bpy.ops.urdf.add_bone()
+        context.view_layer.objects.active = foot; foot.select_set(True); bpy.ops.fcd.add_bone()
         foot_bone = f"Bone_{foot.name.replace('.', '_')}"
         context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
         rig.data.edit_bones[foot_bone].parent = rig.data.edit_bones[parent_bone_name]
         bpy.ops.object.mode_set(mode='POSE')
-        pbone = rig.pose.bones.get(foot_bone); pbone.urdf_props.joint_type = 'fixed'
+        pbone = rig.pose.bones.get(foot_bone); pbone.fcd_pg_kinematic_props.joint_type = 'fixed'
 
     # --- ACTION: ARMS ---
     for side in [-1, 1]: # Left (-1), Right (1)
@@ -4088,10 +4101,10 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
         rig.data.edit_bones[base_bone].parent = rig.data.edit_bones[parent_bone_name]
         bpy.ops.object.mode_set(mode='POSE')
-        pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Y'
+        pbone = rig.pose.bones.get(joint_bone); pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
         parent_bone_name = joint_bone
         context.view_layer.update() # Update for next calculation
-        current_pos = shoulder_joint.matrix_world @ mathutils.Vector((shoulder_joint.urdf_mech_props.radius + shoulder_joint.urdf_mech_props.rotor_arm_length, 0, 0))
+        current_pos = shoulder_joint.matrix_world @ mathutils.Vector((shoulder_joint.fcd_pg_mech_props.radius + shoulder_joint.fcd_pg_mech_props.rotor_arm_length, 0, 0))
 
         # --- Elbow Joint ---
         elbow_joint = create_parametric_part_object(context, 'BASIC_JOINT', 'JOINT_REVOLUTE', current_pos, scale_factor=scale_factor*0.5, rotor_arm_length=0.2*scale_factor)
@@ -4101,7 +4114,7 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
         context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
         rig.data.edit_bones[base_bone].parent = rig.data.edit_bones[parent_bone_name]
         bpy.ops.object.mode_set(mode='POSE')
-        pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Y'
+        pbone = rig.pose.bones.get(joint_bone); pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
 
     # --- ACTION: HEAD ---
     unit_scale = context.scene.unit_settings.scale_length
@@ -4114,22 +4127,22 @@ def _build_procedural_humanoid(context: bpy.types.Context, config: Dict[str, Any
     context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
     rig.data.edit_bones[base_bone].parent = rig.data.edit_bones[torso_bone]
     bpy.ops.object.mode_set(mode='POSE')
-    pbone = rig.pose.bones.get(joint_bone); pbone.urdf_props.axis_enum = 'Z'
+    pbone = rig.pose.bones.get(joint_bone); pbone.fcd_pg_kinematic_props.axis_enum = 'Z'
     
     context.view_layer.update() # Update for head position
-    head_pos = neck_joint.matrix_world @ mathutils.Vector((0, 0, (neck_joint.urdf_mech_props.length / 2 + 0.1*scale_factor) * s))
+    head_pos = neck_joint.matrix_world @ mathutils.Vector((0, 0, (neck_joint.fcd_pg_mech_props.length / 2 + 0.1*scale_factor) * s))
     bpy.ops.mesh.primitive_uv_sphere_add(radius=0.12*scale_factor*s, location=head_pos)
     head = context.active_object; head.name = get_unique_name("Head")
-    context.view_layer.objects.active = head; head.select_set(True); bpy.ops.urdf.add_bone()
+    context.view_layer.objects.active = head; head.select_set(True); bpy.ops.fcd.add_bone()
     head_mesh_bone = f"Bone_{head.name.replace('.', '_')}"
     context.view_layer.objects.active = rig; rig.select_set(True); bpy.ops.object.mode_set(mode='EDIT')
     rig.data.edit_bones[head_mesh_bone].parent = rig.data.edit_bones[joint_bone]
     bpy.ops.object.mode_set(mode='POSE')
-    pbone = rig.pose.bones.get(head_mesh_bone); pbone.urdf_props.joint_type = 'fixed'
+    pbone = rig.pose.bones.get(head_mesh_bone); pbone.fcd_pg_kinematic_props.joint_type = 'fixed'
 
 def _build_simple_shape(context: bpy.types.Context, shape_type: str, scale_factor: float):
     """Generates a simple primitive shape with a base bone."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     unit_scale = context.scene.unit_settings.scale_length
@@ -4148,17 +4161,17 @@ def _build_simple_shape(context: bpy.types.Context, shape_type: str, scale_facto
     
     context.view_layer.objects.active = obj
     obj.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     
     bone_name = f"Bone_{obj.name.replace('.', '_')}"
     pbone = rig.pose.bones.get(bone_name)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
 
 def _build_procedural_parts(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """Generates standalone components based on the prompt."""
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     offset = mathutils.Vector((0, 0, 0))
     spacing = 0.2 * scale_factor
@@ -4216,12 +4229,12 @@ def _build_procedural_parts(context: bpy.types.Context, config: Dict[str, Any], 
             # Auto-rig as base link so it can be moved
             context.view_layer.objects.active = obj
             obj.select_set(True)
-            bpy.ops.urdf.add_bone()
+            bpy.ops.fcd.add_bone()
             
             bone_name = f"Bone_{obj.name.replace('.', '_')}"
             pbone = rig.pose.bones.get(bone_name)
             if pbone:
-                pbone.urdf_props.joint_type = 'base'
+                pbone.fcd_pg_kinematic_props.joint_type = 'base'
                 update_single_bone_gizmo(pbone, True)
         
         offset.x += spacing
@@ -4230,7 +4243,7 @@ def _build_procedural_arm(context: bpy.types.Context, config: Dict[str, Any], sc
     """
     Procedurally builds a robotic arm.
     """
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     num_joints = config['params'].get('joints', 4)
@@ -4257,13 +4270,13 @@ def _build_procedural_arm(context: bpy.types.Context, config: Dict[str, Any], sc
         
         context.view_layer.objects.active = base_link
         base_link.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         parent_bone_name = f"Bone_{base_link.name.replace('.', '_')}"
         
         # Set base joint type
         pbone = rig.pose.bones.get(parent_bone_name)
         if pbone:
-            pbone.urdf_props.joint_type = 'base'
+            pbone.fcd_pg_kinematic_props.joint_type = 'base'
             update_single_bone_gizmo(pbone, True)
         
         base_pos.z += 0.05 * scale_factor
@@ -4317,14 +4330,14 @@ def _build_procedural_arm(context: bpy.types.Context, config: Dict[str, Any], sc
         pbone = rig.pose.bones.get(joint_bone)
         if pbone:
             if i == 0:
-                pbone.urdf_props.joint_type = 'continuous' # Base rotation
-                pbone.urdf_props.axis_enum = 'Z'
+                pbone.fcd_pg_kinematic_props.joint_type = 'continuous' # Base rotation
+                pbone.fcd_pg_kinematic_props.axis_enum = 'Z'
             elif i % 2 == 1:
-                pbone.urdf_props.joint_type = 'revolute'
-                pbone.urdf_props.axis_enum = 'Y'
+                pbone.fcd_pg_kinematic_props.joint_type = 'revolute'
+                pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
             else:
-                pbone.urdf_props.joint_type = 'revolute'
-                pbone.urdf_props.axis_enum = 'Y' # Keep Y for main lift joints usually
+                pbone.fcd_pg_kinematic_props.joint_type = 'revolute'
+                pbone.fcd_pg_kinematic_props.axis_enum = 'Y' # Keep Y for main lift joints usually
             
             update_single_bone_gizmo(pbone, True)
             apply_native_constraints(pbone)
@@ -4340,18 +4353,18 @@ def _build_procedural_arm(context: bpy.types.Context, config: Dict[str, Any], sc
         # For continuous joints (turrets), stack vertically. For revolute arms, move along the arm length.
         if joint_type == 'JOINT_CONTINUOUS':
             # Stack on top: Z-offset = length/2 (center to top)
-            current_pos = joint_obj.matrix_world @ mathutils.Vector((0, 0, joint_obj.urdf_mech_props.length / 2.0))
+            current_pos = joint_obj.matrix_world @ mathutils.Vector((0, 0, joint_obj.fcd_pg_mech_props.length / 2.0))
         else:
             # Extend along arm: X-offset = radius + arm_length
             # Note: The joint object is rotated, so local X is the arm direction.
-            arm_ext = joint_obj.urdf_mech_props.radius + joint_obj.urdf_mech_props.rotor_arm_length
+            arm_ext = joint_obj.fcd_pg_mech_props.radius + joint_obj.fcd_pg_mech_props.rotor_arm_length
             current_pos = joint_obj.matrix_world @ mathutils.Vector((arm_ext, 0, 0))
 
 def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], scale_factor: float):
     """
     Procedurally builds a rover based on config.
     """
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     cursor_loc = context.scene.cursor.location
     
     # --- COGNITION: Dimension Planning ---
@@ -4380,13 +4393,13 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
     
     context.view_layer.objects.active = chassis
     chassis.select_set(True)
-    bpy.ops.urdf.add_bone()
+    bpy.ops.fcd.add_bone()
     chassis_bone = f"Bone_{chassis.name.replace('.', '_')}"
     
     # Set chassis as base
     pbone = rig.pose.bones.get(chassis_bone)
     if pbone:
-        pbone.urdf_props.joint_type = 'base'
+        pbone.fcd_pg_kinematic_props.joint_type = 'base'
         update_single_bone_gizmo(pbone, True)
         apply_native_constraints(pbone)
 
@@ -4431,7 +4444,7 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
         
         context.view_layer.objects.active = wheel
         wheel.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         w_bone = f"Bone_{wheel.name.replace('.', '_')}"
         
         # Parent to chassis
@@ -4443,8 +4456,8 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
         
         pbone = rig.pose.bones.get(w_bone)
         if pbone:
-            pbone.urdf_props.joint_type = 'continuous'
-            pbone.urdf_props.axis_enum = 'Y'
+            pbone.fcd_pg_kinematic_props.joint_type = 'continuous'
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Y'
             update_single_bone_gizmo(pbone, True)
             apply_native_constraints(pbone)
 
@@ -4461,7 +4474,7 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
         
         context.view_layer.objects.active = lidar
         lidar.select_set(True)
-        bpy.ops.urdf.add_bone()
+        bpy.ops.fcd.add_bone()
         l_bone = f"Bone_{lidar.name.replace('.', '_')}"
         
         context.view_layer.objects.active = rig
@@ -4472,7 +4485,7 @@ def _build_procedural_rover(context: bpy.types.Context, config: Dict[str, Any], 
         
         pbone = rig.pose.bones.get(l_bone)
         if pbone:
-            pbone.urdf_props.joint_type = 'fixed'
+            pbone.fcd_pg_kinematic_props.joint_type = 'fixed'
             update_single_bone_gizmo(pbone, True)
             apply_native_constraints(pbone)
 
@@ -4499,8 +4512,8 @@ def build_generative_robot(context: bpy.types.Context, prompt: str, scale_factor
     bpy.ops.object.select_all(action='DESELECT')
     
     # --- 2. FOUNDATION: Create Rig ---
-    bpy.ops.urdf.create_rig()
-    rig = context.scene.urdf_active_rig
+    bpy.ops.fcd.create_rig()
+    rig = context.scene.fcd_active_rig
     if not rig:
         print("URDF AI Error: Failed to create rig foundation.")
         return
@@ -4594,7 +4607,7 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
         show_gizmos: A boolean from the global UI toggle indicating whether
                      gizmos should be visible at all.
     """
-    props = bone.urdf_props
+    props = bone.fcd_pg_kinematic_props
     if not show_gizmos or props.joint_type == 'none':
         bone.custom_shape = None
         return
@@ -4622,7 +4635,7 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
     if gizmo_type == 'BASE': target_axis = 'Z'
 
     # AI Editor Note: Retrieve the global gizmo style setting.
-    style = bpy.context.scene.urdf_gizmo_style
+    style = bpy.context.scene.fcd_gizmo_style
     wgt = create_flat_gizmo(gizmo_type, target_axis, style)
 
     if wgt:
@@ -4637,10 +4650,10 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool) -> Non
             and returns its properties.
             """
             for obj in get_all_children_objects(b, bpy.context):
-                if hasattr(obj, "urdf_mech_props") and obj.urdf_mech_props.is_part and obj.urdf_mech_props.category == 'BASIC_JOINT':
+                if hasattr(obj, "fcd_pg_mech_props") and obj.fcd_pg_mech_props.is_part and obj.fcd_pg_mech_props.category == 'BASIC_JOINT':
                     # Return the actual geometry radius if it's a gear/wheel
-                    if obj.urdf_mech_props.category in ['GEAR', 'WHEEL', 'BASIC_JOINT']:
-                        return obj.urdf_mech_props
+                    if obj.fcd_pg_mech_props.category in ['GEAR', 'WHEEL', 'BASIC_JOINT']:
+                        return obj.fcd_pg_mech_props
             return None
         # --- ACTION: Calculate Bone-Local Bounding Box ---
         local_min = mathutils.Vector((float('inf'), float('inf'), float('inf')))
@@ -4764,7 +4777,7 @@ def clean_conflicting_mechanics(bone: bpy.types.PoseBone) -> None:
     Args:
         bone: The `PoseBone` to clean.
     """
-    props = bone.urdf_props
+    props = bone.fcd_pg_kinematic_props
     is_rot = props.joint_type in ['revolute', 'continuous']
     is_lin = props.joint_type == 'prismatic'
 
@@ -4792,7 +4805,7 @@ def clean_conflicting_mechanics(bone: bpy.types.PoseBone) -> None:
     for d in drivers_to_remove:
         drivers.remove(d)
 
-def remove_all_urdf_constraints(bone: bpy.types.PoseBone) -> None:
+def remove_all_fcd_constraints(bone: bpy.types.PoseBone) -> None:
     """Helper to thoroughly remove all limit constraints created by the addon."""
     from .config import MOD_PREFIX
     for c in list(bone.constraints):
@@ -4817,7 +4830,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     Args:
         bone: The `PoseBone` to apply the constraints to.
     """
-    props = bone.urdf_props
+    props = bone.fcd_pg_kinematic_props
     # Get the numerical index (0, 1, 2) corresponding to the UI selection.
     ui_idx = get_mapped_axis_index(props.axis_enum)
 
@@ -4831,7 +4844,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     axis_map = {0: 2, 1: 0, 2: 1}
     unlocked_idx = axis_map.get(ui_idx, ui_idx)
 
-    is_placing = bpy.context.scene.urdf_placement_mode
+    is_placing = bpy.context.scene.fcd_placement_mode
 
     # --- 1. Handle Special Modes (Placement / None) ---
     if is_placing:
@@ -4850,7 +4863,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
         bone.use_ik_limit_y = False
         bone.use_ik_limit_z = False
         
-        remove_all_urdf_constraints(bone)
+        remove_all_fcd_constraints(bone)
         return
 
     if props.joint_type in ['none', 'base']:
@@ -4864,7 +4877,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
         bone.use_ik_limit_y = False
         bone.use_ik_limit_z = False
         
-        remove_all_urdf_constraints(bone)
+        remove_all_fcd_constraints(bone)
         return
 
     # --- 2. Calculate the Desired Constraint State ---
@@ -4875,7 +4888,7 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     ik_use_limit_rot = [True, True, True]
     ik_rot_limits = [(0, 0), (0, 0), (0, 0)]
 
-    remove_all_urdf_constraints(bone)
+    remove_all_fcd_constraints(bone)
 
     if props.joint_type in ['revolute', 'continuous']:
         # For rotational joints, unlock the appropriate rotation axis for both FK and IK.
@@ -4902,6 +4915,13 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
             if unlocked_idx == 0: con.use_limit_x = True; con.min_x = min_rad; con.max_x = max_rad
             elif unlocked_idx == 1: con.use_limit_y = True; con.min_y = min_rad; con.max_y = max_rad
             elif unlocked_idx == 2: con.use_limit_z = True; con.min_z = min_rad; con.max_z = max_rad
+            
+    elif props.joint_type == 'spherical':
+        # Spherical joints are free to rotate on all axes
+        fk_lock_rot = [False, False, False]
+        # For IK, unlock all rotation axes
+        ik_use_limit_rot = [False, False, False]
+        # No FK limits needed for a full spherical joint by default
 
     elif props.joint_type == 'prismatic':
         # For linear joints, unlock the appropriate location axis for both FK and IK.
@@ -4961,7 +4981,7 @@ def update_local_cursor_from_tool(self, context):
     if context.active_object:
         obj = context.active_object
         # 'self' is the scene here
-        local_co = self.urdf_cursor_local_pos
+        local_co = self.fcd_cursor_local_pos
         world_co = obj.matrix_world @ mathutils.Vector(local_co)
         
         # Check to prevent feedback loops if the value hasn't changed significantly
@@ -4984,14 +5004,14 @@ def local_cursor_depsgraph_handler(scene: bpy.types.Scene, depsgraph: bpy.types.
     cursor_local_vec = obj.matrix_world.inverted() @ scene.cursor.location
 
     global _local_cursor_update_guard
-    if (scene.urdf_cursor_local_pos - cursor_local_vec).length > 0.0001:
+    if (scene.fcd_cursor_local_pos - cursor_local_vec).length > 0.0001:
         _local_cursor_update_guard = True
         try:
-            scene.urdf_cursor_local_pos = cursor_local_vec
+            scene.fcd_cursor_local_pos = cursor_local_vec
         finally:
             _local_cursor_update_guard = False
 
-def urdf_prop_update(self, context, prop_name: str):
+def fcd_prop_update(self, context, prop_name: str):
     """
     Generic update callback for URDF properties on PoseBones.
 
@@ -5015,7 +5035,7 @@ def urdf_prop_update(self, context, prop_name: str):
         if isinstance(this_bone, bpy.types.Object) and this_bone.type == 'ARMATURE':
             try:
                 path = self.path_from_id()
-                # Expected path format: pose.bones["BoneName"].urdf_props
+                # Expected path format: pose.bones["BoneName"].fcd_pg_kinematic_props
                 match = re.search(r'pose\.bones\["([^"]+)"\]', path)
                 if match:
                     bone_name = match.group(1)
@@ -5031,7 +5051,7 @@ def urdf_prop_update(self, context, prop_name: str):
     # This ensures that when a property is set on a non-active bone (e.g. during
     # propagation), its visual and mechanical state is correctly updated.
     clean_conflicting_mechanics(this_bone)
-    update_single_bone_gizmo(this_bone, context.scene.urdf_viz_gizmos)
+    update_single_bone_gizmo(this_bone, context.scene.fcd_viz_gizmos)
     apply_native_constraints(this_bone)
     # Special handling for relationships and IK
     if prop_name in {'ratio_value', 'ratio_invert'} and self.ratio_target_bone:
@@ -5053,10 +5073,10 @@ def urdf_prop_update(self, context, prop_name: str):
             bones_to_update = getattr(context, 'selected_pose_bones_from_active_object', context.selected_pose_bones)
             for bone in bones_to_update:
                 if bone != active_bone:
-                    # Setting this property will call urdf_prop_update(bone, ...)
+                    # Setting this property will call fcd_prop_update(bone, ...)
                     # which will trigger Part 1 for that bone, and then return because of _prop_update_guard.
-                    if getattr(bone.urdf_props, prop_name) != new_value:
-                        setattr(bone.urdf_props, prop_name, new_value)
+                    if getattr(bone.fcd_pg_kinematic_props, prop_name) != new_value:
+                        setattr(bone.fcd_pg_kinematic_props, prop_name, new_value)
         finally:
             _prop_update_guard = False
 
@@ -5081,7 +5101,7 @@ def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
         target_bone = context.active_pose_bone
     elif context.mode == 'OBJECT' and context.active_object:
         obj = context.active_object
-        rig = scene.urdf_active_rig
+        rig = scene.fcd_active_rig
         # Check if the object is a child of the active rig's bone
         if rig and obj.parent == rig and obj.parent_type == 'BONE':
             target_bone = rig.pose.bones.get(obj.parent_bone)
@@ -5099,8 +5119,8 @@ def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
         # the old settings back to the bone we just read from.
         _joint_editor_update_guard = True
         try:
-            tool_props = scene.urdf_joint_editor_settings
-            active_props = target_bone.urdf_props
+            tool_props = scene.fcd_pg_joint_editor_settings
+            active_props = target_bone.fcd_pg_kinematic_props
             # Copy all relevant properties from the bone to the tool
             for prop_name in tool_props.bl_rna.properties.keys():
                 if prop_name in {"rna_type", "name"}: continue
@@ -5141,7 +5161,7 @@ def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name
     apply_native_constraints(target_bone)
 
     # --- Determine Target Bone's Driven Property ---
-    props_tgt = target_bone.urdf_props
+    props_tgt = target_bone.fcd_pg_kinematic_props
     ui_idx_tgt = get_mapped_axis_index(props_tgt.axis_enum)
     # AI Editor Note: Re-instating axis mapping to match constraint logic.
     # The driver must target the same bone axis that is unlocked by the constraints.
@@ -5154,7 +5174,7 @@ def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name
     data_path = "rotation_euler" if is_rot_tgt else "location"
 
     # --- Determine Source Bone's Driving Property ---
-    props_src = source_bone.urdf_props
+    props_src = source_bone.fcd_pg_kinematic_props
     ui_idx_src = get_mapped_axis_index(props_src.axis_enum)
     # Apply the same mapping to the source bone's axis to ensure the correct source value is read.
     idx_src = axis_map.get(ui_idx_src, ui_idx_src)
@@ -5215,7 +5235,7 @@ def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name
     else:
         target_bone.lock_location[idx_tgt] = True
 
-def invert_ratio_update(self: 'URDF_Properties', context: bpy.types.Context) -> None:
+def invert_ratio_update(self: 'FCD_Properties', context: bpy.types.Context) -> None:
     """
     Update callback for the 'Invert' checkbox in the gear ratio UI.
 
@@ -5224,14 +5244,14 @@ def invert_ratio_update(self: 'URDF_Properties', context: bpy.types.Context) -> 
     to update the driver with the new inversion setting.
 
     Args:
-        self: The `URDF_Properties` instance that was changed.
+        self: The `FCD_Properties` instance that was changed.
         context: The current Blender context.
     """
     if context.active_pose_bone and self.ratio_target_bone:
         add_native_driver_relation(context.active_pose_bone, self.ratio_target_bone, self.ratio_value, self.ratio_invert)
 
 
-def urdf_joint_editor_update_callback(self, context):
+def fcd_joint_editor_update_callback(self, context):
     """
     Update callback for the global joint editor tool properties.
     Automatically calls the apply operator to push changes to the selected bones.
@@ -5245,26 +5265,26 @@ def urdf_joint_editor_update_callback(self, context):
 
     # Using a timer ensures the operator runs in a clean context after the update.
     # The operator's poll method will handle context checks (e.g., pose mode).
-    bpy.app.timers.register(lambda: bpy.ops.urdf.apply_joint_settings(), first_interval=0.01)
+    bpy.app.timers.register(lambda: bpy.ops.fcd.apply_joint_settings(), first_interval=0.01)
     return None
 
 
-def update_ratio_live(self: 'URDF_Properties', context: bpy.types.Context) -> None:
+def update_ratio_live(self: 'FCD_Properties', context: bpy.types.Context) -> None:
     """
     Update callback for relationship properties in the bone editor.
     Propagates changes to other selected bones via the standard update logic.
     """
-    urdf_prop_update(self, context, 'ratio_value')
+    fcd_prop_update(self, context, 'ratio_value')
 
-def update_ratio_invert(self: 'URDF_Properties', context: bpy.types.Context) -> None:
+def update_ratio_invert(self: 'FCD_Properties', context: bpy.types.Context) -> None:
     """
     Update callback for the ratio inversion toggle in the bone editor.
     """
-    urdf_prop_update(self, context, 'ratio_invert')
+    fcd_prop_update(self, context, 'ratio_invert')
 
 def cleanup_unused_gizmos(context: bpy.types.Context) -> None:
     """
-    Removes gizmo objects from the URDF_Widgets collection that are no longer
+    Removes gizmo objects from the FCD_Widgets collection that are no longer
     assigned to any bone in any armature.
     """
     widgets_coll = bpy.data.collections.get(WIDGETS_COLLECTION_NAME)
@@ -5294,7 +5314,7 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
     Update callback for the global 'Show Gizmos' toggle in the UI.
     Triggers a full refresh of visual gizmos and mechanical constraints.
     """
-    rig = context.scene.urdf_active_rig
+    rig = context.scene.fcd_active_rig
     if not rig:
         return
     
@@ -5302,7 +5322,7 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
     # Iterate through ALL bones to ensure the entire rig is consistent.
     for bone in rig.pose.bones:
         # 1. Update the visual gizmo
-        update_single_bone_gizmo(bone, context.scene.urdf_viz_gizmos)
+        update_single_bone_gizmo(bone, context.scene.fcd_viz_gizmos)
         
         # 2. Re-apply constraints to ensure physics match visuals.
         # This prevents "drift" where the constraint direction might mismatch
@@ -5313,7 +5333,7 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
     # 3. Garbage collect unused gizmos to prevent "left behind" objects.
     cleanup_unused_gizmos(context)
 
-def update_ik_chain_length(self: 'URDF_Properties', context: bpy.types.Context) -> None:
+def update_ik_chain_length(self: 'FCD_Properties', context: bpy.types.Context) -> None:
     """
     Update callback for the IK chain length property in the UI.
 
@@ -5325,7 +5345,7 @@ def update_ik_chain_length(self: 'URDF_Properties', context: bpy.types.Context) 
     actual number of parent bones available, ensuring stability.
 
     Args:
-        self: The `URDF_Properties` instance that was changed.
+        self: The `FCD_Properties` instance that was changed.
         context: The current Blender context.
     """
     bone = context.active_pose_bone
@@ -5366,38 +5386,7 @@ _last_active_bone_name = None
 
 # ------------------------------------------------------------------------
 
-def register():
-    for cls in [URDF_OT_Core_DisablePanel, URDF_OT_Core_TogglePanelVisibility, URDF_OT_Core_SnapCursorToActive]:
-        if hasattr(cls, 'bl_rna'):
-            try:
-                bpy.utils.register_class(cls)
-            except Exception:
-                pass
-    if sync_light_props_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(sync_light_props_handler)
-    if urdf_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(urdf_placement_handler)
-    if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
-    if load_panel_order_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(load_panel_order_handler)
-    if set_scene_units_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(set_scene_units_handler)
-    bpy.app.handlers.load_post.append(lambda d: update_dimensions(bpy.context.scene) if bpy.context.scene else None)
-    if active_bone_change_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(active_bone_change_handler)
-    if local_cursor_depsgraph_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(local_cursor_depsgraph_handler)
-    if dimension_update_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(dimension_update_handler)
-    bpy.app.timers.register(lambda: ensure_default_rig(bpy.context) or None, first_interval=0.1)
-    bpy.app.timers.register(lambda: bpy.ops.urdf.update_panel_order() or None, first_interval=0.2)
-
-def unregister():
-    if urdf_placement_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(urdf_placement_handler)
-    if auto_set_active_rig_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(auto_set_active_rig_handler)
-    if load_panel_order_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(load_panel_order_handler)
-    if set_scene_units_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(set_scene_units_handler)
-    if active_bone_change_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(active_bone_change_handler)
-    if local_cursor_depsgraph_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(local_cursor_depsgraph_handler)
-    if dimension_update_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(dimension_update_handler)
-    for cls in reversed([URDF_OT_Core_DisablePanel, URDF_OT_Core_TogglePanelVisibility, URDF_OT_Core_SnapCursorToActive]):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+# AI Editor Note: Consolidated registration to the bottom of the file for architectural clarity.
 def create_parametric_chain(context: bpy.types.Context, chain_type: str) -> bpy.types.Object:
     """    
     Creates a complete, native, parametric chain setup.
@@ -5458,15 +5447,68 @@ def create_parametric_chain(context: bpy.types.Context, chain_type: str) -> bpy.
     spline.use_cyclic_u = True
 
     # --- 4. Assign Parametric Properties to the Path object ---
-    props = path_obj.urdf_mech_props
+    props = path_obj.fcd_pg_mech_props
     props.is_part = True
     props.category = 'CHAIN'
     props.type_chain = chain_type
     props.instanced_link_obj = link_obj 
 
-    path_obj["urdf_native_chain_pitch"] = props.length
-    path_obj["urdf_native_chain_res"] = props.chain_curve_res
-    path_obj["urdf_native_anim_offset"] = 0.0 
+    path_obj["fcd_native_chain_pitch"] = props.length
+    path_obj["fcd_native_chain_res"] = props.chain_curve_res
+    path_obj["fcd_native_anim_offset"] = 0.0 
     
     return path_obj
+
+# ------------------------------------------------------------------------
+#   Registration
+# ------------------------------------------------------------------------
+
+CLASSES = [
+    FCD_OT_Core_DisablePanel, FCD_OT_Core_TogglePanelVisibility, FCD_OT_Core_SnapCursorToActive
+]
+
+def register():
+    # 1. Register Classes
+    for cls in CLASSES:
+        if hasattr(cls, 'bl_rna'):
+            try:
+                bpy.utils.register_class(cls)
+            except Exception:
+                pass
+    
+    # 2. Append Handlers (Set-like behavior to prevent duplicates)
+    if sync_light_props_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(sync_light_props_handler)
+    if fcd_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(fcd_placement_handler)
+    if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
+    if load_panel_order_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(load_panel_order_handler)
+    if set_scene_units_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(set_scene_units_handler)
+    if active_bone_change_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(active_bone_change_handler)
+    if local_cursor_depsgraph_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(local_cursor_depsgraph_handler)
+    if dimension_update_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(dimension_update_handler)
+
+    # Lambda with context safety
+    def safe_dimension_update(dummy):
+        if bpy.context and bpy.context.scene:
+            update_dimensions(bpy.context.scene)
+    if safe_dimension_update not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(safe_dimension_update)
+
+    # 3. Timers
+    bpy.app.timers.register(lambda: ensure_default_rig(bpy.context) or None, first_interval=0.1)
+
+def unregister():
+    # 1. Remove Handlers
+    for h in [sync_light_props_handler, fcd_placement_handler, active_bone_change_handler, local_cursor_depsgraph_handler, dimension_update_handler]:
+        if h in bpy.app.handlers.depsgraph_update_post:
+            bpy.app.handlers.depsgraph_update_post.remove(h)
+    
+    for h in [auto_set_active_rig_handler, load_panel_order_handler, set_scene_units_handler]:
+        if h in bpy.app.handlers.load_post:
+            bpy.app.handlers.load_post.remove(h)
+
+    # 2. Unregister Classes
+    for cls in reversed(CLASSES):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
 

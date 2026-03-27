@@ -33,40 +33,37 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_PhysicsCollision:
+class FCD_PT_Physics_Collision:
     """
     AI Editor Note:
     This class is a drawing helper for the 'Physics: Collision' panel. It is not a
-    registered bpy.types.Panel, but is called by the main URDF_PT_FabricationConstructionDraftsmanToolsAutomated
+    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanToolsAutomated
     to draw its content. This structure allows for dynamic reordering of panels.
     """
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         # AI Editor Note: Panel is now always available if enabled in preferences.
-        return context.scene.urdf_panel_enabled_collision
+        return context.scene.fcd_panel_enabled_collision
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
-        box = layout.box()
         
-        is_expanded = scene.urdf_show_panel_collision
-        icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
-        row = box.row(align=True)
-        op = row.operator("urdf.toggle_panel_visibility", text="Physics: Collision", emboss=False, icon=icon)
-        op.panel_property = "urdf_show_panel_collision"
-        row.prop(scene, "urdf_show_panel_collision", text="", emboss=False, toggle=True)
-        close_op = row.operator("urdf.disable_panel", text="", icon='X')
-        close_op.prop_name = "urdf_panel_enabled_collision"
-
-
+        # 1. Standardized Header
+        box, is_expanded = ui_common.draw_panel_header(
+            layout, context, 
+            "Physics: Collision", 
+            "fcd_show_panel_collision", 
+            "fcd_panel_enabled_collision"
+        )
+        
         if is_expanded:
             props_owner = None
             if context.mode == 'POSE' and context.active_pose_bone:
-                props_owner = context.active_pose_bone.urdf_props
-            elif context.active_object and hasattr(context.active_object, "urdf_mech_props") and context.active_object.urdf_mech_props.is_part:
-                props_owner = context.active_object.urdf_mech_props
+                props_owner = context.active_pose_bone.fcd_pg_kinematic_props
+            elif context.active_object and hasattr(context.active_object, "fcd_pg_mech_props") and context.active_object.fcd_pg_mech_props.is_part:
+                props_owner = context.active_object.fcd_pg_mech_props
             
             if props_owner:
                 collision_props = props_owner.collision
@@ -78,12 +75,12 @@ class URDF_PT_PhysicsCollision:
 
 
 def register():
-    for cls in [URDF_PT_PhysicsCollision]:
+    for cls in [FCD_PT_Physics_Collision]:
         if hasattr(cls, 'bl_rna'):
             bpy.utils.register_class(cls)
 
 def unregister():
-    for cls in reversed([URDF_PT_PhysicsCollision]):
+    for cls in reversed([FCD_PT_Physics_Collision]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

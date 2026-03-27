@@ -45,36 +45,36 @@ def draw_panel_header(layout: bpy.types.UILayout, context: bpy.types.Context, ti
     icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
     
     # Toggle button for expansion
-    op = row.operator("urdf.toggle_panel_visibility", text=title, icon=icon, emboss=False)
+    op = row.operator("fcd.toggle_panel_visibility", text=title, icon=icon, emboss=False)
     op.panel_property = show_prop
     row.prop(scene, show_prop, text="", emboss=False, toggle=True)
     
     # Close button to disable panel entirely
-    close_op = row.operator("urdf.disable_panel", text="", icon='X')
+    close_op = row.operator("fcd.disable_panel", text="", icon='X')
     close_op.prop_name = enabled_prop
     
     return box, is_expanded
 
 
-class URDF_OT_UpdatePanelOrder(bpy.types.Operator):
+class FCD_OT_UpdatePanelOrder(bpy.types.Operator):
     """Updates the order of panels in the UI based on the settings in Preferences"""
-    bl_idname = "urdf.update_panel_order"
+    bl_idname = "fcd.update_panel_order"
     bl_label = "Apply Panel Order"
     bl_description = "Updates the order of panels in the UI based on the settings above"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
         # Force redraw of all 3D View UI regions to ensure the change is visible immediately
-        # The actual sorting is now handled dynamically by URDF_PT_FabricationConstructionDraftsmanToolsAutomated
+        # The actual sorting is now handled dynamically by FCD_PT_FabricationConstructionDraftsmanToolsAutomated
         for window in context.window_manager.windows:
             for area in window.screen.areas:
                 if area.type == 'VIEW_3D' or area.type == 'PREFERENCES':
                     area.tag_redraw()
         return {'FINISHED'}
 
-class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
+class FCD_OT_ToggleTextPlacement(bpy.types.Operator):
     """Toggle placement mode for text labels. Unlocks dimensions for manual positioning."""
-    bl_idname = "urdf.toggle_text_placement"
+    bl_idname = "fcd.toggle_text_placement"
     bl_label = "Toggle Text Placement"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -84,10 +84,10 @@ class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='OBJECT')
 
         scene = context.scene
-        is_starting = not scene.urdf_text_placement_mode
-        scene.urdf_text_placement_mode = is_starting
+        is_starting = not scene.fcd_text_placement_mode
+        scene.fcd_text_placement_mode = is_starting
         
-        coll = bpy.data.collections.get("URDF_Dimensions")
+        coll = bpy.data.collections.get("FCD_Dimensions")
         if not coll:
             self.report({'WARNING'}, "No Dimensions collection found.")
             return {'FINISHED'}
@@ -98,7 +98,7 @@ class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
             
             for obj in coll.objects:
                 # Handle Dimensions (Mesh with GN)
-                if obj.get("urdf_is_dimension"):
+                if obj.get("fcd_is_dimension"):
                     # AI Editor Note: Capture current visual transform (including billboard rotation)
                     visual_matrix = obj.matrix_world.copy()
 
@@ -142,7 +142,7 @@ class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
                     # Select for easy movement
                     # AI Editor Note: Mark as manually placed so it doesn't reset on arrow scale change.
                     # Set this unconditionally when entering placement mode to ensure state is saved.
-                    obj.urdf_dim_is_manual = True
+                    obj.fcd_dim_is_manual = True
                     
                     obj.select_set(True)
                 
@@ -158,7 +158,7 @@ class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
         else:
             # Stop Placement: Unmute constraints to restore behavior (e.g. billboarding)
             for obj in coll.objects:
-                if obj.get("urdf_is_dimension") or obj.type == 'FONT':
+                if obj.get("fcd_is_dimension") or obj.type == 'FONT':
                     # AI Editor Note: Removed manual location recalculation.
                     # The object is parented to the anchor, which is constrained to the midpoint.
                     # Any movement done by the user is stored in the object's local transform relative to the anchor.
@@ -172,9 +172,9 @@ class URDF_OT_ToggleTextPlacement(bpy.types.Operator):
             
         return {'FINISHED'}
 
-class URDF_OT_MovePanel(bpy.types.Operator):
+class FCD_OT_MovePanel(bpy.types.Operator):
     """Move panel up or down in the list"""
-    bl_idname = "urdf.move_panel"
+    bl_idname = "fcd.move_panel"
     bl_label = "Move Panel"
     
     prop_name: bpy.props.StringProperty()
@@ -184,22 +184,22 @@ class URDF_OT_MovePanel(bpy.types.Operator):
         scene = context.scene
         # Map of prop_name -> current_order
         props = {
-            "urdf_order_ai_factory": scene.urdf_order_ai_factory,
-            "urdf_order_parts": scene.urdf_order_parts,
-            "urdf_order_architectural": scene.urdf_order_architectural,
-            "urdf_order_vehicle": scene.urdf_order_vehicle,
-            "urdf_order_electronics": scene.urdf_order_electronics,
-            "urdf_order_parametric": scene.urdf_order_parametric,
-            "urdf_order_dimensions": scene.urdf_order_dimensions,
-            "urdf_order_materials": scene.urdf_order_materials,
-            "urdf_order_lighting": scene.urdf_order_lighting,
-            "urdf_order_kinematics": scene.urdf_order_kinematics,
-            "urdf_order_inertial": scene.urdf_order_inertial,
-            "urdf_order_collision": scene.urdf_order_collision,
-            "urdf_order_transmission": scene.urdf_order_transmission,
-            "urdf_order_assets": scene.urdf_order_assets,
-            "urdf_order_export": scene.urdf_order_export,
-            "urdf_order_preferences": scene.urdf_order_preferences,
+            "fcd_order_ai_factory": scene.fcd_order_ai_factory,
+            "fcd_order_parts": scene.fcd_order_parts,
+            "fcd_order_architectural": scene.fcd_order_architectural,
+            "fcd_order_vehicle": scene.fcd_order_vehicle,
+            "fcd_order_electronics": scene.fcd_order_electronics,
+            "fcd_order_parametric": scene.fcd_order_parametric,
+            "fcd_order_dimensions": scene.fcd_order_dimensions,
+            "fcd_order_materials": scene.fcd_order_materials,
+            "fcd_order_lighting": scene.fcd_order_lighting,
+            "fcd_order_kinematics": scene.fcd_order_kinematics,
+            "fcd_order_inertial": scene.fcd_order_inertial,
+            "fcd_order_collision": scene.fcd_order_collision,
+            "fcd_order_transmission": scene.fcd_order_transmission,
+            "fcd_order_assets": scene.fcd_order_assets,
+            "fcd_order_export": scene.fcd_order_export,
+            "fcd_order_preferences": scene.fcd_order_preferences,
         }
         
         # Sort by order to get the current sequence
@@ -222,40 +222,40 @@ class URDF_OT_MovePanel(bpy.types.Operator):
             setattr(scene, name, i)
             
         # Trigger the update
-        bpy.ops.urdf.update_panel_order()
+        bpy.ops.fcd.update_panel_order()
         
         # Force immediate redraw of the button list
         context.area.tag_redraw()
         self.report({'INFO'}, f"Moved panel {self.direction}")
         return {'FINISHED'}
 
-class URDF_OT_ResetPanelOrder(bpy.types.Operator):
+class FCD_OT_ResetPanelOrder(bpy.types.Operator):
     """Resets the panel order to default values"""
-    bl_idname = "urdf.reset_panel_order"
+    bl_idname = "fcd.reset_panel_order"
     bl_label = "Reset Order"
     bl_description = "Resets all panel order settings to their defaults"
     
     def execute(self, context):
         scene = context.scene
-        scene.urdf_order_ai_factory = 0
-        scene.urdf_order_parts = 1
-        scene.urdf_order_architectural = 2
-        scene.urdf_order_vehicle = 3
-        scene.urdf_order_electronics = 4
-        scene.urdf_order_parametric = 5
-        scene.urdf_order_dimensions = 6
-        scene.urdf_order_materials = 7
-        scene.urdf_order_lighting = 8
-        scene.urdf_order_kinematics = 9
-        scene.urdf_order_inertial = 10
-        scene.urdf_order_collision = 11
-        scene.urdf_order_transmission = 12
-        scene.urdf_order_assets = 13
-        scene.urdf_order_export = 14
-        scene.urdf_order_preferences = 15
+        scene.fcd_order_ai_factory = 0
+        scene.fcd_order_parts = 1
+        scene.fcd_order_architectural = 2
+        scene.fcd_order_vehicle = 3
+        scene.fcd_order_electronics = 4
+        scene.fcd_order_parametric = 5
+        scene.fcd_order_dimensions = 6
+        scene.fcd_order_materials = 7
+        scene.fcd_order_lighting = 8
+        scene.fcd_order_kinematics = 9
+        scene.fcd_order_inertial = 10
+        scene.fcd_order_collision = 11
+        scene.fcd_order_transmission = 12
+        scene.fcd_order_assets = 13
+        scene.fcd_order_export = 14
+        scene.fcd_order_preferences = 15
         
         # Trigger the update to apply changes immediately
-        bpy.ops.urdf.update_panel_order()
+        bpy.ops.fcd.update_panel_order()
         return {'FINISHED'}
 
 class UI_UL_WrapItems(bpy.types.UIList):
@@ -265,7 +265,7 @@ class UI_UL_WrapItems(bpy.types.UIList):
             # FIX: Safely display the target object. Using 'prop' on the item's pointer
             # is safer than accessing attributes of the pointer's value (which could be None).
             row.prop(item, "target", text="", emboss=False)
-            op = row.operator("urdf.chain_remove_wrap_object", text="", icon='X')
+            op = row.operator("fcd.chain_remove_wrap_object", text="", icon='X')
             op.index = index
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
@@ -279,7 +279,7 @@ class UI_UL_WrapItems(bpy.types.UIList):
 # ------------------------------------------------------------------------
 
 def register():
-    for cls in [URDF_OT_UpdatePanelOrder, URDF_OT_ToggleTextPlacement, URDF_OT_MovePanel, URDF_OT_ResetPanelOrder, UI_UL_WrapItems]:
+    for cls in [FCD_OT_UpdatePanelOrder, FCD_OT_ToggleTextPlacement, FCD_OT_MovePanel, FCD_OT_ResetPanelOrder, UI_UL_WrapItems]:
         if hasattr(cls, 'bl_rna'):
             try:
                 bpy.utils.register_class(cls)
@@ -287,7 +287,7 @@ def register():
                 pass
 
 def unregister():
-    for cls in reversed([URDF_OT_UpdatePanelOrder, URDF_OT_ToggleTextPlacement, URDF_OT_MovePanel, URDF_OT_ResetPanelOrder, UI_UL_WrapItems]):
+    for cls in reversed([FCD_OT_UpdatePanelOrder, FCD_OT_ToggleTextPlacement, FCD_OT_MovePanel, FCD_OT_ResetPanelOrder, UI_UL_WrapItems]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

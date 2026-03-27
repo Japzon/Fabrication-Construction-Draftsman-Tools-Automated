@@ -1,0 +1,65 @@
+Fabrication & Construction Draftsman Tools (Automated) AI Agent Update Workflow
+
+This workflow is the absolute source of truth for AI agents interacting with this repository: https://github.com/Greenlex Systems Services Incorporated/Fabrication-Construction-Draftsman-Tools-Automated.git
+Follow these exact, descriptive steps meticulously to robustly update or create new features, preserving the addon's unique framework and preventing major structural or memory errors across future Blender 4.5.6 LTS updates.
+
+1. Strict Operational Protocols
+* Enforce Strict Scope Adherence: Never add, alter, refactor, or remove features unless explicitly instructed by the user. Unprompted optimizations often break delicate procedural workflows. Focus exclusively on the execution of the given task.
+* Prioritize High-Density Information: Substantially bypass conversational filler and pleasantries. Prioritize comprehensive checklists, provide compact summaries of modifications, and output code with clear inline documentation to ensure rapid comprehension.
+* Interpret Task Syntax Accurately: Respect the user's specific punctuation-based task syntax. A period followed by a comma (.,) indicates a completely new, isolated task. A single period (.) indicates a direct continuation or sub-step of the previously stated objective.
+* Ensure 4.5.6 LTS Compliance: All Python code must strictly adhere to the Blender 4.5.6 LTS API. You must utilize modern type hinting (e.g., bpy.types.Object), explicitly manage BMesh memory, and ensure proper bpy.context passing, as implicit context evaluation is deprecated and unstable.
+
+2. Literal Naming Constraints and Structure Enforcement
+* Avoid Generic Variable Reuse: The codebase strictly prohibits generic variable reuse (e.g., using radius for gears, wheels, and springs) to prevent cross-contamination of parametric data. Use uncompromising, literal naming.
+* Mirror GUI Labels in Property Variables (properties.py): Variable names must precisely match the literal string label shown to the user in the frontend GUI. Do not attempt resource efficiency by reusing properties across distinct mechanical categories. You must explicitly use gear_radius, rack_width, wheel_base_radius, or motor_radius depending on the active context.
+* Synchronize GUI Classes in Panel Files: Panel class names must perfectly mirror their string display tag while adhering to Blender's structural naming conventions (PREFIX_PT_name). For example, a panel displaying the text "Mechanical Presets" strictly dictates that the underlying Python class title must be FCD_PT_Mechanical_Presets.
+* Trace GUI Identity in Operators (operators.py): Action classes and bl_idname identicality must logically trace the GUI text using Blender's operator conventions (PREFIX_OT_name). For a button displaying "Generate Robot with AI", the operator class must be FCD_OT_Generate_Robot_With_AI and its identifier must be fcd.generate_robot_with_ai.
+
+3. Core Architecture Rules (Strict Separation of Concerns)
+Know exactly where Python logic belongs before writing code. You must never mix module responsibilities. Note: BMesh generation logic is strictly forbidden in properties.py to prevent circular import loops.
+ * __init__.py: Handles addon metadata, imports all submodules, and manages the central registration/unregistration loops via bpy.utils.register_class.
+ * properties.py: Contains only Add-on PropertyGroup classes containing bpy.props declarations (e.g., FCD_PG_Mech_Props and FCD_PG_Inertial_Properties).
+ * generators.py (New Mandate): Contains all procedural BMesh generation logic, mathematical plotting, and mesh construction functions. This isolates heavy geometry calculations from the data model.
+ * operators.py: Holds Button execution classes. These classes parse the properties, call functions from generators.py or core.py, and contain the execute() methods that trigger core actions. You must explicitly pass bpy.context into your wrapper logic safely.
+ * core.py: Holds pure utility and backend functions like Gizmo updates, Rigging application, Matrix math handlers, and Material assignments that do not directly generate meshes or draw to the GUI.
+ * panels/ (UI Files): Contains purely separated logic grouping layout drawing functions like the draw() definitions. No data mutation should ever occur here.
+ * Iterative Synchronization Execution: All operators and property update callbacks must robustly iterate through all selected bones (in Pose Mode) or selected objects (in Object Mode) using for obj in context.selected_objects:. This ensures changes propagate across the entire user selection simultaneously, rather than just hitting the active item.
+
+4. Feature Creation and Extension Sequence
+When asked to implement or update a function, execute these exact critical steps in order without skipping.
+-Define the Properties (properties.py)
+   * Open properties.py and locate the relevant property group (e.g., FCD_PG_Mech_Props).
+   * Inject rigidly named variables using bpy.props.FloatProperty, IntProperty, etc.
+   * Define strict min, max, default, and description parameters.
+   * If the variable alters a mesh, bind it to an update function by setting update=update_mesh_wrapper.
+   * Do not write the generation logic here.
+-Construct the Generation Logic (generators.py & core.py)
+   * Open generators.py.
+   * Define the procedural function, ensuring it accepts context and the object being modified.
+   * Initialize a clean temporary bmesh using bm = bmesh.new().
+   * Extract the variables defined in Step 4A (e.g., wheel_tread_count = obj.fcd_pg_mech_props.wheel_tread_count).
+   * Apply vertex changes securely using world-space matrix projections if necessary.
+   * Terminate the sequence systematically: calculate normals with bmesh.ops.recalc_face_normals(bm, faces=bm.faces), write to the object with bm.to_mesh(obj.data), update the datablock with obj.data.update(), and free memory with bm.free().
+-Wire the GUI Layout (panels/)
+   * Locate the correct sub-file in the panels directory.
+   * Append the layout.prop() function call directly to a box or row layout element.
+   * Pass the exact literal variable name you created. Because the property is explicitly named and described at the properties.py level, omit the text= argument unless a specific override is required.
+-Operator Deployment and Central Registration (operators.py & __init__.py)
+   * If a new action command is required, build it in operators.py starting with the class name FCD_OT_Literal_Action_Name.
+   * Open __init__.py. You must explicitly append the new Class to the central classes = (...) tuple at the bottom of the file.
+   * Verify that the register() loop contains for cls in classes: bpy.utils.register_class(cls) and unregister() contains bpy.utils.unregister_class(cls) in reverse order to prevent ghost classes on addon reload.
+   * Handler Discipline: All app handlers (depsgraph_update, load_post, etc.) must be defined in core.py.
+   * Registration Safety: Always use `if handler not in bpy.app.handlers.X: bpy.app.handlers.X.append(handler)` to prevent recursive duplication during reloads.
+   * Signature Compliance: Enforce the (scene, depsgraph) signature for all depsgraph handlers to ensure stability across Blender 4.5+ releases.
+
+
+5. Procedural Safety Limitations
+ * Boolean Cut Data Purging: If a feature generates procedural cut planes or boolean objects (like Bore Holes inside gears), you must explicitly clear the previous cutter data geometry via bpy.data.objects.remove() before appending the new shape. Overlapping legacy geometry triggers Blender boolean z-fighting, resulting in corrupted, half-rendered meshes during parametric slider adjustments.
+ * Real Units and Precision Scaling: Properties representing spatial dimensions (e.g., Cage Size, Part Length, Hole Depth) must explicitly include unit='LENGTH' in their bpy.props definition. This ensures Blender 4.5.6 LTS interprets them correctly as meters/millimeters in the UI. When utilizing a "Size Cage", the generation multiplier must be calculated against the precise bounding box volume (obj.dimensions) of the part's default state to ensure perfect dimensional conformity.
+ * Mandatory Vertex Welding: Before finalizing any complex, nested procedural feature, you must invariably execute bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001). This seamlessly welds procedural seams, closes manifold gaps, and prevents lighting artifacts and boolean stability issues downstream.
+
+6. Code Skeleton Standards (generators.py)
+To enforce memory safety and maintain structural integrity, all procedural mesh generation functions added to generators.py must strictly adhere to this architectural skeleton.
+ * Type Hinting: Mandatory for context and obj parameters.
+ * Data Extraction: Must pull directly from the properly prefixed PropertyGroup (fcd_pg_mech_props).
+ * Memory Cycle: bmesh.new() must always be paired with bm.free() at the end of the function.

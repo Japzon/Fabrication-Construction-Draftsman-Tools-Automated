@@ -39,7 +39,7 @@ for line in lines:
         
         # New Class: Title case, remove spaces and slashes
         title_cased = ''.join(word.capitalize() for word in clean_label.replace('/', ' ').split())
-        new_class = f'URDF_OT_{title_cased}'
+        new_class = f'FCD_OT_{title_cased}'
         
         # New Idname: lowercase, spaces and slashes to underscores
         snake_cased = '_'.join(word.lower() for word in clean_label.replace('/', ' ').split())

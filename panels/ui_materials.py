@@ -33,7 +33,7 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_MaterialsAndTextures:
+class FCD_PT_Materials_And_Textures:
     """
     Drawing helper for the 'Materials & Texturing' panel.
     Provides a clean, accessible interface for material management,
@@ -42,13 +42,13 @@ class URDF_PT_MaterialsAndTextures:
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return context.scene.urdf_panel_enabled_materials
+        return context.scene.fcd_panel_enabled_materials
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
         # --- Header ---
-        box, is_expanded = ui_common.draw_panel_header(layout, context, "Materials & Textures", "urdf_show_panel_materials", "urdf_panel_enabled_materials")
+        box, is_expanded = ui_common.draw_panel_header(layout, context, "Materials & Textures", "fcd_show_panel_materials", "fcd_panel_enabled_materials")
 
         if is_expanded:
             obj = context.active_object
@@ -73,34 +73,34 @@ class URDF_PT_MaterialsAndTextures:
                     col_tex.prop(mapping_node.inputs['Location'], "default_value", text="Location")
                     col_tex.prop(mapping_node.inputs['Rotation'], "default_value", index=2, text="Rotation")
                     col_tex.separator()
-                    col_tex.prop(active_mat, "urdf_uniform_scale", slider=True)
+                    col_tex.prop(active_mat, "fcd_uniform_scale", slider=True)
                     col_tex.prop(mapping_node.inputs['Scale'], "default_value", text="Scale (Axis)")
                 else:
-                    tex_box.operator("urdf.add_mapping_nodes", icon='ADD')
+                    tex_box.operator("fcd.add_mapping_nodes", icon='ADD')
 
             
             # --- SECTION: SMART PRESETS ---
             preset_box = box.box()
             preset_box.label(text="Add Smart Material", icon='SHADING_TEXTURE')
             grid = preset_box.grid_flow(columns=2, align=True)
-            grid.operator("urdf.material_add_smart", text="Plastic").mat_type = 'PLASTIC'
-            grid.operator("urdf.material_add_smart", text="Metal").mat_type = 'METAL'
-            grid.operator("urdf.material_add_smart", text="Rubber").mat_type = 'RUBBER'
-            grid.operator("urdf.material_add_smart", text="Glass").mat_type = 'GLASS'
-            grid.operator("urdf.material_add_smart", text="Carbon Fiber").mat_type = 'CARBON'
-            grid.operator("urdf.material_add_smart", text="Aluminum").mat_type = 'ALUMINUM'
-            grid.operator("urdf.material_add_smart", text="3D Printed").mat_type = 'PRINTED'
-            grid.operator("urdf.material_add_smart", text="Emissive").mat_type = 'EMISSIVE'
+            grid.operator("fcd.material_add_smart", text="Plastic").mat_type = 'PLASTIC'
+            grid.operator("fcd.material_add_smart", text="Metal").mat_type = 'METAL'
+            grid.operator("fcd.material_add_smart", text="Rubber").mat_type = 'RUBBER'
+            grid.operator("fcd.material_add_smart", text="Glass").mat_type = 'GLASS'
+            grid.operator("fcd.material_add_smart", text="Carbon Fiber").mat_type = 'CARBON'
+            grid.operator("fcd.material_add_smart", text="Aluminum").mat_type = 'ALUMINUM'
+            grid.operator("fcd.material_add_smart", text="3D Printed").mat_type = 'PRINTED'
+            grid.operator("fcd.material_add_smart", text="Emissive").mat_type = 'EMISSIVE'
             
             # --- AI Editor Note: Add "New from Image" operator here ---
-            preset_box.operator("urdf.material_from_image", text="New from Image File", icon='IMAGE_DATA')
+            preset_box.operator("fcd.material_from_image", text="New from Image File", icon='IMAGE_DATA')
 
             # --- SECTION: MATERIAL SLOTS ---
             row = box.row()
-            row.template_list("URDF_UL_Mat_List", "", obj, "material_slots", obj, "active_material_index", rows=5)
+            row.template_list("FCD_UL_Mat_List", "", obj, "material_slots", obj, "active_material_index", rows=5)
             
             col = row.column(align=True)
-            col.operator("urdf.material_add", icon='ADD', text="").mode = 'NEW'
+            col.operator("fcd.material_add", icon='ADD', text="").mode = 'NEW'
             col.operator("object.material_slot_remove", icon='REMOVE', text="")
             col.separator()
             col.operator("object.material_slot_move", icon='TRIA_UP', text="").direction = 'DOWN'
@@ -114,7 +114,7 @@ class URDF_PT_MaterialsAndTextures:
                 row.operator("object.material_slot_deselect", text="Deselect")
 
             # --- SECTION: MERGE ---
-            box.operator("urdf.material_merge", text="Composite All Layers", icon='SHADING_RENDERED')
+            box.operator("fcd.material_merge", text="Composite All Layers", icon='SHADING_RENDERED')
 
             # --- SECTION: ACTIVE MATERIAL PROPERTIES ---
             active_mat = obj.active_material
@@ -138,7 +138,7 @@ class URDF_PT_MaterialsAndTextures:
                         col.prop(bsdf.inputs['Emission Strength'], "default_value", text="Strength")
                         
                         col.separator()
-                        col.operator("urdf.material_load_texture", text="Load Texture to Color", icon='IMAGE_DATA')
+                        col.operator("fcd.material_load_texture", text="Load Texture to Color", icon='IMAGE_DATA')
 
                         sett_box = prop_box.box()
                         sett_box.label(text="Settings", icon='PREFERENCES')
@@ -153,31 +153,31 @@ class URDF_PT_MaterialsAndTextures:
             brush_box = box.box()
             brush_box.label(text="Texture Paint Brushes", icon='BRUSH_DATA')
             grid = brush_box.grid_flow(columns=2, align=True)
-            grid.operator("urdf.paint_setup_brush", text="Dirt").brush_type = 'DIRT'
-            grid.operator("urdf.paint_setup_brush", text="Scratches").brush_type = 'SCRATCH'
-            grid.operator("urdf.paint_setup_brush", text="Rust").brush_type = 'RUST'
-            grid.operator("urdf.paint_setup_brush", text="Oil").brush_type = 'OIL'
+            grid.operator("fcd.paint_setup_brush", text="Dirt").brush_type = 'DIRT'
+            grid.operator("fcd.paint_setup_brush", text="Scratches").brush_type = 'SCRATCH'
+            grid.operator("fcd.paint_setup_brush", text="Rust").brush_type = 'RUST'
+            grid.operator("fcd.paint_setup_brush", text="Oil").brush_type = 'OIL'
 
             # --- SECTION: UV TOOLS ---
             uv_box = box.box()
             uv_box.label(text="UV Layout Tools", icon='UV')
             grid = uv_box.grid_flow(columns=2, align=True)
-            grid.operator("urdf.uv_smart_unwrap", text="Smart Project").method = 'SMART'
-            grid.operator("urdf.uv_smart_unwrap", text="Cube Project").method = 'CUBE'
-            grid.operator("urdf.uv_smart_unwrap", text="Cylinder Project").method = 'CYLINDER'
-            grid.operator("urdf.uv_smart_unwrap", text="Sphere Project").method = 'SPHERE'
+            grid.operator("fcd.uv_smart_unwrap", text="Smart Project").method = 'SMART'
+            grid.operator("fcd.uv_smart_unwrap", text="Cube Project").method = 'CUBE'
+            grid.operator("fcd.uv_smart_unwrap", text="Cylinder Project").method = 'CYLINDER'
+            grid.operator("fcd.uv_smart_unwrap", text="Sphere Project").method = 'SPHERE'
             
             row = uv_box.row()
-            row.operator("urdf.uv_smart_unwrap", text="Standard Unwrap (Use Seams)").method = 'UNWRAP'
+            row.operator("fcd.uv_smart_unwrap", text="Standard Unwrap (Use Seams)").method = 'UNWRAP'
 
 
 def register():
-    for cls in [URDF_PT_MaterialsAndTextures]:
+    for cls in [FCD_PT_Materials_And_Textures]:
         if hasattr(cls, 'bl_rna'):
             bpy.utils.register_class(cls)
 
 def unregister():
-    for cls in reversed([URDF_PT_MaterialsAndTextures]):
+    for cls in reversed([FCD_PT_Materials_And_Textures]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

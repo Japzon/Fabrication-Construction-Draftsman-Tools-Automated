@@ -60,9 +60,9 @@ from . import properties
 
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
-class URDF_OT_OpenAssetBrowser(bpy.types.Operator):
+class FCD_OT_Open_Asset_Browser(bpy.types.Operator):
     """Opens the Asset Browser in a new window"""
-    bl_idname = "urdf.open_asset_browser"
+    bl_idname = "fcd.open_asset_browser"
     bl_label = "Open Asset Browser"
     def execute(self, context):
         try:
@@ -75,14 +75,14 @@ class URDF_OT_OpenAssetBrowser(bpy.types.Operator):
             pass
         return {'FINISHED'}
 
-class URDF_OT_AddAssetLibrary(bpy.types.Operator):
+class FCD_OT_Add_Asset_Library(bpy.types.Operator):
     """Adds a new Asset Library to Blender Preferences"""
-    bl_idname = "urdf.add_asset_library"
+    bl_idname = "fcd.add_asset_library"
     bl_label = "Add Library"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.urdf_asset_props
+        props = context.scene.fcd_pg_asset_props
         path = props.add_library_path
         if not path or not os.path.exists(path):
             self.report({'ERROR'}, "Please select a valid directory path first.")
@@ -100,15 +100,15 @@ class URDF_OT_AddAssetLibrary(bpy.types.Operator):
         self.report({'INFO'}, f"Added and selected library: {name}")
         return {'FINISHED'}
 
-class URDF_OT_RegisterAssetCatalog(bpy.types.Operator):
+class FCD_OT_Register_Asset_Catalog(bpy.types.Operator):
     """Creates a catalog definition in the selected Asset Library"""
-    bl_idname = "urdf.register_asset_catalog"
+    bl_idname = "fcd.register_asset_catalog"
     bl_label = "Register Catalog"
     bl_description = "Registers a new catalog in the selected library's catalog file"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        props = context.scene.urdf_asset_props
+        props = context.scene.fcd_pg_asset_props
         cat_name = props.new_catalog_name
         lib_name = props.target_library
         
@@ -155,9 +155,9 @@ class URDF_OT_RegisterAssetCatalog(bpy.types.Operator):
             
         return {'FINISHED'}
 
-class URDF_OT_MarkAndUploadAsset(bpy.types.Operator):
+class FCD_OT_Mark_And_Upload_Asset(bpy.types.Operator):
     """Imports selected items into the active catalog and exports them to its folder"""
-    bl_idname = "urdf.mark_and_upload_asset"
+    bl_idname = "fcd.mark_and_upload_asset"
     bl_label = "Import Selected to Catalog"
     bl_description = "Tags the selected objects as assets, assigns catalog UUID, and exports them"
     bl_options = {'REGISTER', 'UNDO'}
@@ -167,7 +167,7 @@ class URDF_OT_MarkAndUploadAsset(bpy.types.Operator):
             self.report({'WARNING'}, "No objects selected to mark as assets.")
             return {'CANCELLED'}
             
-        props = context.scene.urdf_asset_props
+        props = context.scene.fcd_pg_asset_props
         lib_name = props.target_library
         # Use the selected catalog's UUID directly from the dropdown property
         cat_uuid = props.selected_catalog if props.selected_catalog != 'NONE' else ""
@@ -211,10 +211,10 @@ class URDF_OT_MarkAndUploadAsset(bpy.types.Operator):
         self.report({'INFO'}, f"Successfully exported {exported} objects to catalog OS directory.")
         return {'FINISHED'}
 
-class URDF_OT_ImportToAssetCatalog(bpy.types.Operator):
+class FCD_OT_ImportToAssetCatalog(bpy.types.Operator):
     """Imports an external 3D file, marks it as an asset, and places it in the target catalog.
     Supports: .obj .fbx .gltf .glb .stl .blend .dae .ply .abc .usd .usda .usdc .usdz .x3d .wrl .3mf .zip"""
-    bl_idname = "urdf.import_to_asset_catalog"
+    bl_idname = "fcd.import_to_asset_catalog"
     bl_label = "Import to Catalog"
     bl_description = "Import a 3D file (or ZIP) and register it as an asset in the chosen library catalog"
     bl_options = {'REGISTER', 'UNDO'}
@@ -225,7 +225,7 @@ class URDF_OT_ImportToAssetCatalog(bpy.types.Operator):
         ext = os.path.splitext(filepath)[1].lower()
         if ext != '.zip':
             return filepath, None
-        tmp_dir = tempfile.mkdtemp(prefix="urdf_import_")
+        tmp_dir = tempfile.mkdtemp(prefix="fcd_import_")
         with zipfile.ZipFile(filepath, 'r') as zf:
             zf.extractall(tmp_dir)
         # Find best importable file
@@ -243,7 +243,7 @@ class URDF_OT_ImportToAssetCatalog(bpy.types.Operator):
 
     def execute(self, context):
         import shutil, zipfile
-        props = context.scene.urdf_asset_props
+        props = context.scene.fcd_pg_asset_props
         filepath = props.import_source_filepath
         lib_name = props.import_target_library
         cat_uuid = props.import_target_catalog if props.import_target_catalog != 'NONE' else ""
@@ -343,7 +343,7 @@ class URDF_OT_ImportToAssetCatalog(bpy.types.Operator):
         return {'FINISHED'}
 
 # --- MAIN OPERATORS ---
-class OPS_OT_Execute_AI_Prompt(bpy.types.Operator):
+class FCD_OT_Execute_AI_Prompt(bpy.types.Operator):
     """
     Executes the AI generation process based on the user's prompt.
     
@@ -363,84 +363,56 @@ class OPS_OT_Execute_AI_Prompt(bpy.types.Operator):
         operator calls) from the LLM.
     4.  Safely executing that plan.
     """
-    bl_idname = "urdf.execute_ai_prompt"
-    bl_label = "Generate Robot with AI"
-    bl_description = "Takes the prompt and sends it to the AI to generate the robot"
+    bl_idname = "fcd.execute_ai_prompt"
+    bl_label = "Start Generating"
+    bl_description = "Takes the plain English prompt and generates content using AI"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         # The operator can only run if there is a prompt.
-        ai_props = context.scene.urdf_ai_props
+        ai_props = context.scene.fcd_pg_ai_props
         return ai_props and ai_props.api_prompt != ""
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        ai_props = context.scene.urdf_ai_props
+        ai_props = context.scene.fcd_pg_ai_props
         prompt = ai_props.api_prompt.lower()
 
         # AI Editor Note: Add scaling factor from the generation cage
         scale_factor = 1.0
-        if context.scene.urdf_use_generation_cage:
-            scale_factor = context.scene.urdf_generation_cage_size
+        if context.scene.fcd_use_generation_cage:
+            scale_factor = context.scene.fcd_generation_cage_size
 
-        # --- AI Dispatch Logic (Local vs API) ---
-        if ai_props.ai_source == 'FREE':
-            # Use the new local procedural generator
+        # --- AI Dispatch Logic (Local vs Cloud API) ---
+        if ai_props.ai_source == 'LOCAL':
+            # Use the local procedural generator
             try:
-                self.report({'INFO'}, f"Interpreting prompt: '{prompt}'...")
+                self.report({'INFO'}, f"Executing local generation for: '{prompt}'...")
+                # AI Editor Note: Utilizing the 'build_generative_robot' logic in core.py
+                # which can be expanded to utilize any addon feature via keywords or direct scripting.
                 build_generative_robot(context, prompt, scale_factor=scale_factor)
-                self.report({'INFO'}, "Robot generation complete.")
+                self.report({'INFO'}, "Successfully generated content.")
                 return {'FINISHED'}
             except Exception as e:
-                self.report({'ERROR'}, f"Failed to generate robot: {e}")
+                self.report({'ERROR'}, f"Generation failure: {e}")
                 import traceback
                 traceback.print_exc()
                 return {'CANCELLED'}
         
         elif ai_props.ai_source == 'API':
-            # Placeholder for future API integration
-            # AI Editor Note: Construct the prompt that WOULD be sent to the API.
+            # Placeholder for future API integration (Cloud LLM)
+            # The API would receive the prompt + catalog of available operators.
             system_prompt = get_part_catalog_prompt()
-            print(f"--- CLOUD AI PROMPT ---\n{system_prompt}\nUser Prompt: {prompt}\n-----------------------")
-            self.report({'INFO'}, "Cloud API request simulated (see Console). Please use 'Free (Local)' mode for now.")
+            print(f"--- FCD CLOUD AI REQUEST ---\nSystem: {system_prompt}\nPrompt: {prompt}\n-----------------------")
+            self.report({'INFO'}, "Cloud API request simulated. Using Local mode for active execution.")
             return {'CANCELLED'}
         else:
             return {'CANCELLED'}
 
-class URDF_OT_Generate_Preset(bpy.types.Operator):
-    """Generates a pre-defined robot template without using AI"""
-    bl_idname = "urdf.generate_preset"
-    bl_label = "Generate Template"
-    bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        template = context.scene.urdf_ai_props.robot_template
-        
-        # AI Editor Note: Add scaling factor from the generation cage
-        scale_factor = 1.0
-        if context.scene.urdf_use_generation_cage:
-            # Use the smallest dimension of the cage as a uniform scale factor
-            scale_factor = context.scene.urdf_generation_cage_size
-        
-        try:
-            if template == 'ROVER':
-                build_example_rover(context, scale_factor=scale_factor)
-            elif template == 'ARM':
-                build_example_arm(context, scale_factor=scale_factor)
-            elif template == 'MOBILE_BASE':
-                build_mobile_base_diff_drive(context, scale_factor=scale_factor)
-            elif template == 'QUADRUPED':
-                build_quadruped_spider(context, scale_factor=scale_factor)
-            
-            self.report({'INFO'}, f"Generated template: {template}")
-            return {'FINISHED'}
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to generate template: {e}")
-            return {'CANCELLED'}
-
-class URDF_OT_SetJointType(bpy.types.Operator):
+class FCD_OT_SetJointType(bpy.types.Operator):
     """Sets the joint type for all selected pose bones and updates their state"""
-    bl_idname = "urdf.set_joint_type"
+    bl_idname = "fcd.set_joint_type"
     bl_label = "Set Joint Type"
     bl_description = "Sets the joint type for all selected pose bones and updates their state"
     bl_options = {'REGISTER', 'UNDO'}
@@ -478,22 +450,22 @@ class URDF_OT_SetJointType(bpy.types.Operator):
 
         for pbone in bones_to_update:
             # 1. Set the property value directly.
-            pbone.urdf_props.joint_type = self.type
+            pbone.fcd_pg_kinematic_props.joint_type = self.type
             
             # 2. Manually call all state update functions for each bone.
             # This ensures the changes are immediately reflected in the viewport
             # and the rig's behavior, bypassing the need for an update callback.
             clean_conflicting_mechanics(pbone)
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
             apply_native_constraints(pbone)
         
         self.report({'INFO'}, f"Set joint type to '{self.type}' for {len(bones_to_update)} bones.")
         return {'FINISHED'}
 
 
-class OPS_OT_CalculateCenterOfMass(bpy.types.Operator):
+class FCD_OT_CalculateCenterOfMass(bpy.types.Operator):
     """Calculates the center of mass for the link's visual meshes"""
-    bl_idname = "urdf.calculate_center_of_mass"
+    bl_idname = "fcd.calculate_center_of_mass"
     bl_label = "Calculate from Visuals"
     bl_description = "Calculate the center of mass from the link's visual meshes"
     bl_options = {'REGISTER', 'UNDO'}
@@ -553,19 +525,19 @@ class OPS_OT_CalculateCenterOfMass(bpy.types.Operator):
                 avg_center_world = weighted_center / total_volume
                 link_frame_matrix = pbone.id_data.matrix_world @ pbone.matrix
                 com_local = link_frame_matrix.inverted() @ avg_center_world
-                pbone.urdf_props.inertial.center_of_mass = com_local
+                pbone.fcd_pg_kinematic_props.inertial.center_of_mass = com_local
                 count += 1
                 
         self.report({'INFO'}, f"Calculated center of mass for {count} bone(s).")
         return {'FINISHED'}
 
 
-class OPS_OT_CalculateInertia(bpy.types.Operator):
+class FCD_OT_CalculateInertia(bpy.types.Operator):
     """
     Calculates and populates the inertia tensor fields for a link based on its
     mass, dimensions, and collision shape.
     """
-    bl_idname = "urdf.calculate_inertia"
+    bl_idname = "fcd.calculate_inertia"
     bl_label = "Calculate Inertia from Shape"
     bl_description = "Calculate the inertia tensor based on the mass and collision shape"
     bl_options = {'REGISTER', 'UNDO'}
@@ -578,7 +550,7 @@ class OPS_OT_CalculateInertia(bpy.types.Operator):
         if context.mode == 'POSE':
             for pbone in bones_to_process:
                 if not pbone: continue
-                props = pbone.urdf_props
+                props = pbone.fcd_pg_kinematic_props
                 
                 # For bones, we need to find the meshes parented to it to get dimensions
                 child_meshes = get_all_children_objects(pbone, context)
@@ -602,8 +574,8 @@ class OPS_OT_CalculateInertia(bpy.types.Operator):
                 dims = max_v - min_v
                 self._calculate_for_props(props, dims)
                 count += 1
-        elif obj and obj.urdf_mech_props.is_part:
-            self._calculate_for_props(obj.urdf_mech_props, obj.dimensions)
+        elif obj and obj.fcd_pg_mech_props.is_part:
+            self._calculate_for_props(obj.fcd_pg_mech_props, obj.dimensions)
             count += 1
             
         self.report({'INFO'}, f"Calculated inertia for {count} item(s).")
@@ -635,12 +607,12 @@ class OPS_OT_CalculateInertia(bpy.types.Operator):
             props.inertial.iyy = val
             props.inertial.izz = val
 
-class OPS_OT_BakeMesh(bpy.types.Operator):
+class FCD_OT_BakeMesh(bpy.types.Operator):
     """
     Applies all modifiers and converts a parametric object to a plain static mesh,
     permanently removing its parametric controls and helper objects.
     """
-    bl_idname = "urdf.bake_mesh"
+    bl_idname = "fcd.bake_mesh"
     bl_label = "Bake to Static Mesh"
     bl_description = "Convert the parametric part to a static mesh, applying all modifiers and removing parametric controls"
     bl_options = {'REGISTER', 'UNDO'}
@@ -648,7 +620,7 @@ class OPS_OT_BakeMesh(bpy.types.Operator):
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         obj = context.active_object
-        return obj and obj.type in {'MESH', 'CURVE'} and hasattr(obj, "urdf_mech_props") and obj.urdf_mech_props.is_part
+        return obj and obj.type in {'MESH', 'CURVE'} and hasattr(obj, "fcd_pg_mech_props") and obj.fcd_pg_mech_props.is_part
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         """
@@ -717,7 +689,7 @@ class OPS_OT_BakeMesh(bpy.types.Operator):
 
         # --- 4. Collect all original parametric objects and helpers for deletion ---
         objects_to_delete = {obj_to_bake}
-        props = obj_to_bake.urdf_mech_props
+        props = obj_to_bake.fcd_pg_mech_props
         
         # --- AI Editor Note: Handle Basic Joint Stator Baking ---
         # If this is a basic joint, we must also bake the stator object.
@@ -733,17 +705,17 @@ class OPS_OT_BakeMesh(bpy.types.Operator):
             # But to be consistent with 'Bake', we should apply any modifiers if they existed (AutoSmooth).
             # Since we are in a script, we can just apply the modifiers.
             # For now, just marking it as not a part is sufficient to "bake" it in the UI sense.
-            stator.urdf_mech_props.is_part = False
+            stator.fcd_pg_mech_props.is_part = False
 
         if props.category == 'BASIC_JOINT' and props.joint_screw_obj:
             screw = props.joint_screw_obj
             props.joint_screw_obj = None
-            screw.urdf_mech_props.is_part = False
+            screw.fcd_pg_mech_props.is_part = False
 
         if props.category == 'BASIC_JOINT' and props.joint_pin_obj:
             pin = props.joint_pin_obj
             props.joint_pin_obj = None
-            pin.urdf_mech_props.is_part = False
+            pin.fcd_pg_mech_props.is_part = False
 
         # Find boolean cutters by inspecting modifiers.
         for mod in obj_to_bake.modifiers:
@@ -773,7 +745,7 @@ class OPS_OT_BakeMesh(bpy.types.Operator):
                         bpy.data.curves.remove(data)
 
         # Mark the new object as no longer being a parametric part to hide the UI.
-        baked_obj.urdf_mech_props.is_part = False
+        baked_obj.fcd_pg_mech_props.is_part = False
 
         # --- 6. Select the new baked object for a good user experience ---
         bpy.ops.object.select_all(action='DESELECT')
@@ -784,9 +756,9 @@ class OPS_OT_BakeMesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class URDF_OT_ReadJointSettings(bpy.types.Operator):
+class FCD_OT_ReadJointSettings(bpy.types.Operator):
     """Reads the properties from the active bone into the global Joint Editor tool."""
-    bl_idname = "urdf.read_joint_settings"
+    bl_idname = "fcd.read_joint_settings"
     bl_label = "Read From Active"
     bl_description = "Load settings from the currently active bone"
     bl_options = {'REGISTER', 'UNDO'}
@@ -797,17 +769,17 @@ class URDF_OT_ReadJointSettings(bpy.types.Operator):
             return context.active_pose_bone is not None
         if context.mode == 'OBJECT':
             obj = context.active_object
-            rig = context.scene.urdf_active_rig
+            rig = context.scene.fcd_active_rig
             return obj and rig and obj.parent == rig and obj.parent_type == 'BONE'
         return False
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         # AI Editor Note: Support reading from the parent bone of a selected mesh in Object Mode.
         if context.mode == 'OBJECT':
-            bpy.ops.urdf.enter_pose_mode()
+            bpy.ops.fcd.enter_pose_mode()
             
-        tool_props = context.scene.urdf_joint_editor_settings
-        active_props = context.active_pose_bone.urdf_props
+        tool_props = context.scene.fcd_pg_joint_editor_settings
+        active_props = context.active_pose_bone.fcd_pg_kinematic_props
 
         tool_props.joint_type = active_props.joint_type
         tool_props.axis_enum = active_props.axis_enum
@@ -821,9 +793,9 @@ class URDF_OT_ReadJointSettings(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class URDF_OT_ApplyJointSettings(bpy.types.Operator):
+class FCD_OT_ApplyJointSettings(bpy.types.Operator):
     """Applies the properties from the global Joint Editor tool to all selected bones."""
-    bl_idname = "urdf.apply_joint_settings"
+    bl_idname = "fcd.apply_joint_settings"
     bl_label = "Apply to Selected"
     bl_description = "Apply the settings below to all selected bones"
     bl_options = {'REGISTER', 'UNDO'}
@@ -836,7 +808,7 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
                 return len(context.selected_pose_bones_from_active_object) > 0
             return len(context.selected_pose_bones) > 0
         if context.mode == 'OBJECT':
-            rig = context.scene.urdf_active_rig
+            rig = context.scene.fcd_active_rig
             if not rig:
                 return False
             if rig in context.selected_objects:
@@ -864,12 +836,12 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
         return False
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        tool_props = context.scene.urdf_joint_editor_settings
+        tool_props = context.scene.fcd_pg_joint_editor_settings
         
         bones_to_update = []
         
         # Determine the active rig for context
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         if not rig:
             # Fallback to active object or selected armature
             if context.active_object and context.active_object.type == 'ARMATURE':
@@ -882,9 +854,11 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
                         rig = obj.parent; break
 
         if context.mode == 'POSE':
-            # AI Editor Note: Access selected_pose_bones from the global context for maximum reliability
-            # across different interaction methods (timers, scripts, or UI callbacks).
-            sel_bones = getattr(bpy.context, 'selected_pose_bones', [])
+            # AI Editor Note: Access selected_pose_bones from the current operator context
+            # for maximum reliability across different interaction methods.
+            sel_bones = getattr(context, 'selected_pose_bones', [])
+            if not sel_bones:
+                sel_bones = getattr(bpy.context, 'selected_pose_bones', [])
             
             # Also check the rig specifically mentioned in the scene if nothing else is found
             if not sel_bones and rig and rig.type == 'ARMATURE':
@@ -935,7 +909,7 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
 
         try:
             for bone in bones_to_update:
-                props = bone.urdf_props
+                props = bone.fcd_pg_kinematic_props
                 props.joint_type = tool_props.joint_type
                 props.axis_enum = tool_props.axis_enum
                 props.joint_radius = tool_props.joint_radius
@@ -948,7 +922,7 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
 
                 # AI Editor Note: Manually trigger state updates ONCE per bone after setting all properties.
                 clean_conflicting_mechanics(bone)
-                update_single_bone_gizmo(bone, context.scene.urdf_viz_gizmos)
+                update_single_bone_gizmo(bone, context.scene.fcd_viz_gizmos)
                 apply_native_constraints(bone)
                 update_ik_chain_length(props, context)
         finally:
@@ -963,12 +937,12 @@ class URDF_OT_ApplyJointSettings(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class OPS_OT_SetupIK(bpy.types.Operator):
+class FCD_OT_SetupIK(bpy.types.Operator):
     """
     Creates a standard Inverse Kinematics (IK) setup for the active bone,
     including a target bone and a pole target bone.
     """
-    bl_idname = "urdf.setup_ik"
+    bl_idname = "fcd.setup_ik"
     bl_label = "Setup IK Chain"
     bl_description = "Create an IK chain from the active bone up to its root, including a target and pole bone"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1066,9 +1040,9 @@ class OPS_OT_SetupIK(bpy.types.Operator):
         self.report({'INFO'}, f"Created IK chain of length {chain_length} on '{ik_bone.name}'")
         return {'FINISHED'}
 
-class OPS_OT_SetOriginToCursor(bpy.types.Operator):
+class FCD_OT_SetOriginToCursor(bpy.types.Operator):
     """Moves the origin of the selected object(s) to the 3D cursor"""
-    bl_idname = "urdf.set_origin_to_cursor"
+    bl_idname = "fcd.set_origin_to_cursor"
     bl_label = "Set Origin to Cursor"
     bl_description = "Moves the origin of the selected object(s) to the 3D cursor"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1139,11 +1113,11 @@ def update_material_merge_trigger(self, context):
     """Trigger a re-merge when layer settings change."""
     # Use a timer to avoid context issues during property updates
     if context.active_object:
-        bpy.app.timers.register(lambda: bpy.ops.urdf.material_merge() or None, first_interval=0.01)
+        bpy.app.timers.register(lambda: bpy.ops.fcd.material_merge() or None, first_interval=0.01)
 
-class URDF_OT_Material_AddSmart(bpy.types.Operator):
+class FCD_OT_Material_AddSmart(bpy.types.Operator):
     """Add a new material slot with a pre-configured smart material preset"""
-    bl_idname = "urdf.material_add_smart"
+    bl_idname = "fcd.material_add_smart"
     bl_label = "Add Smart Material"
     bl_description = "Adds a new material layer with a specific preset configuration"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1270,9 +1244,9 @@ class URDF_OT_Material_AddSmart(bpy.types.Operator):
         self.report({'INFO'}, f"Added smart material: {self.mat_type}")
         return {'FINISHED'}
 
-class URDF_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
+class FCD_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
     """Load an image texture into the active material's Base Color"""
-    bl_idname = "urdf.material_load_texture"
+    bl_idname = "fcd.material_load_texture"
     bl_label = "Load Texture"
     bl_description = "Load an image file and connect it to the Base Color of the active material"
     
@@ -1331,9 +1305,9 @@ class URDF_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
         self.report({'INFO'}, f"Loaded texture '{img.name}' into '{mat.name}'")
         return {'FINISHED'}
 
-class URDF_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
+class FCD_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
     """Create a new material from an image file"""
-    bl_idname = "urdf.material_from_image"
+    bl_idname = "fcd.material_from_image"
     bl_label = "New Material from Image"
     bl_description = "Create a new material with the selected image as the Base Color"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1377,9 +1351,9 @@ class URDF_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
         self.report({'INFO'}, f"Created material '{mat.name}' from '{img.name}'")
         return {'FINISHED'}
 
-class URDF_OT_AddMappingNodes(bpy.types.Operator):
+class FCD_OT_AddMappingNodes(bpy.types.Operator):
     """Add Texture Coordinate and Mapping nodes to the active material"""
-    bl_idname = "urdf.add_mapping_nodes"
+    bl_idname = "fcd.add_mapping_nodes"
     bl_label = "Add Transform Controls"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -1409,9 +1383,9 @@ class URDF_OT_AddMappingNodes(bpy.types.Operator):
         self.report({'INFO'}, "Added mapping nodes")
         return {'FINISHED'}
 
-class URDF_OT_UV_SmartUnwrap(bpy.types.Operator):
+class FCD_OT_UV_SmartUnwrap(bpy.types.Operator):
     """Apply smart UV unwrapping to the active mesh"""
-    bl_idname = "urdf.uv_smart_unwrap"
+    bl_idname = "fcd.uv_smart_unwrap"
     bl_label = "Smart UV Unwrap"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -1456,9 +1430,9 @@ class URDF_OT_UV_SmartUnwrap(bpy.types.Operator):
         self.report({'INFO'}, f"Applied UV: {self.method}")
         return {'FINISHED'}
 
-class URDF_OT_Material_Merge(bpy.types.Operator):
+class FCD_OT_Material_Merge(bpy.types.Operator):
     """Merge all enabled material slots into a single composite material"""
-    bl_idname = "urdf.material_merge"
+    bl_idname = "fcd.material_merge"
     bl_label = "Composite All Layers"
     bl_description = "Combines all enabled material layers into a single composite material (preserving settings) and deletes old layers"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1473,7 +1447,7 @@ class URDF_OT_Material_Merge(bpy.types.Operator):
         # Filter valid source slots
         source_slots = [
             slot for slot in obj.material_slots 
-            if slot.material and slot.material.name != comp_mat_name and getattr(slot, "urdf_enabled", True)
+            if slot.material and slot.material.name != comp_mat_name and getattr(slot, "fcd_enabled", True)
         ]
 
         if not source_slots:
@@ -1584,7 +1558,7 @@ class URDF_OT_Material_Merge(bpy.types.Operator):
             
             # Create a unique node group for this layer to preserve settings
             # We use a unique name to avoid conflicts if the material is edited later
-            group_name = f"URDF_Layer_{mat.name}_{obj.name}_{i}"
+            group_name = f"FCD_Layer_{mat.name}_{obj.name}_{i}"
             # Remove old group if it exists to ensure fresh copy
             if group_name in bpy.data.node_groups:
                 bpy.data.node_groups.remove(bpy.data.node_groups[group_name])
@@ -1645,16 +1619,16 @@ class URDF_OT_Material_Merge(bpy.types.Operator):
         for i in range(len(obj.material_slots) - 2, -1, -1):
             slot = obj.material_slots[i]
             # Only remove if it was enabled and is not the composite itself
-            if getattr(slot, "urdf_enabled", True) and slot.material.name != comp_mat_name:
+            if getattr(slot, "fcd_enabled", True) and slot.material.name != comp_mat_name:
                 obj.active_material_index = i
                 bpy.ops.object.material_slot_remove()
             
         self.report({'INFO'}, f"Composited layers into '{comp_mat_name}'")
         return {'FINISHED'}
 
-class URDF_OT_Material_Add(bpy.types.Operator):
+class FCD_OT_Material_Add(bpy.types.Operator):
     """Add a new material slot (Blank or Existing)"""
-    bl_idname = "urdf.material_add"
+    bl_idname = "fcd.material_add"
     bl_label = "Add Material"
     bl_description = "Adds a new material slot. Use properties to select existing material."
     bl_options = {'REGISTER', 'UNDO'}
@@ -1700,20 +1674,20 @@ class URDF_OT_Material_Add(bpy.types.Operator):
             return context.window_manager.invoke_search_popup(self)
         return {'RUNNING_MODAL'}
 
-class URDF_UL_Mat_List(bpy.types.UIList):
+class FCD_UL_Mat_List(bpy.types.UIList):
     """Simple UI List for Materials"""
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         slot = item
         mat = slot.material
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             row = layout.row(align=True)
-            row.prop(slot, "urdf_enabled", text="")
+            row.prop(slot, "fcd_enabled", text="")
             row.prop(slot, "material", text="", emboss=False, icon='MATERIAL')
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
 
-class URDF_UL_SlinkyHooks_List(bpy.types.UIList):
+class FCD_UL_SlinkyHooks_List(bpy.types.UIList):
     """Simple UI List for Slinky Hooks"""
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         hook = item.target
@@ -1727,9 +1701,9 @@ class URDF_UL_SlinkyHooks_List(bpy.types.UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
 
-class URDF_OT_Paint_SetupBrush(bpy.types.Operator):
+class FCD_OT_Paint_SetupBrush(bpy.types.Operator):
     """Configure a texture paint brush with a specific preset"""
-    bl_idname = "urdf.paint_setup_brush"
+    bl_idname = "fcd.paint_setup_brush"
     bl_label = "Setup Smart Brush"
     bl_description = "Sets up the active brush with texture and settings for painting"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1756,7 +1730,7 @@ class URDF_OT_Paint_SetupBrush(bpy.types.Operator):
         # 1. Ensure Material and Image
         mat = obj.active_material or bpy.data.materials.new(name=f"Paint_{obj.name}")
         if not mat:
-            bpy.ops.urdf.add_smart_material(mat_type='PLASTIC')
+            bpy.ops.fcd.add_smart_material(mat_type='PLASTIC')
             mat = obj.active_material
         if not mat.use_nodes: mat.use_nodes = True
         nodes = mat.node_tree.nodes
@@ -1786,20 +1760,20 @@ class URDF_OT_Paint_SetupBrush(bpy.types.Operator):
             if bpy.data.brushes:
                 brush = bpy.data.brushes[0]
             else:
-                brush = bpy.data.brushes.new(name="URDF_Smart_Brush", mode='TEXTURE_PAINT')
+                brush = bpy.data.brushes.new(name="FCD_Smart_Brush", mode='TEXTURE_PAINT')
             context.tool_settings.image_paint.brush = brush
             
         if self.brush_type == 'DIRT':
             brush.color = (0.1, 0.08, 0.05); brush.strength = 0.4; brush.blend = 'MIX'
-            tex = bpy.data.textures.get("URDF_Brush_Dirt") or bpy.data.textures.new("URDF_Brush_Dirt", type='CLOUDS')
+            tex = bpy.data.textures.get("FCD_Brush_Dirt") or bpy.data.textures.new("FCD_Brush_Dirt", type='CLOUDS')
             tex.noise_scale = 0.5; brush.texture = tex
         elif self.brush_type == 'SCRATCH':
             brush.color = (0.8, 0.8, 0.8); brush.strength = 0.8; brush.blend = 'LIGHTEN'
-            tex = bpy.data.textures.get("URDF_Brush_Scratch") or bpy.data.textures.new("URDF_Brush_Scratch", type='NOISE')
+            tex = bpy.data.textures.get("FCD_Brush_Scratch") or bpy.data.textures.new("FCD_Brush_Scratch", type='NOISE')
             brush.texture = tex
         elif self.brush_type == 'RUST':
             brush.color = (0.4, 0.15, 0.05); brush.strength = 0.6; brush.blend = 'MIX'
-            tex = bpy.data.textures.get("URDF_Brush_Rust") or bpy.data.textures.new("URDF_Brush_Rust", type='MUSGRAVE')
+            tex = bpy.data.textures.get("FCD_Brush_Rust") or bpy.data.textures.new("FCD_Brush_Rust", type='MUSGRAVE')
             tex.noise_scale = 0.8; brush.texture = tex
         elif self.brush_type == 'OIL':
             brush.color = (0.05, 0.05, 0.05); brush.strength = 0.5; brush.blend = 'MIX'; brush.texture = None
@@ -1807,16 +1781,16 @@ class URDF_OT_Paint_SetupBrush(bpy.types.Operator):
         self.report({'INFO'}, f"Brush set to {self.brush_type}")
         return {'FINISHED'}
 
-class OPS_OT_ExportGazeboWorld(bpy.types.Operator):
+class FCD_OT_ExportGazeboWorld(bpy.types.Operator):
     """Exports a simple Gazebo world file containing the robot"""
-    bl_idname = "urdf.export_gazebo_world"
+    bl_idname = "fcd.export_gazebo_world"
     bl_label = "Export Gazebo World"
     bl_options = {'INTERNAL'}
 
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         if not rig:
             self.report({'ERROR'}, "No active rig selected.")
             return {'CANCELLED'}
@@ -1851,18 +1825,18 @@ class OPS_OT_ExportGazeboWorld(bpy.types.Operator):
         self.report({'INFO'}, f"Exported Gazebo world to {self.filepath}")
         return {'FINISHED'}
 
-class OPS_OT_LinkChainDriver(bpy.types.Operator):
+class FCD_OT_LinkChainDriver(bpy.types.Operator):
     """
     Links the chain's animation to the rotation of a selected object (e.g., a sprocket).
     Calculates the linear motion based on the driver's radius.
     """
-    bl_idname = "urdf.link_chain_driver"
+    bl_idname = "fcd.link_chain_driver"
     bl_label = "Link Driver"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         path_obj = context.active_object
-        props = path_obj.urdf_mech_props
+        props = path_obj.fcd_pg_mech_props
         driver_obj = props.chain_drive_target
 
         # If no specific driver is selected, try to use the first wrap object
@@ -1876,9 +1850,9 @@ class OPS_OT_LinkChainDriver(bpy.types.Operator):
 
         # Determine the effective radius for the driver
         radius = 1.0
-        if hasattr(driver_obj, "urdf_mech_props") and driver_obj.urdf_mech_props.is_part:
+        if hasattr(driver_obj, "fcd_pg_mech_props") and driver_obj.fcd_pg_mech_props.is_part:
             # If it's a generated gear/pulley, use its parametric radius
-            radius = driver_obj.urdf_mech_props.radius
+            radius = driver_obj.fcd_pg_mech_props.radius
         else:
             # Otherwise, estimate from dimensions (assuming Z-axis rotation, so X/Y radius)
             radius = (driver_obj.dimensions.x + driver_obj.dimensions.y) / 4.0
@@ -1889,10 +1863,10 @@ class OPS_OT_LinkChainDriver(bpy.types.Operator):
         # Create the driver on the chain's animation offset property
         # AI Editor Note: Remove existing driver first to ensure a clean update.
         # This fixes the issue where the driver object couldn't be changed.
-        path_obj.driver_remove('["urdf_native_anim_offset"]')
+        path_obj.driver_remove('["fcd_native_anim_offset"]')
         
         # This property drives the Geometry Nodes modifier input
-        fcurve_anim = path_obj.driver_add('["urdf_native_anim_offset"]')
+        fcurve_anim = path_obj.driver_add('["fcd_native_anim_offset"]')
         driver_anim = fcurve_anim.driver
         
         # AI Editor Note: Clear existing variables to ensure a clean switch when changing drivers.
@@ -1923,8 +1897,8 @@ class OPS_OT_LinkChainDriver(bpy.types.Operator):
         self.report({'INFO'}, f"Linked chain to '{driver_obj.name}' with radius {radius:.3f}")
         return {'FINISHED'}
 
-class OPS_OT_AddBoolean(bpy.types.Operator):
-    bl_idname = "urdf.add_boolean"
+class FCD_OT_AddBoolean(bpy.types.Operator):
+    bl_idname = "fcd.add_boolean"
     bl_label = "Add Boolean"
     bl_options = {'REGISTER', 'UNDO'}
     operation: bpy.props.EnumProperty(items=[('DIFFERENCE', "Cut", ""), ('UNION', "Join", ""), ('INTERSECT', "Intersect", "")])
@@ -1959,9 +1933,9 @@ class OPS_OT_AddBoolean(bpy.types.Operator):
         self.report({'INFO'}, f"Added {len(selected)} boolean modifier(s) to '{active.name}'.")
         return {'FINISHED'}
 
-class URDF_OT_AddParametricAnchor(bpy.types.Operator):
+class FCD_OT_AddParametricAnchor(bpy.types.Operator):
     """Creates an Empty object and adds a Hook modifier to the selected mesh elements"""
-    bl_idname = "urdf.add_parametric_anchor"
+    bl_idname = "fcd.add_parametric_anchor"
     bl_label = "Attach Hook to Selected"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2036,9 +2010,9 @@ class URDF_OT_AddParametricAnchor(bpy.types.Operator):
         self.report({'INFO'}, f"Attached Hook '{empty.name}' to selection")
         return {'FINISHED'}
 
-class URDF_OT_AddMarker(bpy.types.Operator):
+class FCD_OT_AddMarker(bpy.types.Operator):
     """Creates an Empty marker at each selected vertex"""
-    bl_idname = "urdf.add_marker"
+    bl_idname = "fcd.add_marker"
     bl_label = "Attach Marker to Vertex"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2108,9 +2082,9 @@ class URDF_OT_AddMarker(bpy.types.Operator):
         self.report({'INFO'}, f"Attached {created_count} Markers to vertices")
         return {'FINISHED'}
 
-class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
+class FCD_OT_ToggleHookPlacement(bpy.types.Operator):
     """Toggle placement mode for the hook anchor. Move the empty without deforming the mesh, then stop to rebind."""
-    bl_idname = "urdf.toggle_hook_placement"
+    bl_idname = "fcd.toggle_hook_placement"
     bl_label = "Start/Stop Hook Placement Mode"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2123,8 +2097,8 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
         scene = context.scene
         
         # Toggle state
-        is_starting = not scene.urdf_hook_placement_mode
-        scene.urdf_hook_placement_mode = is_starting
+        is_starting = not scene.fcd_hook_placement_mode
+        scene.fcd_hook_placement_mode = is_starting
         
         if is_starting:
             # Start Placement: Apply modifiers to bake deformation, allowing empty to move freely
@@ -2139,7 +2113,7 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
             
             if not target_meshes:
                 self.report({'WARNING'}, "No meshes found hooked to this Empty.")
-                scene.urdf_hook_placement_mode = False
+                scene.fcd_hook_placement_mode = False
                 return {'CANCELLED'}
 
             for mesh, mod in target_meshes:
@@ -2157,7 +2131,7 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
                     self.report({'ERROR'}, f"Failed to apply hook on {mesh.name}: {e}")
             
             # Store hook data on the empty
-            empty["urdf_hook_data"] = hook_data
+            empty["fcd_hook_data"] = hook_data
             self.report({'INFO'}, "Hook Placement Started. Deformation applied. Move the Empty, then click Stop.")
             
         else:
@@ -2171,7 +2145,7 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
                 
             bpy.ops.object.select_all(action='DESELECT')
             
-            hook_data = empty.get("urdf_hook_data", [])
+            hook_data = empty.get("fcd_hook_data", [])
             
             for item in hook_data:
                 mesh = bpy.data.objects.get(item["mesh_name"])
@@ -2213,8 +2187,8 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
                 mesh.select_set(False)
             
             # Cleanup
-            if "urdf_hook_data" in empty:
-                del empty["urdf_hook_data"]
+            if "fcd_hook_data" in empty:
+                del empty["fcd_hook_data"]
 
             # Restore state
             if original_active and original_active.name in context.scene.objects:
@@ -2226,9 +2200,9 @@ class URDF_OT_ToggleHookPlacement(bpy.types.Operator):
             
         return {'FINISHED'}
 
-class URDF_OT_CleanupAnchor(bpy.types.Operator):
+class FCD_OT_CleanupAnchor(bpy.types.Operator):
     """Removes the anchor Empty and cleans up related Hook modifiers and Vertex Groups"""
-    bl_idname = "urdf.cleanup_anchor"
+    bl_idname = "fcd.cleanup_anchor"
     bl_label = "Remove Selected Hook/Marker"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2280,9 +2254,9 @@ class URDF_OT_CleanupAnchor(bpy.types.Operator):
         self.report({'INFO'}, f"Removed {cleaned_count} hooks/markers.")
         return {'FINISHED'}
 
-class URDF_OT_BakeAnchor(bpy.types.Operator):
+class FCD_OT_BakeAnchor(bpy.types.Operator):
     """Applies the hook deformation to the mesh geometry (Bake)"""
-    bl_idname = "urdf.bake_anchor"
+    bl_idname = "fcd.bake_anchor"
     bl_label = "Bake Anchor (Apply)"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2382,7 +2356,7 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
     """
     Creates a Geometry Nodes setup to dynamically display the distance between two objects as text.
     """
-    gn_name = "URDF_Dynamic_Dimension_GN"
+    gn_name = "FCD_Dynamic_Dimension_GN"
     gn_group = bpy.data.node_groups.get(gn_name)
     if not gn_group:
         gn_group = bpy.data.node_groups.new(name=gn_name, type='GeometryNodeTree')
@@ -2519,13 +2493,13 @@ def get_or_create_text_material(target_obj):
          print(f"CRITICAL ERROR: get_or_create_text_material received {type(target_obj)} with no name: {target_obj}")
          return bpy.data.materials.new("ERROR_MAT")
 
-    mat_name = f"URDF_Material_{target_obj.name}"
+    mat_name = f"FCD_Material_{target_obj.name}"
     mat = bpy.data.materials.get(mat_name)
     if not mat:
         mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
     
-    color = getattr(target_obj, "urdf_dim_text_color", (0.0, 0.0, 0.0, 1.0))
+    color = getattr(target_obj, "fcd_dim_text_color", (0.0, 0.0, 0.0, 1.0))
     if mat.use_nodes and mat.node_tree:
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
         if bsdf:
@@ -2547,10 +2521,10 @@ def update_dimension_length(self, context):
     # to drive the distance between the two arrow heads.
     # Logic: Find Arrow B (typically child of Arrow A or linked via GN) and move it locally along Z.
     obj = self
-    if not obj.get("urdf_is_dimension"):
+    if not obj.get("fcd_is_dimension"):
         return
 
-    length = getattr(obj, "urdf_dim_length", 0.0)
+    length = getattr(obj, "fcd_dim_length", 0.0)
     
     # Identify Arrow heads. We find them via the GN modifier sockets or hierarchy.
     mod = obj.modifiers.get("Dynamic_Dimension")
@@ -2569,7 +2543,7 @@ def update_dimension_length(self, context):
 
 def create_arrow_mesh_data():
     """Creates a wireframe arrow mesh with origin at the tip."""
-    mesh_name = "URDF_Arrow_Mesh"
+    mesh_name = "FCD_Arrow_Mesh"
     mesh = bpy.data.meshes.get(mesh_name)
     if not mesh:
         mesh = bpy.data.meshes.new(mesh_name)
@@ -2625,12 +2599,12 @@ def update_arrow_settings(self, context):
         return
 
     obj = self
-    if not obj.get("urdf_is_dimension"):
+    if not obj.get("fcd_is_dimension"):
         return
 
-    arrow_s = getattr(obj, "urdf_dim_arrow_scale", 0.1)
-    text_s = getattr(obj, "urdf_dim_text_scale", 0.1)
-    dir_enum = getattr(obj, "urdf_dim_direction", 'Z')
+    arrow_s = getattr(obj, "fcd_dim_arrow_scale", 0.1)
+    text_s = getattr(obj, "fcd_dim_text_scale", 0.1)
+    dir_enum = getattr(obj, "fcd_dim_direction", 'Z')
     target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
     
     rot_quat = target_vec.to_track_quat('Z', 'Y')
@@ -2652,7 +2626,7 @@ def update_arrow_settings(self, context):
     obj.scale = (text_s, text_s, text_s)
 
     # Smart Position Update
-    if not getattr(obj, "urdf_dim_is_manual", False):
+    if not getattr(obj, "fcd_dim_is_manual", False):
         obj.location = target_vec * arrow_s
 
     for arrow in arrows:
@@ -2672,14 +2646,14 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=No
     Anchor (Root) -> Arrow A (Origin) -> Arrow B (End)
     """
     scene = context.scene
-    coll = bpy.data.collections.get("URDF_Dimensions")
+    coll = bpy.data.collections.get("FCD_Dimensions")
     # Store initial mode to restore later
     original_mode = context.mode
     if original_mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
     if not coll:
-        coll = bpy.data.collections.new("URDF_Dimensions")
+        coll = bpy.data.collections.new("FCD_Dimensions")
         context.scene.collection.children.link(coll)
 
     # 1. Main Anchor (Empty Parent)
@@ -2707,14 +2681,14 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=No
     # 2. Arrow A (Origin Head)
     arrow_mesh = create_arrow_mesh_data()
     aa = bpy.data.objects.new(f"{name}_Arrow_A", arrow_mesh)
-    aa.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
+    aa.scale = (scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale)
     coll.objects.link(aa)
     aa.parent = anchor
     aa.location = (0,0,0)
     
     # 3. Arrow B (End Head)
     ab = bpy.data.objects.new(f"{name}_Arrow_B", arrow_mesh)
-    ab.scale = (scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale, scene.urdf_dim_arrow_scale)
+    ab.scale = (scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale)
     coll.objects.link(ab)
     ab.parent = aa
     ab.location = (0, 0, initial_length)
@@ -2723,8 +2697,8 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=No
     txt_mesh = bpy.data.meshes.new(f"{name}_Label_Mesh")
     txt_obj = bpy.data.objects.new(f"{name}_Label", txt_mesh)
     coll.objects.link(txt_obj)
-    txt_obj["urdf_is_dimension"] = True
-    txt_obj.urdf_dim_length = initial_length
+    txt_obj["fcd_is_dimension"] = True
+    txt_obj.fcd_dim_length = initial_length
     
     # Position label at midpoint slightly offset
     txt_obj.parent = aa
@@ -2749,9 +2723,9 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=No
         
     return txt_obj
 
-class URDF_OT_AddTextDescription(bpy.types.Operator):
+class FCD_OT_AddTextDescription(bpy.types.Operator):
     """Add a text description label to the selected element"""
-    bl_idname = "urdf.add_text_description"
+    bl_idname = "fcd.add_text_description"
     bl_label = "Add Text Description"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2792,9 +2766,9 @@ class URDF_OT_AddTextDescription(bpy.types.Operator):
         
         text_obj = bpy.data.objects.new(name="Description_Text", object_data=font_curve)
         
-        coll = bpy.data.collections.get("URDF_Dimensions")
+        coll = bpy.data.collections.get("FCD_Dimensions")
         if not coll:
-            coll = bpy.data.collections.new("URDF_Dimensions")
+            coll = bpy.data.collections.new("FCD_Dimensions")
             context.scene.collection.children.link(coll)
         coll.objects.link(text_obj)
         
@@ -2827,16 +2801,16 @@ class URDF_OT_AddTextDescription(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class URDF_OT_RemoveDimension(bpy.types.Operator):
+class FCD_OT_Remove_Dimension(bpy.types.Operator):
     """Removes the selected dimension and its associated arrows/anchors"""
-    bl_idname = "urdf.remove_dimension"
+    bl_idname = "fcd.remove_dimension"
     bl_label = "Remove Dimension"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and obj.get("urdf_is_dimension")
+        return obj and obj.get("fcd_is_dimension")
 
     def execute(self, context):
         text_obj = context.active_object
@@ -2861,9 +2835,9 @@ class URDF_OT_RemoveDimension(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class URDF_OT_AddDimension(bpy.types.Operator):
+class FCD_OT_Add_Dimension(bpy.types.Operator):
     """Generate a smart dimension measurement between selected elements or based on bounding box"""
-    bl_idname = "urdf.add_dimension"
+    bl_idname = "fcd.add_dimension"
     bl_label = "Generate Dimensions for Selected"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2914,9 +2888,9 @@ class URDF_OT_AddDimension(bpy.types.Operator):
             self.report({'WARNING'}, "Single object selection requires a Mesh for bounding box measurement.")
             return {'CANCELLED'}
 
-        axis_pref = getattr(scene, 'urdf_dim_axis', 'ALL')
+        axis_pref = getattr(scene, 'fcd_dim_axis', 'ALL')
         axes_to_gen = ['X', 'Y', 'Z'] if axis_pref == 'ALL' else [axis_pref]
-        offset = getattr(scene, 'urdf_dim_offset', 0.1)
+        offset = getattr(scene, 'fcd_dim_offset', 0.1)
 
         # Get world-space bounding box
         bb_verts = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
@@ -2942,8 +2916,8 @@ class URDF_OT_AddDimension(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class OPS_OT_AddModifier(bpy.types.Operator):
-    bl_idname = "urdf.add_parametric_mod"
+class FCD_OT_AddModifier(bpy.types.Operator):
+    bl_idname = "fcd.add_parametric_mod"
     bl_label = "Add Parametric Feature"
     bl_options = {'REGISTER', 'UNDO'}
     type: bpy.props.EnumProperty(items=[('BEVEL', "Fillet/Chamfer", ""), ('SOLIDIFY', "Shell/Thicken", ""), ('SCREW', "Revolve", ""), ('MIRROR', "Mirror", "")])
@@ -2982,9 +2956,9 @@ class OPS_OT_AddModifier(bpy.types.Operator):
         self.report({'INFO'}, f"Added {self.type.lower()} modifier to '{obj.name}'.")
         return {'FINISHED'}
 
-class OPS_OT_AddSimplify(bpy.types.Operator):
+class FCD_OT_AddSimplify(bpy.types.Operator):
     """Applies geometry cleanup operations (Weld or Simplify) directly to the mesh"""
-    bl_idname = "urdf.add_simplify"
+    bl_idname = "fcd.add_simplify"
     bl_label = "Simplify"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -3081,8 +3055,8 @@ class OPS_OT_AddSimplify(bpy.types.Operator):
             
         return {'FINISHED'}
 
-class OPS_OT_SetupLinearArray(bpy.types.Operator):
-    bl_idname = "urdf.setup_linear_array"
+class FCD_OT_SetupLinearArray(bpy.types.Operator):
+    bl_idname = "fcd.setup_linear_array"
     bl_label = "Linear Pattern"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -3114,8 +3088,8 @@ class OPS_OT_SetupLinearArray(bpy.types.Operator):
         self.report({'INFO'}, f"Added linear array to '{obj.name}'.")
         return {'FINISHED'}
 
-class OPS_OT_SetupRadialArray(bpy.types.Operator):
-    bl_idname = "urdf.setup_radial_array"
+class FCD_OT_SetupRadialArray(bpy.types.Operator):
+    bl_idname = "fcd.setup_radial_array"
     bl_label = "Radial Pattern"
     bl_options = {'REGISTER', 'UNDO'}
     count: bpy.props.IntProperty(default=6, min=2)
@@ -3163,9 +3137,9 @@ class OPS_OT_SetupRadialArray(bpy.types.Operator):
         self.report({'INFO'}, f"Added radial array to '{obj.name}'.")
         return {'FINISHED'}
 
-class OPS_OT_CreateCurveForPath(bpy.types.Operator):
+class FCD_OT_CreateCurveForPath(bpy.types.Operator):
     """Creates a new curve object at the 3D cursor, ready for editing"""
-    bl_idname = "urdf.create_curve_for_path"
+    bl_idname = "fcd.create_curve_for_path"
     bl_label = "Create Path Curve"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3226,9 +3200,9 @@ class OPS_OT_CreateCurveForPath(bpy.types.Operator):
         self.report({'INFO'}, f"Created new {self.type} curve '{path_obj.name}' at cursor.")
         return {'FINISHED'}
 
-class OPS_OT_SetupCurveArray(bpy.types.Operator):
+class FCD_OT_SetupCurveArray(bpy.types.Operator):
     """Creates an array of the selected object(s) that follows the active curve"""
-    bl_idname = "urdf.setup_curve_array"
+    bl_idname = "fcd.setup_curve_array"
     bl_label = "Follow Curve"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3259,8 +3233,8 @@ class OPS_OT_SetupCurveArray(bpy.types.Operator):
             # AI Editor Note: Allow parametric parts to be used with this tool, but explicitly
             # block 'CHAIN' types, as they have their own dedicated curve-following system.
             # This allows users to create arrays of gears, custom links, etc., along a curve.
-            if hasattr(mesh_obj, 'urdf_mech_props') and mesh_obj.urdf_mech_props.is_part:
-                if mesh_obj.urdf_mech_props.category == 'CHAIN':
+            if hasattr(mesh_obj, 'fcd_pg_mech_props') and mesh_obj.fcd_pg_mech_props.is_part:
+                if mesh_obj.fcd_pg_mech_props.category == 'CHAIN':
                     cls.poll_message_set("Cannot use 'Follow Curve' on a Chain part. Use its own settings.")
                     return False
         
@@ -3372,8 +3346,8 @@ class OPS_OT_SetupCurveArray(bpy.types.Operator):
         self.report({'INFO'}, f"Set {len(objects_to_modify)} object(s) to follow '{path_obj.name}' using '{self.mode}' mode.")
         return {'FINISHED'}
 
-class OPS_OT_SmartSmooth(bpy.types.Operator):
-    bl_idname = "urdf.smart_smooth"
+class FCD_OT_SmartSmooth(bpy.types.Operator):
+    bl_idname = "fcd.smart_smooth"
     bl_label = "Smart Smooth"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3395,8 +3369,8 @@ class OPS_OT_SmartSmooth(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class OPS_OT_CreatePart(bpy.types.Operator):
-    bl_idname = "urdf.create_part"
+class FCD_OT_CreatePart(bpy.types.Operator):
+    bl_idname = "fcd.create_part"
     bl_label = "Generate"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -3406,28 +3380,28 @@ class OPS_OT_CreatePart(bpy.types.Operator):
     def execute(self, context: bpy.types.Context) -> Set[str]:
         # --- 1. Get Scaling Factor from Generation Cage ---
         scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
-        use_cage = context.scene.urdf_use_generation_cage
+        use_cage = context.scene.fcd_use_generation_cage
         if use_cage:
-            scale_factor = context.scene.urdf_generation_cage_size
+            scale_factor = context.scene.fcd_generation_cage_size
             self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
         else:
             self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
 
         cursor_loc = context.scene.cursor.location
-        cat = self.category if self.category else context.scene.urdf_part_category
-        type_sub = self.type_sub if self.type_sub else context.scene.urdf_part_type
+        cat = self.category if self.category else context.scene.fcd_part_category
+        type_sub = self.type_sub if self.type_sub else context.scene.fcd_part_type
         
         # Override with scene-specific properties if available
         if cat == 'ELECTRONICS' and not self.type_sub:
-            type_sub = context.scene.urdf_electronics_type
+            type_sub = context.scene.fcd_electronics_type
         elif cat == 'VEHICLE' and not self.type_sub:
-            type_sub = context.scene.urdf_vehicle_type
+            type_sub = context.scene.fcd_vehicle_type
         elif cat == 'ARCHITECTURAL' and not self.type_sub:
-            type_sub = context.scene.urdf_architectural_type
+            type_sub = context.scene.fcd_architectural_type
         
         # --- AI Editor Note: Use the new centralized helper function ---
         new_obj = create_parametric_part_object(context, cat, type_sub, cursor_loc, scale_factor)
-        props = new_obj.urdf_mech_props
+        props = new_obj.fcd_pg_mech_props
 
         # --- AI Editor Note: Auto-rigging for Basic Robot Joints ---
         # Moved outside the removed 'if' block to ensure it runs.
@@ -3447,12 +3421,12 @@ class OPS_OT_CreatePart(bpy.types.Operator):
                 # Sync to UI tool
                 core._joint_editor_update_guard = True
                 try:
-                    tool_props = context.scene.urdf_joint_editor_settings
-                    tool_props.joint_type = pbone_joint.urdf_props.joint_type
-                    tool_props.axis_enum = pbone_joint.urdf_props.axis_enum
-                    tool_props.joint_radius = pbone_joint.urdf_props.joint_radius
-                    tool_props.lower_limit = pbone_joint.urdf_props.lower_limit
-                    tool_props.upper_limit = pbone_joint.urdf_props.upper_limit
+                    tool_props = context.scene.fcd_pg_joint_editor_settings
+                    tool_props.joint_type = pbone_joint.fcd_pg_kinematic_props.joint_type
+                    tool_props.axis_enum = pbone_joint.fcd_pg_kinematic_props.axis_enum
+                    tool_props.joint_radius = pbone_joint.fcd_pg_kinematic_props.joint_radius
+                    tool_props.lower_limit = pbone_joint.fcd_pg_kinematic_props.lower_limit
+                    tool_props.upper_limit = pbone_joint.fcd_pg_kinematic_props.upper_limit
                 finally:
                     core._joint_editor_update_guard = False
 
@@ -3461,7 +3435,7 @@ class OPS_OT_CreatePart(bpy.types.Operator):
             # This ensures the new part has the correct default color immediately.
             # The update callback on the color property will handle subsequent changes.
             obj_for_material = new_obj
-            props_owner = new_obj.urdf_mech_props
+            props_owner = new_obj.fcd_pg_mech_props
 
             if props_owner.category == 'CHAIN':
                 # For chains, the material goes on the instanced link object,
@@ -3480,8 +3454,8 @@ class OPS_OT_CreatePart(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class OPS_OT_ChainAddWrapObject(bpy.types.Operator):
-    bl_idname = "urdf.chain_add_wrap_object"
+class FCD_OT_ChainAddWrapObject(bpy.types.Operator):
+    bl_idname = "fcd.chain_add_wrap_object"
     bl_label = "Add Wrap Object"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -3489,7 +3463,7 @@ class OPS_OT_ChainAddWrapObject(bpy.types.Operator):
     def poll(cls, context: bpy.types.Context) -> bool:
         obj = context.active_object
         # Operator works on an active Chain object
-        if not (obj and obj.urdf_mech_props.category == 'CHAIN'):
+        if not (obj and obj.fcd_pg_mech_props.category == 'CHAIN'):
             return False
         # Ensure there is a selected object to wrap around
         selected = [o for o in context.selected_objects if o != obj]
@@ -3499,11 +3473,11 @@ class OPS_OT_ChainAddWrapObject(bpy.types.Operator):
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         chain_obj = context.active_object
-        props = chain_obj.urdf_mech_props
+        props = chain_obj.fcd_pg_mech_props
         targets = [o for o in context.selected_objects if o != chain_obj]
 
         # 1. Get or Create the Wrap Collection
-        coll_name = f"URDF_Wraps_{chain_obj.name}"
+        coll_name = f"FCD_Wraps_{chain_obj.name}"
         wrap_coll = bpy.data.collections.get(coll_name)
         if not wrap_coll:
             wrap_coll = bpy.data.collections.new(coll_name)
@@ -3543,20 +3517,20 @@ class OPS_OT_ChainAddWrapObject(bpy.types.Operator):
         self.report({'INFO'}, f"Added {len(targets)} wrap objects to '{chain_obj.name}'")
         return {'FINISHED'}
 
-class URDF_OT_SlinkyAddHook(bpy.types.Operator):
+class FCD_OT_SlinkyAddHook(bpy.types.Operator):
     """Adds a new middle hook for the Slinky spring at the 3D cursor location."""
-    bl_idname = "urdf.slinky_add_hook"
+    bl_idname = "fcd.slinky_add_hook"
     bl_label = "Add Middle Hook"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        return obj and obj.urdf_mech_props.category == 'SPRING' and obj.urdf_mech_props.type_spring == 'SPRING_SLINKY'
+        return obj and obj.fcd_pg_mech_props.category == 'SPRING' and obj.fcd_pg_mech_props.type_spring == 'SPRING_SLINKY'
 
     def execute(self, context):
         obj = context.active_object
-        props = obj.urdf_mech_props
+        props = obj.fcd_pg_mech_props
         
         # Create an Empty at the 3D cursor
         hook = bpy.data.objects.new(name=f"Hook_{obj.name}", object_data=None)
@@ -3575,21 +3549,21 @@ class URDF_OT_SlinkyAddHook(bpy.types.Operator):
         
         return {'FINISHED'}
 
-class URDF_OT_SlinkyRemoveHook(bpy.types.Operator):
+class FCD_OT_SlinkyRemoveHook(bpy.types.Operator):
     """Removes the active middle hook from the Slinky spring."""
-    bl_idname = "urdf.slinky_remove_hook"
+    bl_idname = "fcd.slinky_remove_hook"
     bl_label = "Remove Active Hook"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        if not (obj and obj.urdf_mech_props.category == 'SPRING'): return False
-        return len(obj.urdf_mech_props.slinky_hooks) > 0
+        if not (obj and obj.fcd_pg_mech_props.category == 'SPRING'): return False
+        return len(obj.fcd_pg_mech_props.slinky_hooks) > 0
 
     def execute(self, context):
         obj = context.active_object
-        props = obj.urdf_mech_props
+        props = obj.fcd_pg_mech_props
         
         if props.slinky_active_index >= 0 and props.slinky_active_index < len(props.slinky_hooks):
             props.slinky_hooks.remove(props.slinky_active_index)
@@ -3601,27 +3575,27 @@ class URDF_OT_SlinkyRemoveHook(bpy.types.Operator):
             
         return {'FINISHED'}
 
-class OPS_OT_CreateElectronicPart(bpy.types.Operator):
+class FCD_OT_CreateElectronicPart(bpy.types.Operator):
     """Creates a new parametric electronic component."""
-    bl_idname = "urdf.create_electronic_part"
+    bl_idname = "fcd.create_electronic_part"
     bl_label = "Generate Electronic Part"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         cursor_loc = context.scene.cursor.location
-        type_sub = context.scene.urdf_electronics_type
+        type_sub = context.scene.fcd_electronics_type
         
         # --- 1. Get Scaling Factor from Generation Cage ---
         scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
-        if context.scene.urdf_use_generation_cage:
-            scale_factor = context.scene.urdf_generation_cage_size
+        if context.scene.fcd_use_generation_cage:
+            scale_factor = context.scene.fcd_generation_cage_size
             self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
         else:
             self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
 
         # Use the centralized helper
         new_obj = create_parametric_part_object(context, 'ELECTRONICS', type_sub, cursor_loc, scale_factor)
-        props = new_obj.urdf_mech_props
+        props = new_obj.fcd_pg_mech_props
         
         setup_and_update_material(new_obj, props.material.color)
 
@@ -3633,28 +3607,28 @@ class OPS_OT_CreateElectronicPart(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class OPS_OT_ChainAddPickedWrapObject(bpy.types.Operator):
+class FCD_OT_ChainAddPickedWrapObject(bpy.types.Operator):
     """Adds the object selected in the 'Pick Object' field to the wrap bundle"""
-    bl_idname = "urdf.chain_add_picked_wrap_object"
+    bl_idname = "fcd.chain_add_picked_wrap_object"
     bl_label = "Add Picked Object"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         obj = context.active_object
-        return (obj and obj.urdf_mech_props.category == 'CHAIN' and 
-                obj.urdf_mech_props.wrap_picker is not None)
+        return (obj and obj.fcd_pg_mech_props.category == 'CHAIN' and 
+                obj.fcd_pg_mech_props.wrap_picker is not None)
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         chain_obj = context.active_object
-        props = chain_obj.urdf_mech_props
+        props = chain_obj.fcd_pg_mech_props
         target = props.wrap_picker
 
         if not target:
             return {'CANCELLED'}
 
         # Reuse logic to ensure collection exists
-        coll_name = f"URDF_Wraps_{chain_obj.name}"
+        coll_name = f"FCD_Wraps_{chain_obj.name}"
         wrap_coll = bpy.data.collections.get(coll_name)
         if not wrap_coll:
             wrap_coll = bpy.data.collections.new(coll_name)
@@ -3676,8 +3650,8 @@ class OPS_OT_ChainAddPickedWrapObject(bpy.types.Operator):
         self.report({'INFO'}, f"Added '{target.name}' to wrap bundle.")
         return {'FINISHED'}
 
-class OPS_OT_ChainRemoveWrapObject(bpy.types.Operator):
-    bl_idname = "urdf.chain_remove_wrap_object"
+class FCD_OT_ChainRemoveWrapObject(bpy.types.Operator):
+    bl_idname = "fcd.chain_remove_wrap_object"
     bl_label = "Remove Wrap Object"
     bl_options = {'REGISTER', 'UNDO'}
     
@@ -3688,7 +3662,7 @@ class OPS_OT_ChainRemoveWrapObject(bpy.types.Operator):
         if not chain_obj:
             return {'CANCELLED'}
 
-        props = chain_obj.urdf_mech_props
+        props = chain_obj.fcd_pg_mech_props
         if not props.chain_wrap_items or self.index >= len(props.chain_wrap_items):
             return {'CANCELLED'}
 
@@ -3705,8 +3679,8 @@ class OPS_OT_ChainRemoveWrapObject(bpy.types.Operator):
         self.report({'INFO'}, f"Removed wrap object '{target.name if target else 'unknown'}'")
         return {'FINISHED'}
 
-class OPS_OT_CalculateRatio(bpy.types.Operator):
-    bl_idname = "urdf.calculate_ratio"
+class FCD_OT_CalculateRatio(bpy.types.Operator):
+    bl_idname = "fcd.calculate_ratio"
     bl_label = "Calculate Ratio"
     def execute(self, context: bpy.types.Context) -> Set[str]:
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
@@ -3714,14 +3688,14 @@ class OPS_OT_CalculateRatio(bpy.types.Operator):
         count = 0
         for bone in bones_to_process:
             if not bone: continue
-            props = bone.urdf_props
+            props = bone.fcd_pg_kinematic_props
             target_name = props.ratio_ref_bone if props.ratio_ref_bone else props.ratio_target_bone
             if not target_name:
                 continue
             target = bone.id_data.pose.bones.get(target_name)
             if target:
                 is_rot_self = props.joint_type in ['revolute', 'continuous']
-                is_rot_tgt = target.urdf_props.joint_type in ['revolute', 'continuous']
+                is_rot_tgt = target.fcd_pg_kinematic_props.joint_type in ['revolute', 'continuous']
                 
                 # --- NEW: Use joint_radius for rotational joints (gears) and bone length for linear joints (racks) ---
                 # This provides physically-based ratio calculation.
@@ -3730,33 +3704,33 @@ class OPS_OT_CalculateRatio(bpy.types.Operator):
                 len_driver = target.length
                 if is_rot_tgt:
                     # For gears, the ratio is based on radius
-                    len_driver = target.urdf_props.joint_radius if target.urdf_props.joint_radius > 0.001 else 1.0
+                    len_driver = target.fcd_pg_kinematic_props.joint_radius if target.fcd_pg_kinematic_props.joint_radius > 0.001 else 1.0
 
                 # Determine the effective "length" or "radius" for the target (follower) bone
                 len_follower = bone.length
                 if is_rot_self:
                     # For gears, the ratio is based on radius
-                    len_follower = bone.urdf_props.joint_radius if bone.urdf_props.joint_radius > 0.001 else 1.0
+                    len_follower = bone.fcd_pg_kinematic_props.joint_radius if bone.fcd_pg_kinematic_props.joint_radius > 0.001 else 1.0
 
                 if len_follower < 0.0001:
                     len_follower = 0.0001
                 
                 # --- Logic for different joint type combinations ---
                 if is_rot_self and not is_rot_tgt: # Follower is ROT, Driver is LIN (e.g., Rack and Pinion)
-                    bone.urdf_props.ratio_value = 1.0 / len_follower 
+                    bone.fcd_pg_kinematic_props.ratio_value = 1.0 / len_follower 
                 elif not is_rot_self and is_rot_tgt: # Follower is LIN, Driver is ROT (e.g., Pinion and Rack)
-                    bone.urdf_props.ratio_value = len_driver
+                    bone.fcd_pg_kinematic_props.ratio_value = len_driver
                 elif is_rot_self and is_rot_tgt: # Follower is ROT, Driver is ROT (e.g., two gears)
-                    bone.urdf_props.ratio_value = len_driver / len_follower
+                    bone.fcd_pg_kinematic_props.ratio_value = len_driver / len_follower
                 else: # Both are LIN
-                    bone.urdf_props.ratio_value = 1.0
+                    bone.fcd_pg_kinematic_props.ratio_value = 1.0
                 count += 1
                 
         self.report({'INFO'}, f"Calculated ratio for {count} bone(s).")
         return {'FINISHED'}
 
-class OPS_OT_AddMimic(bpy.types.Operator):
-    bl_idname = "urdf.add_mimic"
+class FCD_OT_AddMimic(bpy.types.Operator):
+    bl_idname = "fcd.add_mimic"
     bl_label = "Add / Update Driver"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
@@ -3765,7 +3739,7 @@ class OPS_OT_AddMimic(bpy.types.Operator):
         count = 0
         for bone in bones_to_process:
             if not bone: continue
-            props = bone.urdf_props
+            props = bone.fcd_pg_kinematic_props
             driver_name = props.ratio_target_bone
             if not driver_name:
                 continue
@@ -3785,8 +3759,8 @@ class OPS_OT_AddMimic(bpy.types.Operator):
         self.report({'INFO'}, f"Added mimic driver to {count} bone(s).")
         return {'FINISHED'}
 
-class OPS_OT_RemoveMimic(bpy.types.Operator):
-    bl_idname = "urdf.remove_mimic"
+class FCD_OT_RemoveMimic(bpy.types.Operator):
+    bl_idname = "fcd.remove_mimic"
     bl_label = "Remove Gear"
     bl_options = {'REGISTER', 'UNDO'}
     index: bpy.props.IntProperty()
@@ -3795,10 +3769,10 @@ class OPS_OT_RemoveMimic(bpy.types.Operator):
         
         count = 0
         for bone in bones_to_process:
-            if not bone or self.index >= len(bone.urdf_props.mimic_drivers): 
+            if not bone or self.index >= len(bone.fcd_pg_kinematic_props.mimic_drivers): 
                 continue
                 
-            item = bone.urdf_props.mimic_drivers[self.index]
+            item = bone.fcd_pg_kinematic_props.mimic_drivers[self.index]
             if bone.id_data.animation_data and bone.id_data.animation_data.drivers:
                 drivers = bone.id_data.animation_data.drivers
                 for i in range(len(drivers)-1, -1, -1):
@@ -3807,14 +3781,14 @@ class OPS_OT_RemoveMimic(bpy.types.Operator):
                         if v.targets[0].bone_target == item.target_bone:
                             drivers.remove(d)
                             break
-            bone.urdf_props.mimic_drivers.remove(self.index)
+            bone.fcd_pg_kinematic_props.mimic_drivers.remove(self.index)
             count += 1
             
         self.report({'INFO'}, f"Removed mimic driver from {count} bone(s).")
         return {'FINISHED'}
 
-class OPS_OT_ClearConfig(bpy.types.Operator):
-    bl_idname = "urdf.clear_config"
+class FCD_OT_ClearConfig(bpy.types.Operator):
+    bl_idname = "fcd.clear_config"
     bl_label = "Clear Config"
     def execute(self, context: bpy.types.Context) -> Set[str]:
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
@@ -3822,7 +3796,7 @@ class OPS_OT_ClearConfig(bpy.types.Operator):
         count = 0
         for bone in bones_to_process:
             if not bone: continue
-            props = bone.urdf_props
+            props = bone.fcd_pg_kinematic_props
 
             # Setting joint_type to 'none' triggers update_gizmo_prop,
             # which handles gizmos, FK constraints, and IK limits.
@@ -3852,8 +3826,8 @@ class OPS_OT_ClearConfig(bpy.types.Operator):
         self.report({'INFO'}, f"Cleared configuration for {count} bone(s).")
         return {'FINISHED'}
 
-class OPS_OT_ApplyBoneConstraints(bpy.types.Operator):
-    bl_idname = "urdf.bone_constraints"
+class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
+    bl_idname = "fcd.bone_constraints"
     bl_label = "Apply Config"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
@@ -3868,8 +3842,8 @@ class OPS_OT_ApplyBoneConstraints(bpy.types.Operator):
         self.report({'INFO'}, f"Applied constraints to {count} bone(s).")
         return {'FINISHED'}
 
-class OPS_OT_PickBone(bpy.types.Operator):
-    bl_idname = "urdf.pick_bone"
+class FCD_OT_PickBone(bpy.types.Operator):
+    bl_idname = "fcd.pick_bone"
     bl_label = "Pick Bone"
     mode: bpy.props.IntProperty(default=0)
     source_bone_name: bpy.props.StringProperty(name="Source Bone Name")
@@ -3890,9 +3864,9 @@ class OPS_OT_PickBone(bpy.types.Operator):
                 rig = context.object
                 src = rig.pose.bones.get(self.source_bone_name)
                 if self.mode == 0:
-                    src.urdf_props.ratio_target_bone = context.active_pose_bone.name
+                    src.fcd_pg_kinematic_props.ratio_target_bone = context.active_pose_bone.name
                 else:
-                    src.urdf_props.ratio_ref_bone = context.active_pose_bone.name
+                    src.fcd_pg_kinematic_props.ratio_ref_bone = context.active_pose_bone.name
                 rig.data.bones.active = src.bone
                 context.window.cursor_set('DEFAULT')
                 return {'FINISHED'}
@@ -4067,7 +4041,7 @@ def add_visual(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: bpy
 
     # --- Material Tag ---
     # Use the material from the bone's properties for consistency across the link.
-    material_props = bone.urdf_props.material
+    material_props = bone.fcd_pg_kinematic_props.material
     mat_name = f"{bone.name}_material" # Use bone name for a single link material
     material = ET.SubElement(visual, 'material', name=mat_name)
     color = material_props.color
@@ -4090,7 +4064,7 @@ def add_collision(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: 
         mesh_format: The file format for the mesh.
     """
     collision = ET.SubElement(link_element, 'collision')
-    collision_props = bone.urdf_props.collision
+    collision_props = bone.fcd_pg_kinematic_props.collision
 
     # Default to the visual mesh if no specific collision object is assigned.
     collision_obj = collision_props.collision_object if collision_props.collision_object else mesh_obj
@@ -4144,7 +4118,7 @@ def add_inertial(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
         bone: The bone containing the inertial properties.
     """
     inertial = ET.SubElement(link_element, 'inertial')
-    inertial_props = bone.urdf_props.inertial
+    inertial_props = bone.fcd_pg_kinematic_props.inertial
     ET.SubElement(inertial, 'mass', value=f"{inertial_props.mass:.6f}")
 
     # The origin of the inertial frame is the center of mass, relative to the link frame.
@@ -4163,7 +4137,7 @@ def add_gazebo_tags(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
         link_element: The <link> XML element.
         bone: The bone containing the material properties.
     """
-    material_props = bone.urdf_props.material
+    material_props = bone.fcd_pg_kinematic_props.material
     color = material_props.color
 
     # This <gazebo> tag with a 'reference' is a Gazebo extension.
@@ -4187,7 +4161,7 @@ def add_joint(robot: ET.Element, parent_bone: bpy.types.PoseBone, child_bone: bp
         parent_bone: The parent bone in the kinematic chain.
         child_bone: The child bone being connected.
     """
-    props = child_bone.urdf_props
+    props = child_bone.fcd_pg_kinematic_props
     joint_type = props.joint_type
     if joint_type == 'none': # 'none' means it's just a link in the chain, not a joint.
         return
@@ -4249,7 +4223,7 @@ def add_transmission(robot: ET.Element, bone: bpy.types.PoseBone) -> None:
         robot: The root <robot> XML element.
         bone: The bone whose joint needs a transmission.
     """
-    props = bone.urdf_props
+    props = bone.fcd_pg_kinematic_props
     if props.joint_type not in ['revolute', 'prismatic', 'continuous'] or not bone.parent:
         return
 
@@ -4266,9 +4240,9 @@ def add_transmission(robot: ET.Element, bone: bpy.types.PoseBone) -> None:
     ET.SubElement(actuator_elem, 'mechanicalReduction').text = str(trans_props.mechanical_reduction)
 
 
-class URDF_OT_GenerateROS2Workspace(bpy.types.Operator):
+class FCD_OT_GenerateROS2Workspace(bpy.types.Operator):
     """Generates a standard ROS 2 workspace structure with a description package"""
-    bl_idname = "urdf.generate_ros2_workspace"
+    bl_idname = "fcd.generate_ros2_workspace"
     bl_label = "Generate ROS 2 Workspace"
     bl_description = "Create a full ROS 2 workspace structure (src, build, install, log) and a description package template"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4294,7 +4268,7 @@ class URDF_OT_GenerateROS2Workspace(bpy.types.Operator):
             return {'CANCELLED'}
 
         workspace_root = os.path.join(self.directory, self.workspace_name)
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         robot_name = rig.name if rig else "my_robot"
         # Sanitize robot name for ROS 2 (lowercase, underscores)
         pkg_name = re.sub(r'[^a-z0-9_]', '_', robot_name.lower()) + "_description"
@@ -4391,21 +4365,9 @@ def generate_launch_description():
         self.report({'INFO'}, f"Generated ROS 2 workspace at {workspace_root}")
         return {'FINISHED'}
 
-class URDF_ExportItem(bpy.types.PropertyGroup):
-    """Item for the export list"""
-    rig: bpy.props.PointerProperty(type=bpy.types.Object, poll=lambda self, obj: obj.type == 'ARMATURE', name="Rig")
-
-class URDF_UL_ExportList(bpy.types.UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            layout.prop(item, "rig", text="", emboss=False, icon='OUTLINER_OB_ARMATURE')
-        elif self.layout_type == 'GRID':
-            layout.alignment = 'CENTER'
-            layout.label(text="", icon_value=icon)
-
-class URDF_OT_ExportList_Add(bpy.types.Operator):
+class FCD_OT_ExportList_Add(bpy.types.Operator):
     """Add selected armatures to the export list"""
-    bl_idname = "urdf.export_list_add"
+    bl_idname = "fcd.export_list_add"
     bl_label = "Add Selected"
     
     def execute(self, context):
@@ -4413,33 +4375,33 @@ class URDF_OT_ExportList_Add(bpy.types.Operator):
         for obj in context.selected_objects:
             if obj.type == 'ARMATURE':
                 # Check if already in list
-                if not any(item.rig == obj for item in context.scene.urdf_export_list):
-                    item = context.scene.urdf_export_list.add()
+                if not any(item.rig == obj for item in context.scene.fcd_export_list):
+                    item = context.scene.fcd_export_list.add()
                     item.rig = obj
                     added += 1
-        if added == 0 and context.scene.urdf_active_rig:
-             if not any(item.rig == context.scene.urdf_active_rig for item in context.scene.urdf_export_list):
-                item = context.scene.urdf_export_list.add()
-                item.rig = context.scene.urdf_active_rig
+        if added == 0 and context.scene.fcd_active_rig:
+             if not any(item.rig == context.scene.fcd_active_rig for item in context.scene.fcd_export_list):
+                item = context.scene.fcd_export_list.add()
+                item.rig = context.scene.fcd_active_rig
                 added += 1
         return {'FINISHED'}
 
-class URDF_OT_ExportList_Remove(bpy.types.Operator):
+class FCD_OT_ExportList_Remove(bpy.types.Operator):
     """Remove active item from export list"""
-    bl_idname = "urdf.export_list_remove"
+    bl_idname = "fcd.export_list_remove"
     bl_label = "Remove"
     
     def execute(self, context):
-        idx = context.scene.urdf_export_list_index
+        idx = context.scene.fcd_export_list_index
         try:
-            context.scene.urdf_export_list.remove(idx)
-            context.scene.urdf_export_list_index = min(max(0, idx - 1), len(context.scene.urdf_export_list) - 1)
+            context.scene.fcd_export_list.remove(idx)
+            context.scene.fcd_export_list_index = min(max(0, idx - 1), len(context.scene.fcd_export_list) - 1)
         except:
             pass
         return {'FINISHED'}
 
-class OPS_OT_Export(bpy.types.Operator, ExportHelper):
-    bl_idname = "urdf.export_general"
+class FCD_OT_Export(bpy.types.Operator, ExportHelper):
+    bl_idname = "fcd.export_general"
     bl_label = "Export Robot Package"
     
     filename_ext = ".urdf"
@@ -4455,10 +4417,10 @@ class OPS_OT_Export(bpy.types.Operator, ExportHelper):
         
         # AI Editor Note: Determine which rigs to export (List vs Active)
         rigs_to_export = []
-        if len(scene.urdf_export_list) > 0:
-            rigs_to_export = [item.rig for item in scene.urdf_export_list if item.rig]
-        elif scene.urdf_active_rig:
-            rigs_to_export = [scene.urdf_active_rig]
+        if len(scene.fcd_export_list) > 0:
+            rigs_to_export = [item.rig for item in scene.fcd_export_list if item.rig]
+        elif scene.fcd_active_rig:
+            rigs_to_export = [scene.fcd_active_rig]
             
         if not rigs_to_export:
             self.report({'ERROR'}, "No rigs selected for export.")
@@ -4473,22 +4435,22 @@ class OPS_OT_Export(bpy.types.Operator, ExportHelper):
         pkg_name = re.sub(r'[^a-z0-9_]', '_', robot_name_from_file.lower())
 
         # --- URDF Export Logic ---
-        if scene.urdf_export_as_urdf:
-            mesh_format = scene.urdf_export_mesh_format
+        if scene.fcd_export_as_urdf:
+            mesh_format = scene.fcd_export_mesh_format
             
             # Export URDF for each rig
             for i, rig in enumerate(rigs_to_export):
                 # If exporting multiple, use rig name. If single, use filename.
                 if len(rigs_to_export) > 1:
-                    urdf_name = f"{rig.name}.urdf"
+                    fcd_name = f"{rig.name}.urdf"
                 else:
-                    urdf_name = f"{robot_name_from_file}.urdf"
+                    fcd_name = f"{robot_name_from_file}.urdf"
                 
-                urdf_filepath = os.path.join(base_dir, urdf_name)
-                write_urdf(context, urdf_filepath, rig, mesh_format)
+                fcd_filepath = os.path.join(base_dir, fcd_name)
+                write_urdf(context, fcd_filepath, rig, mesh_format)
 
             # --- Generate Package Config (package.xml, CMakeLists.txt) ---
-            if scene.urdf_export_check_config:
+            if scene.fcd_export_check_config:
                 package_xml_content = f"""<?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
@@ -4538,7 +4500,7 @@ ament_package()"""
                     f.write(cmake_content)
 
             # --- Generate Launch Files ---
-            if scene.urdf_export_check_launch:
+            if scene.fcd_export_check_launch:
                 launch_dir = os.path.join(base_dir, 'launch')
                 os.makedirs(launch_dir, exist_ok=True)
                 
@@ -4546,10 +4508,10 @@ ament_package()"""
                 for rig in rigs_to_export:
                     if len(rigs_to_export) > 1:
                         launch_filename = f"gazebo_{rig.name}.launch.py"
-                        urdf_name = f"{rig.name}.urdf"
+                        fcd_name = f"{rig.name}.urdf"
                     else:
                         launch_filename = "gazebo.launch.py"
-                        urdf_name = f"{robot_name_from_file}.urdf"
+                        fcd_name = f"{robot_name_from_file}.urdf"
                         
                     launch_content = f"""import os
 from launch import LaunchDescription
@@ -4559,8 +4521,8 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-    urdf_file = '{os.path.join(base_dir, urdf_name)}'
-    with open(urdf_file, 'r') as infp:
+    fcd_file = '{os.path.join(base_dir, fcd_name)}'
+    with open(fcd_file, 'r') as infp:
         robot_desc = infp.read()
 
     return LaunchDescription([
@@ -4593,13 +4555,13 @@ def generate_launch_description():
                 for bone in rig.pose.bones:
                     visual_meshes = get_all_children_objects(bone, context)
                     meshes_to_export.update(visual_meshes)
-                    collision_props = bone.urdf_props.collision
+                    collision_props = bone.fcd_pg_kinematic_props.collision
                     if collision_props.shape == 'MESH':
                         collision_obj = collision_props.collision_object
                         if collision_obj and collision_obj.type == 'MESH':
                             meshes_to_export.add(collision_obj)
 
-            if meshes_to_export and scene.urdf_export_check_meshes:
+            if meshes_to_export and scene.fcd_export_check_meshes:
                 meshes_dir = os.path.join(base_dir, "meshes")
                 textures_dir = os.path.join(base_dir, "textures")
                 os.makedirs(meshes_dir, exist_ok=True)
@@ -4634,7 +4596,7 @@ def generate_launch_description():
                     
                     obj.select_set(False)
 
-                    if mesh_format in ['DAE', 'GLTF'] and scene.urdf_export_check_textures:
+                    if mesh_format in ['DAE', 'GLTF'] and scene.fcd_export_check_textures:
                         if obj.active_material and obj.active_material.use_nodes:
                             for node in obj.active_material.node_tree.nodes:
                                 if node.type == 'TEX_IMAGE' and node.image:
@@ -4656,7 +4618,7 @@ def generate_launch_description():
             self.report({'INFO'}, f"Exported URDF package to {base_dir}")
 
         # --- glTF Export Logic ---
-        if scene.urdf_export_as_gltf:
+        if scene.fcd_export_as_gltf:
             gltf_filepath = os.path.join(base_dir, f"{robot_name_from_file}.glb")
             try:
                 # Select rig and all its children for export
@@ -4671,24 +4633,24 @@ def generate_launch_description():
                     use_selection=True,
                     export_format='GLB',
                     export_apply=True,
-                    export_textures=scene.urdf_export_gltf_textures,
-                    export_normals=scene.urdf_export_gltf_normals,
-                    export_animations=scene.urdf_export_gltf_animations,
+                    export_textures=scene.fcd_export_gltf_textures,
+                    export_normals=scene.fcd_export_gltf_normals,
+                    export_animations=scene.fcd_export_gltf_animations,
                     export_yup=True
                 )
                 self.report({'INFO'}, f"Exported scene as glTF to {gltf_filepath}")
             except Exception as e:
                 self.report({'ERROR'}, f"Failed to export glTF: {e}")
 
-        if not scene.urdf_export_as_urdf and not scene.urdf_export_as_gltf:
+        if not scene.fcd_export_as_urdf and not scene.fcd_export_as_gltf:
             self.report({'WARNING'}, "No export format selected.")
             return {'CANCELLED'}
 
         return {'FINISHED'}
 
-class URDF_OT_ExportSelected(bpy.types.Operator, ExportHelper):
+class FCD_OT_ExportSelected(bpy.types.Operator, ExportHelper):
     """Export selected objects to a specific format with geometry and texture data"""
-    bl_idname = "urdf.export_selected"
+    bl_idname = "fcd.export_selected"
     bl_label = "Export Selected Mesh"
     bl_description = "Export selected objects to USD, glTF, OBJ, etc. for external software (Rhino, etc.)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4701,7 +4663,7 @@ class URDF_OT_ExportSelected(bpy.types.Operator, ExportHelper):
     )
 
     def invoke(self, context, event):
-        fmt = context.scene.urdf_quick_export_format
+        fmt = context.scene.fcd_quick_export_format
         if fmt == 'USD': self.filename_ext = ".usdc"
         elif fmt == 'GLTF': self.filename_ext = ".glb"
         elif fmt == 'OBJ': self.filename_ext = ".obj"
@@ -4710,7 +4672,7 @@ class URDF_OT_ExportSelected(bpy.types.Operator, ExportHelper):
         return ExportHelper.invoke(self, context, event)
 
     def execute(self, context):
-        fmt = context.scene.urdf_quick_export_format
+        fmt = context.scene.fcd_quick_export_format
         fpath = self.filepath
         
         if not fpath.lower().endswith(self.filename_ext):
@@ -4734,19 +4696,19 @@ class URDF_OT_ExportSelected(bpy.types.Operator, ExportHelper):
             self.report({'ERROR'}, f"Export failed: {e}")
             return {'CANCELLED'}
 
-class OPS_OT_TogglePlacement(bpy.types.Operator):
-    bl_idname = "urdf.toggle_placement"
+class FCD_OT_TogglePlacement(bpy.types.Operator):
+    bl_idname = "fcd.toggle_placement"
     bl_label = "Toggle Joint Placement Mode"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         if not rig:
             self.report({'WARNING'}, "No active rig selected.")
             return {'CANCELLED'}
 
-        is_entering_placement = not context.scene.urdf_placement_mode
+        is_entering_placement = not context.scene.fcd_placement_mode
 
         if is_entering_placement:
-            context.scene.urdf_placement_mode = True
+            context.scene.fcd_placement_mode = True
             
             if rig.animation_data:
                 for d in rig.animation_data.drivers:
@@ -4765,14 +4727,14 @@ class OPS_OT_TogglePlacement(bpy.types.Operator):
             # Now that the rig is active, we can safely switch to Pose Mode.
             bpy.ops.object.mode_set(mode='POSE')
 
-            # This call will unlock the bones because urdf_placement_mode is now True
+            # This call will unlock the bones because fcd_placement_mode is now True
             for pb in rig.pose.bones:
                 apply_native_constraints(pb) 
             
             self.report({'INFO'}, "Joint placement mode enabled.")
 
         else: # Exiting placement mode
-            context.scene.urdf_placement_mode = False
+            context.scene.fcd_placement_mode = False
 
             # --- AI Editor Note: Robust Context Management ---
             # Ensure the rig is active before performing mode changes or pose operations.
@@ -4793,12 +4755,12 @@ class OPS_OT_TogglePlacement(bpy.types.Operator):
             # We must iterate through all mimic relationships and re-apply the driver logic
             # to recalculate the offsets based on the new rest pose.
             for pb in rig.pose.bones:
-                if hasattr(pb, 'urdf_props') and pb.urdf_props.mimic_drivers:
-                    for mimic in pb.urdf_props.mimic_drivers:
+                if hasattr(pb, 'fcd_pg_kinematic_props') and pb.fcd_pg_kinematic_props.mimic_drivers:
+                    for mimic in pb.fcd_pg_kinematic_props.mimic_drivers:
                         # Re-run the driver setup to update the expression with the new offset.
                         # The 'invert' setting is read from the bone's single 'ratio_invert' property,
                         # consistent with how new mimic drivers are created.
-                        core.add_native_driver_relation(pb, mimic.target_bone, mimic.ratio, pb.urdf_props.ratio_invert)
+                        core.add_native_driver_relation(pb, mimic.target_bone, mimic.ratio, pb.fcd_pg_kinematic_props.ratio_invert)
 
             if rig.animation_data:
                 for d in rig.animation_data.drivers:
@@ -4814,8 +4776,8 @@ class OPS_OT_TogglePlacement(bpy.types.Operator):
         context.view_layer.update()
         return {'FINISHED'}
 
-class OPS_OT_CreateRig(bpy.types.Operator):
-    bl_idname = "urdf.create_rig"
+class FCD_OT_CreateRig(bpy.types.Operator):
+    bl_idname = "fcd.create_rig"
     bl_label = "Create New Robot"
     def execute(self, context: bpy.types.Context) -> Set[str]:
         base_name = "New_Kinematics"
@@ -4831,15 +4793,15 @@ class OPS_OT_CreateRig(bpy.types.Operator):
         rig.show_in_front = True
         rig.display_type = 'WIRE'
         armature_data.display_type = 'STICK'
-        context.scene.urdf_active_rig = rig
+        context.scene.fcd_active_rig = rig
         for o in context.selected_objects: o.select_set(False)
         rig.select_set(True)
         context.view_layer.objects.active = rig
         return {'FINISHED'}
 
-class URDF_OT_MergeArmatures(bpy.types.Operator):
+class FCD_OT_MergeArmatures(bpy.types.Operator):
     """Merge selected armatures into a new armature workspace"""
-    bl_idname = "urdf.merge_armatures"
+    bl_idname = "fcd.merge_armatures"
     bl_label = "Merge Armatures"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5047,7 +5009,7 @@ class URDF_OT_MergeArmatures(bpy.types.Operator):
 
         # 6. Finalize
         new_target_rig.name = f"{old_target_rig_name}_Merged"
-        context.scene.urdf_active_rig = new_target_rig
+        context.scene.fcd_active_rig = new_target_rig
         
         # AI Editor Note: Force a full update of gizmos and constraints on the new rig.
         # This ensures that the merged result is clean and fully functional.
@@ -5056,9 +5018,9 @@ class URDF_OT_MergeArmatures(bpy.types.Operator):
         self.report({'INFO'}, f"Merged into new workspace '{new_target_rig.name}'")
         return {'FINISHED'}
 
-class URDF_OT_PurgeBones(bpy.types.Operator):
+class FCD_OT_PurgeBones(bpy.types.Operator):
     """Removes selected bones and unparents their associated meshes, cleaning up the rig."""
-    bl_idname = "urdf.purge_bones"
+    bl_idname = "fcd.purge_bones"
     bl_label = "Purge Selected Bones"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5071,7 +5033,7 @@ class URDF_OT_PurgeBones(bpy.types.Operator):
         return False
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         bones_to_remove = set()
         objects_to_unparent = []
 
@@ -5082,6 +5044,12 @@ class URDF_OT_PurgeBones(bpy.types.Operator):
                 return {'CANCELLED'}
             
             for obj in context.selected_objects:
+                if obj.type == 'ARMATURE':
+                    # If the armature itself is selected, look for bones selected in its data
+                    for b in obj.data.bones:
+                        if b.select:
+                            bones_to_remove.add(b.name)
+                
                 if obj.parent == rig and obj.parent_type == 'BONE' and obj.parent_bone:
                     bones_to_remove.add(obj.parent_bone)
                     objects_to_unparent.append(obj)
@@ -5158,8 +5126,8 @@ class URDF_OT_PurgeBones(bpy.types.Operator):
         self.report({'INFO'}, f"Purged {count} bones and unparented {len(objects_to_unparent)} objects.")
         return {'FINISHED'}
 
-class OPS_OT_ParentToActive(bpy.types.Operator):
-    bl_idname = "urdf.parent_to_active"
+class FCD_OT_ParentToActive(bpy.types.Operator):
+    bl_idname = "fcd.parent_to_active"
     bl_label = "Parent Selected to Active"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
@@ -5233,8 +5201,8 @@ class OPS_OT_ParentToActive(bpy.types.Operator):
         self.report({'INFO'}, f"Parented {len(selected_meshes)} meshes and {len(selected_bones)} bones to {parent_bone_name}")
         return {'FINISHED'}
 
-class OPS_OT_EnterPoseMode(bpy.types.Operator):
-    bl_idname = "urdf.enter_pose_mode"
+class FCD_OT_EnterPoseMode(bpy.types.Operator):
+    bl_idname = "fcd.enter_pose_mode"
     bl_label = "Pose Mode to Set Gizmos"
     def execute(self, context: bpy.types.Context) -> Set[str]:
         # --- AI Editor Note: Context-Sensitive Rig Update ---
@@ -5257,7 +5225,7 @@ class OPS_OT_EnterPoseMode(bpy.types.Operator):
                     break
         
         if target_rig:
-            context.scene.urdf_active_rig = target_rig
+            context.scene.fcd_active_rig = target_rig
 
         # --- AI Editor Note: AttributeError Fix ---
         # Ensure a rig exists before proceeding. This prevents 'rig' from being None if no
@@ -5287,8 +5255,8 @@ class OPS_OT_EnterPoseMode(bpy.types.Operator):
                 pbone.bone.select = True
                 
         return {'FINISHED'}
-class OPS_OT_EnterObjectMode(bpy.types.Operator):
-    bl_idname = "urdf.enter_object_mode"
+class FCD_OT_EnterObjectMode(bpy.types.Operator):
+    bl_idname = "fcd.enter_object_mode"
     bl_label = "Object Mode"
     def execute(self, context: bpy.types.Context) -> Set[str]:
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -5462,10 +5430,10 @@ def _process_bones_in_pose_mode(rig: bpy.types.Object, bones_to_process: list, c
         pbone = rig.pose.bones.get(b_name)
         if pbone:
             # AI Editor Note: Set the bone's axis property to match the alignment axis.
-            pbone.urdf_props.axis_enum = 'Z' if axis == 'AUTO' else axis
-            pbone.urdf_props.joint_type = 'none'
-            pbone.urdf_props.joint_radius = radius
-            update_single_bone_gizmo(pbone, context.scene.urdf_viz_gizmos)
+            pbone.fcd_pg_kinematic_props.axis_enum = 'Z' if axis == 'AUTO' else axis
+            pbone.fcd_pg_kinematic_props.joint_type = 'none'
+            pbone.fcd_pg_kinematic_props.joint_radius = radius
+            update_single_bone_gizmo(pbone, context.scene.fcd_viz_gizmos)
 
             # Parent all meshes in the group to the bone while keeping their world transforms
             for obj, original_matrix in objs_data:
@@ -5474,8 +5442,8 @@ def _process_bones_in_pose_mode(rig: bpy.types.Object, bones_to_process: list, c
                 obj.parent_bone = b_name
                 obj.matrix_world = original_matrix
 
-class OPS_OT_AddBone(bpy.types.Operator):
-    bl_idname = "urdf.add_bone"
+class FCD_OT_AddBone(bpy.types.Operator):
+    bl_idname = "fcd.add_bone"
     bl_label = "Set / Align Bones"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5509,7 +5477,7 @@ class OPS_OT_AddBone(bpy.types.Operator):
             for child in o.children:
                 gather_recursive(child, obj_set)
 
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         
         # Sub-selection Support: Check for meshes parented to selected pose bones if we are in Pose Mode.
         bone_to_mesh_map = {}
@@ -5550,17 +5518,17 @@ class OPS_OT_AddBone(bpy.types.Operator):
                 return {'CANCELLED'}
             
             # Update the scene property to the valid one we found
-            context.scene.urdf_active_rig = rig
+            context.scene.fcd_active_rig = rig
 
         # AI Editor Note: Force update to ensure all object matrices are fresh before calculation.
         context.view_layer.update()
 
         # --- 1. Gather Geometry Data ---
         bones_to_process = []
-        axis_for_alignment = context.scene.urdf_bone_axis
+        axis_for_alignment = context.scene.fcd_bone_axis
         
         if base_targets:
-            mode = context.scene.urdf_bone_mode
+            mode = context.scene.fcd_bone_mode
             groups = [] # List of tuples: (reference_obj, [all_objs_in_group])
             
             if mode == 'SINGLE':
@@ -5657,16 +5625,16 @@ class OPS_OT_AddBone(bpy.types.Operator):
         self.report({'INFO'}, f"Processed {len(bones_to_process)} bones.")
         return {'FINISHED'}
 
-class URDF_OT_ApplyRestPose(bpy.types.Operator):
+class FCD_OT_ApplyRestPose(bpy.types.Operator):
     """Applies the current pose as the new rest pose for the entire armature, updating all drivers to maintain relationships."""
-    bl_idname = "urdf.apply_rest_pose"
+    bl_idname = "fcd.apply_rest_pose"
     bl_label = "Apply as Rest Pose"
     bl_description = "Apply current pose as rest pose (Armature) and apply Scale/Rotation (Meshes)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return context.scene.urdf_active_rig is not None or len(context.selected_objects) > 0
+        return context.scene.fcd_active_rig is not None or len(context.selected_objects) > 0
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
         # 1. Apply Scale & Rotation to selected Mesh objects (including sub-selected hierarchies)
@@ -5686,7 +5654,7 @@ class URDF_OT_ApplyRestPose(bpy.types.Operator):
             self.report({'INFO'}, f"Applied transforms to {len(selected_meshes)} meshes.")
 
         # 2. Apply Rest Pose to Active Rig
-        rig = context.scene.urdf_active_rig
+        rig = context.scene.fcd_active_rig
         if rig and rig.name in context.view_layer.objects:
             prev_mode = context.mode
             prev_active = context.view_layer.objects.active
@@ -5701,9 +5669,9 @@ class URDF_OT_ApplyRestPose(bpy.types.Operator):
             bpy.ops.pose.armature_apply(selected=False)
 
             for bone in rig.pose.bones:
-                if hasattr(bone, 'urdf_props') and bone.urdf_props.mimic_drivers:
-                    for mimic in bone.urdf_props.mimic_drivers:
-                        core.add_native_driver_relation(bone, mimic.target_bone, mimic.ratio, bone.urdf_props.ratio_invert)
+                if hasattr(bone, 'fcd_pg_kinematic_props') and bone.fcd_pg_kinematic_props.mimic_drivers:
+                    for mimic in bone.fcd_pg_kinematic_props.mimic_drivers:
+                        core.add_native_driver_relation(bone, mimic.target_bone, mimic.ratio, bone.fcd_pg_kinematic_props.ratio_invert)
             
             bpy.ops.object.mode_set(mode='OBJECT')
             if prev_active and prev_active.name in context.view_layer.objects:
@@ -5719,25 +5687,25 @@ class URDF_OT_ApplyRestPose(bpy.types.Operator):
         return {'FINISHED'}
 # ------------------------------------------------------------------------
 
-class URDF_OT_LightTarget(bpy.types.Operator):
+class FCD_OT_LightTarget(bpy.types.Operator):
     """
     Constrains selected lights to point specifically at the last selected object center.
     AI Editor Note: This uses a Damped Track constraint to ensure the light follows 
     the target dynamically as it moves.
     """
-    bl_idname = "urdf.light_target"
+    bl_idname = "fcd.light_target"
     bl_label = "Target Active Object"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
-        props = context.scene.urdf_lighting_props
+        props = context.scene.fcd_pg_lighting_props
         # Enabled if eyedropper has target OR anything is selected in viewport
         return (props.selected_light_target is not None or 
                 len(context.selected_objects) >= 1)
 
     def execute(self, context):
-        props = context.scene.urdf_lighting_props
+        props = context.scene.fcd_pg_lighting_props
         # Priority 1: Eyedropper target
         # Priority 2: Active object
         target = props.selected_light_target or context.active_object
@@ -5766,12 +5734,12 @@ class URDF_OT_LightTarget(bpy.types.Operator):
         self.report({'INFO'}, f"Targeted {count} lights to {target.name}")
         return {'FINISHED'}
 
-class URDF_OT_ApplyToonShader(bpy.types.Operator):
+class FCD_OT_ApplyToonShader(bpy.types.Operator):
     """
     Applies a 'Shader to RGB' node setup to selected objects to remove light gradients.
     Note: Requires EEVEE renderer to work properly.
     """
-    bl_idname = "urdf.apply_toon_shader"
+    bl_idname = "fcd.apply_toon_shader"
     bl_label = "Apply Toon Shader"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5868,11 +5836,11 @@ class URDF_OT_ApplyToonShader(bpy.types.Operator):
         self.report({'INFO'}, f"Applied Ambient-Friendly Toon setup to {count} materials.")
         return {'FINISHED'}
 
-class URDF_OT_GlobalToonSharpness(bpy.types.Operator):
+class FCD_OT_GlobalToonSharpness(bpy.types.Operator):
     """
     Sets all lights in the scene to sharp shadows and zero specular for tooning.
     """
-    bl_idname = "urdf.global_toon_sharpness"
+    bl_idname = "fcd.global_toon_sharpness"
     bl_label = "Set Global Sharpness"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5902,11 +5870,11 @@ class URDF_OT_GlobalToonSharpness(bpy.types.Operator):
         self.report({'INFO'}, f"Updated {count} lights to {self.mode.lower()} mode.")
         return {'FINISHED'}
 
-class URDF_OT_ToonifySelectedLights(bpy.types.Operator):
+class FCD_OT_ToonifySelectedLights(bpy.types.Operator):
     """
     Sets selected light sources to sharp 'Toon' style lighting.
     """
-    bl_idname = "urdf.toonify_selected_lights"
+    bl_idname = "fcd.toonify_selected_lights"
     bl_label = "Toonify Selected Lights"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -5928,25 +5896,25 @@ class URDF_OT_ToonifySelectedLights(bpy.types.Operator):
 
 def register():
     CLASSES = [
-        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCatalog, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCatalog, URDF_OT_AddAssetLibrary,
-        URDF_OT_LightTarget, URDF_OT_ApplyToonShader, URDF_OT_GlobalToonSharpness, URDF_OT_ToonifySelectedLights, 
-        OPS_OT_Execute_AI_Prompt, URDF_OT_Generate_Preset, URDF_OT_SetJointType, OPS_OT_CalculateCenterOfMass, 
-        OPS_OT_CalculateInertia, OPS_OT_BakeMesh, URDF_OT_ReadJointSettings, URDF_OT_ApplyJointSettings, 
-        OPS_OT_SetupIK, OPS_OT_SetOriginToCursor, URDF_OT_Material_AddSmart, URDF_OT_Material_LoadTexture, 
-        URDF_OT_Material_FromImage, URDF_OT_AddMappingNodes, URDF_OT_UV_SmartUnwrap, URDF_OT_Material_Merge, 
-        URDF_OT_Material_Add, URDF_UL_Mat_List, URDF_UL_SlinkyHooks_List, URDF_OT_Paint_SetupBrush, 
-        OPS_OT_ExportGazeboWorld, OPS_OT_LinkChainDriver, OPS_OT_AddBoolean, URDF_OT_AddParametricAnchor, 
-        URDF_OT_AddMarker, URDF_OT_ToggleHookPlacement, URDF_OT_CleanupAnchor, URDF_OT_BakeAnchor, 
-        URDF_OT_AddTextDescription, URDF_OT_RemoveDimension, URDF_OT_AddDimension, OPS_OT_AddModifier, 
-        OPS_OT_AddSimplify, OPS_OT_SetupLinearArray, OPS_OT_SetupRadialArray, OPS_OT_CreateCurveForPath, 
-        OPS_OT_SetupCurveArray, OPS_OT_SmartSmooth, OPS_OT_CreatePart, OPS_OT_ChainAddWrapObject, 
-        OPS_OT_CreateElectronicPart, OPS_OT_ChainAddPickedWrapObject, OPS_OT_ChainRemoveWrapObject, 
-        URDF_OT_SlinkyAddHook, URDF_OT_SlinkyRemoveHook, OPS_OT_CalculateRatio, OPS_OT_AddMimic, 
-        OPS_OT_RemoveMimic, OPS_OT_ClearConfig, OPS_OT_ApplyBoneConstraints, OPS_OT_PickBone, 
-        URDF_OT_GenerateROS2Workspace, URDF_ExportItem, URDF_UL_ExportList, URDF_OT_ExportList_Add, 
-        URDF_OT_ExportList_Remove, OPS_OT_Export, URDF_OT_ExportSelected, OPS_OT_TogglePlacement, 
-        OPS_OT_CreateRig, URDF_OT_MergeArmatures, URDF_OT_PurgeBones, OPS_OT_ParentToActive, 
-        OPS_OT_EnterPoseMode, OPS_OT_EnterObjectMode, OPS_OT_AddBone, URDF_OT_ApplyRestPose
+        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
+        FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
+        FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
+        FCD_OT_CalculateInertia, FCD_OT_BakeMesh, FCD_OT_ReadJointSettings, FCD_OT_ApplyJointSettings, 
+        FCD_OT_SetupIK, FCD_OT_SetOriginToCursor, FCD_OT_Material_AddSmart, FCD_OT_Material_LoadTexture, 
+        FCD_OT_Material_FromImage, FCD_OT_AddMappingNodes, FCD_OT_UV_SmartUnwrap, FCD_OT_Material_Merge, 
+        FCD_OT_Material_Add, FCD_UL_Mat_List, FCD_UL_SlinkyHooks_List, FCD_OT_Paint_SetupBrush, 
+        FCD_OT_ExportGazeboWorld, FCD_OT_LinkChainDriver, FCD_OT_AddBoolean, FCD_OT_AddParametricAnchor, 
+        FCD_OT_AddMarker, FCD_OT_ToggleHookPlacement, FCD_OT_CleanupAnchor, FCD_OT_BakeAnchor, 
+        FCD_OT_AddTextDescription, FCD_OT_Remove_Dimension, FCD_OT_Add_Dimension, FCD_OT_AddModifier, 
+        FCD_OT_AddSimplify, FCD_OT_SetupLinearArray, FCD_OT_SetupRadialArray, FCD_OT_CreateCurveForPath, 
+        FCD_OT_SetupCurveArray, FCD_OT_SmartSmooth, FCD_OT_CreatePart, FCD_OT_ChainAddWrapObject, 
+        FCD_OT_CreateElectronicPart, FCD_OT_ChainAddPickedWrapObject, FCD_OT_ChainRemoveWrapObject, 
+        FCD_OT_SlinkyAddHook, FCD_OT_SlinkyRemoveHook, FCD_OT_CalculateRatio, FCD_OT_AddMimic, 
+        FCD_OT_RemoveMimic, FCD_OT_ClearConfig, FCD_OT_ApplyBoneConstraints, FCD_OT_PickBone, 
+        FCD_OT_GenerateROS2Workspace, FCD_OT_ExportList_Add, 
+        FCD_OT_ExportList_Remove, FCD_OT_Export, FCD_OT_ExportSelected, FCD_OT_TogglePlacement, 
+        FCD_OT_CreateRig, FCD_OT_MergeArmatures, FCD_OT_PurgeBones, FCD_OT_ParentToActive, 
+        FCD_OT_EnterPoseMode, FCD_OT_EnterObjectMode, FCD_OT_AddBone, FCD_OT_ApplyRestPose
     ]
     for cls in CLASSES:
         if hasattr(cls, 'bl_rna'):
@@ -5957,25 +5925,25 @@ def register():
 
 def unregister():
     CLASSES = [
-        URDF_OT_OpenAssetBrowser, URDF_OT_RegisterAssetCatalog, URDF_OT_MarkAndUploadAsset, URDF_OT_ImportToAssetCatalog, URDF_OT_AddAssetLibrary,
-        URDF_OT_LightTarget, URDF_OT_ApplyToonShader, URDF_OT_GlobalToonSharpness, URDF_OT_ToonifySelectedLights, 
-        OPS_OT_Execute_AI_Prompt, URDF_OT_Generate_Preset, URDF_OT_SetJointType, OPS_OT_CalculateCenterOfMass, 
-        OPS_OT_CalculateInertia, OPS_OT_BakeMesh, URDF_OT_ReadJointSettings, URDF_OT_ApplyJointSettings, 
-        OPS_OT_SetupIK, OPS_OT_SetOriginToCursor, URDF_OT_Material_AddSmart, URDF_OT_Material_LoadTexture, 
-        URDF_OT_Material_FromImage, URDF_OT_AddMappingNodes, URDF_OT_UV_SmartUnwrap, URDF_OT_Material_Merge, 
-        URDF_OT_Material_Add, URDF_UL_Mat_List, URDF_UL_SlinkyHooks_List, URDF_OT_Paint_SetupBrush, 
-        OPS_OT_ExportGazeboWorld, OPS_OT_LinkChainDriver, OPS_OT_AddBoolean, URDF_OT_AddParametricAnchor, 
-        URDF_OT_AddMarker, URDF_OT_ToggleHookPlacement, URDF_OT_CleanupAnchor, URDF_OT_BakeAnchor, 
-        URDF_OT_AddTextDescription, URDF_OT_RemoveDimension, URDF_OT_AddDimension, OPS_OT_AddModifier, 
-        OPS_OT_AddSimplify, OPS_OT_SetupLinearArray, OPS_OT_SetupRadialArray, OPS_OT_CreateCurveForPath, 
-        OPS_OT_SetupCurveArray, OPS_OT_SmartSmooth, OPS_OT_CreatePart, OPS_OT_ChainAddWrapObject, 
-        OPS_OT_CreateElectronicPart, OPS_OT_ChainAddPickedWrapObject, OPS_OT_ChainRemoveWrapObject, 
-        URDF_OT_SlinkyAddHook, URDF_OT_SlinkyRemoveHook, OPS_OT_CalculateRatio, OPS_OT_AddMimic, 
-        OPS_OT_RemoveMimic, OPS_OT_ClearConfig, OPS_OT_ApplyBoneConstraints, OPS_OT_PickBone, 
-        URDF_OT_GenerateROS2Workspace, URDF_ExportItem, URDF_UL_ExportList, URDF_OT_ExportList_Add, 
-        URDF_OT_ExportList_Remove, OPS_OT_Export, URDF_OT_ExportSelected, OPS_OT_TogglePlacement, 
-        OPS_OT_CreateRig, URDF_OT_MergeArmatures, URDF_OT_PurgeBones, OPS_OT_ParentToActive, 
-        OPS_OT_EnterPoseMode, OPS_OT_EnterObjectMode, OPS_OT_AddBone, URDF_OT_ApplyRestPose
+        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
+        FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
+        FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
+        FCD_OT_CalculateInertia, FCD_OT_BakeMesh, FCD_OT_ReadJointSettings, FCD_OT_ApplyJointSettings, 
+        FCD_OT_SetupIK, FCD_OT_SetOriginToCursor, FCD_OT_Material_AddSmart, FCD_OT_Material_LoadTexture, 
+        FCD_OT_Material_FromImage, FCD_OT_AddMappingNodes, FCD_OT_UV_SmartUnwrap, FCD_OT_Material_Merge, 
+        FCD_OT_Material_Add, FCD_UL_Mat_List, FCD_UL_SlinkyHooks_List, FCD_OT_Paint_SetupBrush, 
+        FCD_OT_ExportGazeboWorld, FCD_OT_LinkChainDriver, FCD_OT_AddBoolean, FCD_OT_AddParametricAnchor, 
+        FCD_OT_AddMarker, FCD_OT_ToggleHookPlacement, FCD_OT_CleanupAnchor, FCD_OT_BakeAnchor, 
+        FCD_OT_AddTextDescription, FCD_OT_Remove_Dimension, FCD_OT_Add_Dimension, FCD_OT_AddModifier, 
+        FCD_OT_AddSimplify, FCD_OT_SetupLinearArray, FCD_OT_SetupRadialArray, FCD_OT_CreateCurveForPath, 
+        FCD_OT_SetupCurveArray, FCD_OT_SmartSmooth, FCD_OT_CreatePart, FCD_OT_ChainAddWrapObject, 
+        FCD_OT_CreateElectronicPart, FCD_OT_ChainAddPickedWrapObject, FCD_OT_ChainRemoveWrapObject, 
+        FCD_OT_SlinkyAddHook, FCD_OT_SlinkyRemoveHook, FCD_OT_CalculateRatio, FCD_OT_AddMimic, 
+        FCD_OT_RemoveMimic, FCD_OT_ClearConfig, FCD_OT_ApplyBoneConstraints, FCD_OT_PickBone, 
+        FCD_OT_GenerateROS2Workspace, FCD_OT_ExportList_Add, 
+        FCD_OT_ExportList_Remove, FCD_OT_Export, FCD_OT_ExportSelected, FCD_OT_TogglePlacement, 
+        FCD_OT_CreateRig, FCD_OT_MergeArmatures, FCD_OT_PurgeBones, FCD_OT_ParentToActive, 
+        FCD_OT_EnterPoseMode, FCD_OT_EnterObjectMode, FCD_OT_AddBone, FCD_OT_ApplyRestPose
     ]
     for cls in reversed(CLASSES):
         try:

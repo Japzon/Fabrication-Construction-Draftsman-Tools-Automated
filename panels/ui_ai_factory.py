@@ -33,18 +33,18 @@ from .. import properties
 from .. import operators
 from . import ui_common
 
-class URDF_PT_Generate:
+class FCD_PT_Generate:
     """
     Drawing helper for the 'Generate' panel. This is the central hub for
     spawning components using both AI-driven prompts and procedural templates.
     """
     bl_label = "Generate"
-    bl_idname = "VIEW3D_PT_urdf_ai_factory"
+    bl_idname = "VIEW3D_PT_fcd_ai_factory"
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         # This panel is only drawn if its corresponding visibility toggle is enabled.
-        return getattr(context.scene, "urdf_panel_enabled_ai_factory", True)
+        return getattr(context.scene, "fcd_panel_enabled_ai_factory", True)
 
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
@@ -57,53 +57,30 @@ class URDF_PT_Generate:
         box, is_expanded = ui_common.draw_panel_header(
             layout, context, 
             "Generate", 
-            "urdf_show_panel_ai_factory", 
-            "urdf_panel_enabled_ai_factory"
+            "fcd_show_panel_ai_factory", 
+            "fcd_panel_enabled_ai_factory"
         )
         
-        if not is_expanded:
-            return
-
-
         if is_expanded:
-            # --- Global Scale Control ---
-            cage_box = box.box()
-            cage_box.label(text="Global Scale Constraint (Size Cage)", icon='SHADING_BBOX')
-            cage_box.prop(scene, "urdf_use_generation_cage", text="Enable Size Cage")
-            row = cage_box.row()
-            row.enabled = scene.urdf_use_generation_cage
-            row.prop(scene, "urdf_generation_cage_size", text="Max Dimension (L)")
+            ai_props = scene.fcd_pg_ai_props
             
-            ai_props = scene.urdf_ai_props
-            
-            # --- Procedural Templates Section ---
-            tmpl_box = box.box()
-            tmpl_box.label(text="Structural / Mechanical Templates", icon='FILE_NEW')
-            row = tmpl_box.row()
-            row.prop(ai_props, "robot_template", text="Template")
-            row.operator("urdf.generate_preset", text="Spawn Template", icon='IMPORT')
-            
-            box.separator()
-
-            # --- AI Generation Hub ---
-            api_box = box.box()
-            api_box.label(text="AI Generator Configuration", icon='NODE_COMPOSITING')
-            
-            api_box.prop(ai_props, "ai_source", text="API Source")
+            # --- AI Configuration ---
+            box.label(text="AI Configuration", icon='NODE_COMPOSITING')
+            box.prop(ai_props, "ai_source", text="Source")
             
             if ai_props.ai_source == 'API':
-                api_box.prop(ai_props, "api_key", password=True)
+                box.prop(ai_props, "api_key")
             
-            # --- Prompt Input ---
-            prompt_box = box.box()
-            prompt_box.label(text="AI Generation Prompt", icon='TEXT')
-            prompt_box.prop(ai_props, "api_prompt", text="")
+            # --- Prompt ---
+            box.separator()
+            box.label(text="Plain English Instruction", icon='TEXT')
+            box.prop(ai_props, "api_prompt", text="")
             
             # --- Execution ---
             box.separator()
             row = box.row()
-            row.scale_y = 1.5
-            row.operator("urdf.execute_ai_prompt", text="Generate via AI", icon='PLAY')
+            row.scale_y = 1.6
+            row.operator("fcd.execute_ai_prompt", text="Start Generating", icon='PLAY')
 
 
 # ------------------------------------------------------------------------

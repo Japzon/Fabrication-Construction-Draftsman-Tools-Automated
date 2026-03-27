@@ -64,13 +64,13 @@ def run_tests():
     # 2. Check Operators Visibility
     print("\nChecking Operators...")
     required_ops = [
-        "urdf.execute_ai_prompt",
-        "urdf.generate_preset",
-        "urdf.set_joint_type",
-        "urdf.calculate_center_of_mass",
-        "urdf.calculate_inertia",
-        "urdf.bake_mesh",
-        "urdf.setup_ik"
+        "fcd.execute_ai_prompt",
+        "fcd.generate_preset",
+        "fcd.set_joint_type",
+        "fcd.calculate_center_of_mass",
+        "fcd.calculate_inertia",
+        "fcd.bake_mesh",
+        "fcd.setup_ik"
     ]
     
     for op_id in required_ops:
@@ -84,8 +84,8 @@ def run_tests():
     print("\nTesting 'Generate Template' (MOBILE_BASE)...")
     try:
         # We need to set the scene property
-        bpy.context.scene.urdf_ai_props.robot_template = 'MOBILE_BASE'
-        res = bpy.ops.urdf.generate_preset()
+        bpy.context.scene.fcd_pg_ai_props.robot_template = 'MOBILE_BASE'
+        res = bpy.ops.fcd.generate_preset()
         if 'FINISHED' in res:
             print("[SUCCESS] Template generation finished successfully.")
         else:
@@ -111,7 +111,7 @@ def run_tests():
                 for b in armature.pose.bones:
                     b.bone.select = True
                 
-                res = bpy.ops.urdf.set_joint_type(type='revolute')
+                res = bpy.ops.fcd.set_joint_type(type='revolute')
                 print(f"[SUCCESS] Set Joint Type returned {res}")
             else:
                 print("[SKIP] No bones found in generated armature.")

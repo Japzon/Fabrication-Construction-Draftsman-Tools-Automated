@@ -30,7 +30,7 @@ if start_idx != -1 and end_idx != -1:
     High-Fidelity Rope Generator.
     Stabilized for Blender 4.x with proper group interface lookups.
     \"\"\"
-    gn_group_name = f'URDF_Native_{rope_obj.name}_Rope_GN'
+    gn_group_name = f'FCD_Native_{rope_obj.name}_Rope_GN'
     gn_group = bpy.data.node_groups.get(gn_group_name)
 
     if not gn_group:

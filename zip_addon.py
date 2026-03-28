@@ -38,7 +38,7 @@ def zip_addon():
                 print(f"Warning: Could not remove old zip {item}: {e}")
 
     # The zip is saved inside the addon folder so it's tracked by git
-    zip_name = f"Fabrication-Construction-Draftsman-Tools_v{version_str}.zip"
+    zip_name = f"Fabrication-Construction-Draftsman-Tools-Blender-Addon_v{version_str}.zip"
     zip_path = os.path.join(addon_dir, zip_name)
     
     print(f"Starting to zip addon folder with version {version_str}: {addon_folder_name}")
@@ -65,7 +65,7 @@ def zip_addon():
                     file_path = os.path.join(root, file)
                     rel_path = os.path.relpath(file_path, addon_dir)
                     
-                    # Use 'fabrication_construction_draftsman_tools_automated' as the root folder inside the zip
+                    # Use the lowercase ID for the root folder inside the zip to match the Extension manifest
                     archive_path = os.path.join("fabrication_construction_draftsman_tools", rel_path)
                     zipf.write(file_path, archive_path)
         

@@ -1248,6 +1248,14 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
         if not obj:
             obj = bpy.data.objects.new(shape_name, mesh)
             obj.location = (0, 0, 0)
+            
+            # AI Editor Note: Gizmo templates must be hidden from viewports, 
+            # renders, and selection. They are only placeholders for 'custom_shape'.
+            # Leaving them visible can cause them to overlap with real rigs at (0,0,0).
+            obj.hide_viewport = True
+            obj.hide_render = True
+            obj.hide_select = True
+            obj.display_type = 'WIRE'
 
         # Robust collection management.
         coll = bpy.data.collections.get(WIDGETS_COLLECTION_NAME)
@@ -1267,23 +1275,7 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
         # Generate the gizmo's geometry using BMesh.
         bm = bmesh.new()
         
-        if style == '3D':
-            if shape_type == 'ROTATION':
-                # Thick ring (Washer)
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=1.0, radius2=1.0, depth=0.1, segments=32)
-                # Add indicator arrow
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((1.0, 0, 0)))
-            elif shape_type == 'SLIDER':
-                # Cylinder shaft (Y-aligned)
-                mat_y = mathutils.Matrix.Rotation(math.radians(-90), 4, 'X')
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.1, radius2=0.1, depth=2.0, segments=16, matrix=mat_y)
-                # Arrow heads
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((0, 1.2, 0)))
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((0, -1.2, 0)) @ mathutils.Matrix.Rotation(math.radians(180), 4, 'X'))
-            elif shape_type == 'FIXED':
-                bmesh.ops.create_cube(bm, size=0.5)
-
-        else: # DEFAULT
+        if True: # DEFAULT (Unified Style)
             if shape_type == 'ROTATION':
                 bmesh.ops.create_circle(bm, cap_ends=False, radius=1.0, segments=32)
                 # Add small arrows to indicate rotational direction.
@@ -1311,6 +1303,11 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
             elif shape_type == 'FIXED':
                 # A simple cube to indicate a fixed joint.
                 bmesh.ops.create_cube(bm, size=0.5)
+            elif shape_type == 'SPHERICAL':
+                # Wireframe sphere (3 circles) for ball-and-socket.
+                bmesh.ops.create_circle(bm, cap_ends=False, radius=1.0, segments=32)
+                bmesh.ops.create_circle(bm, cap_ends=False, radius=1.0, segments=32, matrix=mathutils.Matrix.Rotation(math.radians(90), 4, 'X'))
+                bmesh.ops.create_circle(bm, cap_ends=False, radius=1.0, segments=32, matrix=mathutils.Matrix.Rotation(math.radians(90), 4, 'Y'))
 
         # Base is common for now
         if shape_type == 'BASE':
@@ -3527,11 +3524,14 @@ def rig_parametric_joint(context: bpy.types.Context, obj: bpy.types.Object) -> T
     unit_scale = context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
 
-    # --- AI Editor Note: Override radius for Continuous joints to match motor size ---
+    # --- AI Editor Note: Ensure radius is always in physical Meters (Normalized) ---
+    # _calculate_bone_geometry already returns normalized meters.
     if props.type_basic_joint == 'JOINT_CONTINUOUS':
-        # radius from _calculate is in BU (scaled by s), but props.joint_radius is in meters.
-        # We must multiply by s to match mesh visualization.
-        radius = props.joint_radius * s
+        # Use the explicit joint_radius property from the part as ground truth for motors.
+        radius = props.joint_radius
+    
+    # Radius must be > 0
+    if radius < 0.001: radius = 0.05
 
     # 2. Create bones in Edit Mode
     if context.mode != 'OBJECT': bpy.ops.object.mode_set(mode='OBJECT')
@@ -4658,6 +4658,8 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style:
     gizmo_type = 'ROTATION'
     if props.joint_type == 'prismatic':
         gizmo_type = 'SLIDER'
+    elif props.joint_type == 'spherical':
+        gizmo_type = 'SPHERICAL'
     elif props.joint_type == 'fixed':
         gizmo_type = 'FIXED'
     elif props.joint_type == 'base':
@@ -4713,14 +4715,20 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style:
         target_scene = search_ctx.scene if search_ctx else (bone.id_data.users_scene[0] if bone.id_data.users_scene else bpy.data.scenes[0])
         
         child_meshes = []
-        # Find objects parented to this bone.
+        # Find objects parented directly to this bone.
         rig = bone.id_data
-        for o in target_scene.objects:
-            if o.parent == rig and o.parent_type == 'BONE' and o.parent_bone == bone.name:
-                child_meshes.append(o)
-                # Quick recursive check for children of the mesh
-                for c in o.children_recursive:
-                    if c.type == 'MESH': child_meshes.append(c)
+        # Optimization: Use a list comprehension to find direct descendants of the bone.
+        child_meshes = [o for o in armature_obj.children if o.parent == armature_obj and o.parent_type == 'BONE' and o.parent_bone == bone.name]
+        
+        # Also include recursively parented meshes, but avoid full scene loops if possible.
+        # But Blender's hierarchy can be complex, so if we have many, we stick to direct ones
+        # for performance, or look into rig.children.
+        all_children = []
+        for o in child_meshes:
+            all_children.append(o)
+            all_children.extend([c for c in o.children_recursive if c.type == 'MESH'])
+        
+        child_meshes = all_children
 
         for mesh_obj in child_meshes:
             if mesh_obj.type != 'MESH': continue
@@ -4777,19 +4785,24 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style:
                 if bone.length < 0.2 and props.joint_radius < 0.2:
                     base_scale = max(bone.length, props.joint_radius * 2.0)
                 
-        # AI Editor Note: Revised Scaling Logic. 
-        # Increase the base multiplier for prismatic joints to ensure visibility relative to bone length.
-        if gizmo_type == 'SLIDER' and not has_meshes:
-            base_scale = base_scale * 2.0  # Double the bone-length based default
-            
-        final_scale = base_scale * props.gizmo_radius
+        # --- AI Editor Note: Unified Radius Scaling ---
+        # 1. Start with the physical Meter-based Joint Radius converted to Blender Units (BU).
+        # This makes 'Joint Radius' the direct driver of the gizmo's physical size.
+        r_bu = props.joint_radius * s
+        
+        # 2. If meshes exist, derive scale from their bounds but respect the Joint Radius as a minimum.
+        if has_meshes:
+            # max(dims) is already in BU.
+            r_bu = max(max(dims), props.joint_radius * s)
+        
+        # 3. Apply the visual 'Gizmo Radius' multiplier.
+        # This allows for subjective visual tweaks on top of physical data.
+        final_scale = r_bu * props.gizmo_radius
         
         # Ensure the scale is never zero to prevent invisible gizmos.
         if final_scale < config.MIN_GIZMO_SCALE:
             final_scale = config.MIN_GIZMO_SCALE
 
-        # Set the custom shape scale. `use_custom_shape_bone_size` must be False
-        # for `custom_shape_scale_xyz` to have an effect.
         bone.custom_shape_scale_xyz = (final_scale, final_scale, final_scale)
 
         bone.use_custom_shape_bone_size = False
@@ -5285,11 +5298,24 @@ def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name
 
     # --- Configure the Driver Expression ---
     factor = -1.0 if invert else 1.0
-    # Calculate the current offset to maintain the bone's current position when the driver is created.
-    curr_val_tgt = target_bone.rotation_euler[idx_tgt] if is_rot_tgt else target_bone.location[idx_tgt]
-    curr_val_src = source_bone.rotation_euler[idx_src] if is_rot_src else source_bone.location[idx_src]
+    # AI Editor Note: Sync driver variables with physical units.
+    # Rotational properties (euler) are in Radians, but Linear properties (loc) are in Blender Units.
+    # To maintain consistency with meter-based joint properties, we must scale Loc variables by the scene unit scale.
+    unit_scale = rig.users_scene[0].unit_settings.scale_length if rig.users_scene else 1.0
+    u_var = f"({var_name} * {unit_scale:.6f})" if not is_rot_src else var_name
+
+    # Calculate current values for offset (using Blender Units for calculation, then converting)
+    curr_val_tgt = target_bone.rotation_euler[idx_tgt] if is_rot_tgt else (target_bone.location[idx_tgt] * unit_scale if not is_rot_tgt else target_bone.location[idx_tgt])
+    curr_val_src = source_bone.rotation_euler[idx_src] if is_rot_src else (source_bone.location[idx_src] * unit_scale)
+    
+    # Correction for curr_val_tgt logic
+    if not is_rot_tgt:
+         curr_val_tgt = target_bone.location[idx_tgt] * unit_scale
+    else:
+         curr_val_tgt = target_bone.rotation_euler[idx_tgt]
+
     offset = curr_val_tgt - (curr_val_src * ratio * factor)
-    drv.expression = f"({var_name} * {ratio:.4f} * {factor}) + {offset:.4f}"
+    drv.expression = f"({u_var} * {ratio:.4f} * {factor}) + {offset:.4f}"
 
     # Lock the driven property in the UI to prevent manual changes that would conflict with the driver.
     if is_rot_tgt:

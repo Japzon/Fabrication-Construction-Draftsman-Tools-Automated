@@ -39,25 +39,33 @@ def update_radius_prop(self, context: bpy.types.Context):
     self.last_radius = r
     update_mesh_wrapper(self, context)
 
+def dispatch_apply_joint_settings():
+    bpy.ops.fcd.apply_joint_settings()
+    return None
+
+def dispatch_apply_bone_constraints():
+    bpy.ops.fcd.apply_bone_constraints()
+    return None
+
 def update_joint_tool_live(self, context):
     """
     Timer-based dispatcher for the joint tool.
     Ensures safe execution of operators during property update callbacks.
+    AI Editor Note: Using named functions for timers prevents redundant 
+    registrations during rapid property changes (like slider dragging).
     """
     from . import core
     if isinstance(self.id_data, bpy.types.Scene):
         if not core._joint_editor_update_guard:
-            # Using a small timer ensures the operator runs in a clean context
-            bpy.app.timers.register(lambda: (bpy.ops.fcd.apply_joint_settings() and None), first_interval=0.01)
+            # Using a named function for the timer ensures we don't stack lambdas
+            bpy.app.timers.register(dispatch_apply_joint_settings, first_interval=0.01)
     else:
         # Individual bone update
         if not core._prop_update_guard:
             if hasattr(self.id_data, "pose") and context.mode == 'POSE':
-                # AI Editor Note: Use a timer for stability! 
-                # Property callbacks cannot safely create meshes/objects for gizmos 
-                # in the current thread. Transitioning to a timer avoids "readonly mode" errors.
-                # Returning None ensures the timer runs only once.
-                bpy.app.timers.register(lambda: (bpy.ops.fcd.apply_bone_constraints() and None), first_interval=0.01)
+                # Transitioning to a timer avoids "readonly mode" errors.
+                # Named function prevents multiple identical timers.
+                bpy.app.timers.register(dispatch_apply_bone_constraints, first_interval=0.01)
 
 def update_placement_mode_wrapper(self, context):
     """Lean dispatcher for placement mode state change."""
@@ -473,6 +481,8 @@ def register():
         update=update_material_alpha
     )
     
+    bpy.types.Scene.fcd_hook_placement_mode = bpy.props.BoolProperty(name="Hook Placement", default=False)
+    
     # 3. Order Properties
     prop_names = [
         "fcd_order_ai_factory",    # 1: Generate
@@ -524,7 +534,8 @@ def unregister():
             "fcd_export_check_textures", "fcd_export_check_config", "fcd_export_check_launch",
             "fcd_export_mesh_format", "fcd_quick_export_format",
             "fcd_smart_material_type", "fcd_material_transparency",
-            "fcd_tex_pos", "fcd_tex_rot", "fcd_tex_scale"
+            "fcd_tex_pos", "fcd_tex_rot", "fcd_tex_scale",
+            "fcd_hook_placement_mode"
         ]
         # Add order props
         prop_names = [

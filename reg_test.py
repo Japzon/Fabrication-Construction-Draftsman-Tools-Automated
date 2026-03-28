@@ -11,7 +11,7 @@ if addon_dir not in sys.path:
 print(f"Testing addon registration from: {addon_dir}")
 
 try:
-    import fabrication_construction_draftsman_tools
+    import fabrication_construction_draftsman_tools as addon
     # The above might fail because of the folder name vs module name.
     # The dev_tool usually handles symlinking.
     

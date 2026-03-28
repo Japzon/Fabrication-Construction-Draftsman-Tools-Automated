@@ -210,7 +210,6 @@ VEHICLE_TYPES: List[Tuple[str, str, str]] = sorted([
 
 GIZMO_STYLES: List[Tuple[str, str, str]] = [
     ('DEFAULT', "Default (Flat)", "Standard flat 2D gizmos"),
-    ('3D', "3D", "Volumetric 3D shapes for better depth perception"),
 ]
 
 BASIC_JOINT_TYPES: List[Tuple[str, str, str]] = sorted([

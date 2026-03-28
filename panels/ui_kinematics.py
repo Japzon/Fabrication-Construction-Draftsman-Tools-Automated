@@ -89,9 +89,6 @@ class FCD_PT_Kinematics_Setup:
             robot_box.label(text="Active Robot", icon='OUTLINER_OB_ARMATURE')
             col = robot_box.column(align=True)
             col.prop(scene, "fcd_active_rig", text="")
-            row = col.row(align=True)
-            # AI Editor Note: Added Visual Gizmos Dropdown Feature
-            row.prop(scene, "fcd_gizmo_style", text="Gizmo Style")
             
             row = col.row(align=True)
             row.operator("fcd.create_rig", icon='ADD', text="New")

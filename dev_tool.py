@@ -22,7 +22,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from zip_addon import zip_addon
 
 ADDON_NAME = "fabrication_construction_draftsman_tools"
-OLD_ADDON_NAME = "auto_robot_cnc_dev_kit"
+OLD_ADDON_NAMES = [
+    "Fabrication_Construction_Draftsman_Tools_Blender_Addon",
+    "Fabrication-Construction-Draftsman-Tools-Blender-Addon",
+    "fabrication_construction_draftsman_tools_automated", 
+    "auto_robot_cnc_dev_kit"
+]
 BLENDER_DEFAULT_PATH = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
 
 def find_blender():
@@ -71,12 +76,21 @@ def setup_dev():
         return False
     
     version = get_blender_version(blender_exe)
+    version_float = float(version)
     appdata = os.environ.get("APPDATA")
     if not appdata:
         print("\n[ERROR] APPDATA environment variable not found!")
         return False
         
-    addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
+    # Blender 4.2+ uses 'extensions/blender_org' for localized extensions, but 'scripts/addons' still works for legacy.
+    # To resolve 'Sync required' and loading errors, we'll target the extensions directory if available.
+    if version_float >= 4.2:
+        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "extensions", "blender_org")
+        legacy_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
+    else:
+        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
+        legacy_dir = None
+
     target_dir = os.path.join(addons_dir, ADDON_NAME)
     
     # Path cleaning for Windows shell
@@ -91,26 +105,37 @@ def setup_dev():
     try:
         tasklist = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq blender.exe'], capture_output=True, text=True).stdout
         if "blender.exe" in tasklist.lower():
-            print("\n[WARNING] Blender is currently running!")
-            print("Please close Blender to ensure the add-on update works correctly.")
-            print("Attempting to continue anyway...")
+            print("\n" + "!"*50)
+            print("  [CRITICAL WARNING] BLENDER IS CURRENTLY RUNNING!")
+            print("  This WILL prevent the addon from updating correctly.")
+            print("  Please CLOSE ALL Blender instances and run this script again.")
+            print("!"*50 + "\n")
+            # We continue, but it likely fails.
     except:
         pass
 
     try:
-        # Create AppData tree if missing
+        # Create AppData tree if missing.
+        # AI Editor Note: Ensure parents are created to avoid 'Sync required' issues if 'extensions' folder is missing.
         if not os.path.exists(addons_dir):
-            print(f"[INFO] Creating addons directory...")
+            print(f"[INFO] Creating extension repository at: {addons_dir}")
             os.makedirs(addons_dir, exist_ok=True)
             
-        # Robust Cleanup
-        for target in [target_dir, os.path.join(addons_dir, OLD_ADDON_NAME)]:
+        # Robust Cleanup across all possible paths
+        cleanup_paths = [target_dir]
+        for name in OLD_ADDON_NAMES:
+            cleanup_paths.append(os.path.join(addons_dir, name))
+            if legacy_dir:
+                cleanup_paths.append(os.path.join(legacy_dir, name))
+                cleanup_paths.append(os.path.join(legacy_dir, ADDON_NAME))
+
+        for target in cleanup_paths:
             if os.path.exists(target) or os.path.islink(target):
                 print(f"[INFO] Cleaning old add-on files at: {target}")
                 # Attempt primary cleanup via shell
                 subprocess.run(f'cmd /c "rmdir /S /Q \"{target}\""', shell=True, capture_output=True)
                 
-                # If still exists (e.g. broken symlink), try direct unlink
+                # If still exists (e.g. broken symlink or permissions), try direct unlink
                 if os.path.exists(target) or os.path.islink(target):
                     try:
                         if os.path.islink(target):
@@ -124,7 +149,7 @@ def setup_dev():
         if os.path.exists(target_dir):
             print(f"\n[ERROR] FAILED TO CLEANUP TARGET DIRECTORY!")
             print("Reason: Folder is likely locked by Blender or another program.")
-            print(">>> FIX: Close Blender and try again.")
+            print(">>> FIX: CLOSE BLENDER and try again.")
             return False
 
         # Attempt to Link (Works best for development)
@@ -156,13 +181,27 @@ def setup_dev():
         
         # Launch Blender
         print(f"\n[SUCCESS] Attempting to launch Blender {version}...")
-        py_cmd = f"import bpy; bpy.ops.preferences.addon_enable(module='{ADDON_NAME}')"
+        
+        cleanup_script = os.path.join(source_dir, "_dev", "cleanup_addons.py")
+        if os.path.exists(cleanup_script):
+            print(f"[INFO] Using cleanup script: {cleanup_script}")
+            # Run the cleanup and enable logic from the script file
+            # This is more robust than a single string command.
+            blender_args = [blender_exe, "--python", cleanup_script]
+        else:
+            # Fallback to string command if script is missing
+            if version_float >= 4.2:
+                module_name = f"bl_ext.blender_org.{ADDON_NAME}"
+            else:
+                module_name = ADDON_NAME
+            py_cmd = f"import bpy; bpy.ops.preferences.addon_enable(module='{module_name}'); bpy.ops.wm.save_userpref()"
+            blender_args = [blender_exe, "--python-expr", py_cmd]
         
         # We start Blender and keeping the connection to see logs in this terminal.
         try:
             # AI Editor Note: Removed DETACHED_PROCESS to allow stdout/stderr logging in current terminal.
             # Using Popen without detaching and calling wait() keeps the console alive.
-            process = subprocess.Popen([blender_exe, "--python-expr", py_cmd])
+            process = subprocess.Popen(blender_args)
             
             print("\n" + "="*50)
             print("  BLENDER IS RUNNING")

@@ -917,6 +917,7 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
             core._prop_update_guard = old_guard_prop
             core._joint_editor_update_guard = old_guard_tool
             # Final refresh to ensure depsgraph catches up with constraint changes
+            core.cleanup_unused_gizmos(ctx)
             ctx.view_layer.update()
             
         # 3. Informative Reporting
@@ -997,6 +998,7 @@ class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
 
         finally:
             core._prop_update_guard = False
+            core.cleanup_unused_gizmos(ctx)
             ctx.view_layer.update()
 
         return {'FINISHED'}

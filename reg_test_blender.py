@@ -7,12 +7,34 @@ print("="*50)
 print("  FCD ADDON REGISTRATION TEST (RETRY)")
 print("="*50)
 
-addon_name = "fabrication_construction_draftsman_tools_automated"
+# Blender version detection for Extension module path logic
+import bpy
+version_float = bpy.app.version[0] + bpy.app.version[1] / 10.0
+
+addon_name = "fabrication_construction_draftsman_tools"
+if version_float >= 4.2:
+    # Target the extensions namespace if it exists, fallback to legacy
+    # This prevents 'No module named' errors in modern Blender versions.
+    try_names = [f"bl_ext.blender_org.{addon_name}", addon_name]
+else:
+    try_names = [addon_name]
 
 try:
-    print(f"Enabling addon: {addon_name}")
-    bpy.ops.preferences.addon_enable(module=addon_name)
-    print("\n[SUCCESS] Addon enabled without errors!")
+    success = False
+    for name in try_names:
+        try:
+            print(f"Enabling addon: {name}")
+            bpy.ops.preferences.addon_enable(module=name)
+            print(f"\n[SUCCESS] Addon enabled as: {name}")
+            success = True
+            break
+        except Exception:
+            print(f"[INFO] Could not enable {name}, checking alternatives...")
+            continue
+            
+    if not success:
+        raise RuntimeError(f"Could not enable {addon_name} using any known path.")
+        
     sys.exit(0)
     
 except Exception as e:

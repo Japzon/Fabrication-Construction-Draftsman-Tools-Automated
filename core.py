@@ -3061,20 +3061,40 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         new_obj.fcd_pg_mech_props.category = 'ROPE'
         # length property in props should stay in sync
         new_obj.fcd_pg_mech_props.length = rope_len
-    else:
-        # Standard Mesh Parts
+    # --- 2. Create Standard BMesh Objects if needed ---
+    if not new_obj:
         mesh = bpy.data.meshes.new(name)
         new_obj = bpy.data.objects.new(name, mesh)
         coll.objects.link(new_obj)
 
     new_obj.location = location
     
+    # AI Editor Note: Initial Setup for Stators/Sub-objects (Basic Joints)
+    # The separation of concerns mandate requires distinct objects for stationary components.
+    props = new_obj.fcd_pg_mech_props
+    if category == 'BASIC_JOINT':
+        # Every basic joint needs a stator (body/bracket)
+        stator_mesh = bpy.data.meshes.new(f"{name}_Stator_Mesh")
+        stator_obj = bpy.data.objects.new(f"{name}_Stator", stator_mesh)
+        coll.objects.link(stator_obj)
+        stator_obj.matrix_world = new_obj.matrix_world.copy()
+        stator_obj.parent = new_obj
+        props.joint_stator_obj = stator_obj
+        
+        # Prismatic joints also need a dedicated screw shaft
+        if type_sub == 'JOINT_PRISMATIC':
+             screw_mesh = bpy.data.meshes.new(f"{name}_Screw_Mesh")
+             screw_obj = bpy.data.objects.new(f"{name}_Screw", screw_mesh)
+             coll.objects.link(screw_obj)
+             screw_obj.matrix_world = new_obj.matrix_world.copy()
+             screw_obj.parent = new_obj
+             props.joint_screw_obj = screw_obj
+
     # AI Editor Note: Force update to ensure matrix_world is correct for subsequent operations (like rigging).
     # This prevents parts from being rigged at the world origin if the dependency graph hasn't caught up.
     context.view_layer.update()
     
-    # --- 2. Set Properties ---
-    props = new_obj.fcd_pg_mech_props
+    # --- 3. Set Final Properties (Synced with Generator logic) ---
     props.is_part = True
     props.category = category
     
@@ -3184,56 +3204,53 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         props.pulley_groove_depth = 0.005 * multiplier
     elif category == 'BASIC_JOINT':
         # AI Editor Note: Precision Scaling for Basic Joints.
-        # We define the 'span' (total length) of the joint template's major axis (Z).
-        # Multiplier is calculated such that (length + pin_length) or (pin_length) fits the cage.
+        # Ensure the 'span' correctly represents the physical total length of the default parts along the major axis (Z).
         
         # 1. Determine base dimensions from procedural generation defaults
-        # JOINT_CONTINUOUS: body (0.1) + shaft (0.03) = 0.13
-        # JOINT_REVOLUTE: span is total_height (gap + 2*thick = 0.116) + overhang (0.01) = 0.126
-        # JOINT_PRISMATIC: screw (0.1) + 2*blocks (2*0.015) = 0.13
+        # JOINT_CONTINUOUS: body (0.12) + shaft (0.02) = 0.14
+        # JOINT_REVOLUTE: frame length (0.08) + eye radius (0.03) = 0.11
+        # JOINT_PRISMATIC: screw length (0.73)
         
-        base_h = 0.13 # Standard vertical span for default joint templates
-        if type_sub == 'JOINT_REVOLUTE':
-            base_h = 0.126
-        elif type_sub in ['JOINT_PRISMATIC_WHEELS', 'JOINT_PRISMATIC_WHEELS_ROT']:
-            base_h = 0.2 # Rack Length
+        base_h = 0.14 if type_sub == 'JOINT_CONTINUOUS' else 0.11
+        if type_sub in ['JOINT_PRISMATIC_WHEELS', 'JOINT_PRISMATIC_WHEELS_ROT']:
+            base_h = 0.2 # Standard Rack Length
+        elif type_sub == 'JOINT_PRISMATIC':
+            base_h = 0.73 # Screw Length
         
         multiplier = scale_factor / base_h
         
-        # 2. Reset and Apply Scaling (Explicitly set instead of *= to prevent cumulative error)
-        # Default proportions scaled to the cage
-        props.joint_radius = 0.025 * multiplier
-        props.joint_width = 0.1 * multiplier
-        props.joint_pin_radius = 0.005 * multiplier
-        props.joint_pin_length = 0.03 * multiplier
-        props.joint_sub_size = 0.04 * multiplier 
-        props.joint_sub_thickness = 0.008 * multiplier
-        props.joint_frame_width = 0.05 * multiplier
+        # 2. Apply Proportional Scaling (Explicitly set instead of *= to prevent cumulative error)
+        # Default proportions normalized to their respective base_h
+        props.joint_radius = 0.03 * multiplier
+        props.joint_width = 0.08 * multiplier
+        props.joint_pin_radius = 0.007 * multiplier
+        props.joint_pin_length = 0.06 * multiplier
+        props.joint_sub_size = 0.001 * multiplier 
+        props.joint_sub_thickness = 0.001 * multiplier
+        props.joint_frame_width = 0.06 * multiplier
         props.joint_frame_length = 0.08 * multiplier
         
-        # Rotor Arm proportions
-        props.rotor_arm_length = 0.15 * multiplier
-        props.rotor_arm_width = 0.03 * multiplier
-        props.rotor_arm_height = 0.01 * multiplier
+        # Continuous-Specific Proportions (Now using the new engineering defaults)
+        props.joint_base_radius = 0.06 * multiplier
+        props.joint_base_length = 0.12 * multiplier
+        props.joint_motor_shaft_radius = 0.01 * multiplier
+        props.joint_motor_shaft_length = 0.02 * multiplier
 
-        # 3. Categorized Overrides
+        # Rotor Arm proportions (Screenshot 4 Defaults)
+        props.rotor_arm_length = 0.194 * multiplier
+        props.rotor_arm_width = 0.001 * multiplier
+        props.rotor_arm_height = 0.001 * multiplier
+
+        # 3. Categorized Overrides for specific span requirements
         if type_sub == 'JOINT_REVOLUTE':
-            props.joint_pin_length = (0.1 + 0.016 + 0.01) * multiplier # gap + 2*thick + overhang
-        elif type_sub == 'JOINT_CONTINUOUS':
-            # Orientation Fix: Ensure body and shaft are clearly distinguished.
-            # No changes to translation logic needed; the pivot is at Z=0.
-            pass
-        elif type_sub == 'JOINT_PRISMATIC':
-            props.joint_pin_radius = 0.008 * multiplier # Screw Radius
-            props.joint_sub_size = 0.03 * multiplier # Matching Nut size
+            # Revolute pin length should scale with body width but doesn't define the vertical span
+            props.joint_pin_length = props.joint_width * 1.5
         elif type_sub in ['JOINT_PRISMATIC_WHEELS', 'JOINT_PRISMATIC_WHEELS_ROT']:
             props.joint_radius = 0.012 * multiplier # Wheel Radius
-            props.joint_width = 0.02 * multiplier # Rack Thickness (matches World X)
-            props.rack_width = 0.04 * multiplier # Rack Width (matches World Y)
-            props.rack_length = scale_factor # Matches World Z
-            props.wheel_thickness = 0.01 * multiplier
-            props.joint_carriage_width = 0.1 * multiplier
-            props.joint_carriage_thickness = 0.015 * multiplier
+            props.joint_sub_thickness = 0.01 * multiplier # Rack Thickness
+            props.rack_width = 0.04 * multiplier
+            props.rack_length = scale_factor # Matches the cage directly
+            props.joint_sub_size = 0.08 * multiplier # Carriage Length
     
     elif category == 'ARCHITECTURAL':
         props.length = scale_factor

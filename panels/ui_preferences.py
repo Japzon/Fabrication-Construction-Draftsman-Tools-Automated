@@ -103,6 +103,7 @@ class FCD_PT_Preferences:
                 "fcd_order_transmission": "Transmission",
                 "fcd_order_materials": "Materials & Textures",
                 "fcd_order_lighting": "Environment & Lighting",
+                "fcd_order_camera": "Camera Studio & Pathing",
                 "fcd_order_export": "Export System",
                 "fcd_order_preferences": "Preferences",
             }
@@ -117,6 +118,7 @@ class FCD_PT_Preferences:
                 "fcd_order_dimensions": "fcd_panel_enabled_dimensions",
                 "fcd_order_materials": "fcd_panel_enabled_materials",
                 "fcd_order_lighting": "fcd_panel_enabled_lighting",
+                "fcd_order_camera": "fcd_panel_enabled_camera",
                 "fcd_order_kinematics": "fcd_panel_enabled_kinematics",
                 "fcd_order_inertial": "fcd_panel_enabled_inertial",
                 "fcd_order_collision": "fcd_panel_enabled_collision",

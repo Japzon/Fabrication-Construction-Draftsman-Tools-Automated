@@ -49,6 +49,7 @@ from .ui_kinematics import FCD_PT_Kinematics_Setup
 from .ui_assets import FCD_PT_Asset_Library_System
 from .ui_export import FCD_PT_Import_Export_System
 from .ui_preferences import FCD_PT_Preferences
+from .ui_camera import FCD_PT_Camera_Cinematography
 
 class FCD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
     """
@@ -75,6 +76,7 @@ class FCD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
             (FCD_PT_Materials_And_Textures, "fcd_order_materials"),
             (FCD_PT_Lighting_And_Atmosphere, "fcd_order_lighting"),
             (FCD_PT_Kinematics_Setup, "fcd_order_kinematics"),
+            (FCD_PT_Camera_Cinematography, "fcd_order_camera"),
             (FCD_PT_Physics_Inertial, "fcd_order_inertial"),
             (FCD_PT_Physics_Collision, "fcd_order_collision"),
             (FCD_PT_Transmission, "fcd_order_transmission"),

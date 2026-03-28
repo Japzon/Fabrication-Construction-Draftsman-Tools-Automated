@@ -85,7 +85,9 @@ def setup_dev():
     # Blender 4.2+ uses 'extensions/blender_org' for localized extensions, but 'scripts/addons' still works for legacy.
     # To resolve 'Sync required' and loading errors, we'll target the extensions directory if available.
     if version_float >= 4.2:
-        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "extensions", "blender_org")
+        # AI Editor Note: Using 'user_default' instead of 'blender_org' for local dev.
+        # This prevents the "Sync required" errors from the official repository manager.
+        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "extensions", "user_default")
         legacy_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
     else:
         addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")

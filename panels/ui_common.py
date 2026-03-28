@@ -193,6 +193,7 @@ class FCD_OT_MovePanel(bpy.types.Operator):
             "fcd_order_dimensions": scene.fcd_order_dimensions,
             "fcd_order_materials": scene.fcd_order_materials,
             "fcd_order_lighting": scene.fcd_order_lighting,
+            "fcd_order_camera": scene.fcd_order_camera,
             "fcd_order_kinematics": scene.fcd_order_kinematics,
             "fcd_order_inertial": scene.fcd_order_inertial,
             "fcd_order_collision": scene.fcd_order_collision,
@@ -251,8 +252,9 @@ class FCD_OT_ResetPanelOrder(bpy.types.Operator):
         scene.fcd_order_transmission = 11
         scene.fcd_order_materials = 12
         scene.fcd_order_lighting = 13
-        scene.fcd_order_export = 14
-        scene.fcd_order_preferences = 15
+        scene.fcd_order_camera = 14
+        scene.fcd_order_export = 15
+        scene.fcd_order_preferences = 16
         
         # Trigger the update to apply changes immediately
         bpy.ops.fcd.update_panel_order()

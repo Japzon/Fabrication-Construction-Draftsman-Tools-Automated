@@ -77,21 +77,21 @@ class FCD_PT_Electronic_Presets:
                     col = edit_box.column(align=True)
                     col.label(text="Body Dimensions:")
                     if props.type_electronics in ['MOTOR_SERVO_STD', 'MOTOR_SERVO_MICRO']:
-                        col.prop(props, "motor_length", text="Case Length")
-                        col.prop(props, "motor_radius", text="Half Width")
-                        col.prop(props, "motor_height", text="Case Height")
+                        col.prop(props, "joint_base_length", text="Case Length")
+                        col.prop(props, "joint_base_radius", text="Half Width")
+                        col.prop(props, "joint_motor_height", text="Case Height")
                     else:
-                        col.prop(props, "motor_radius", text="Radius")
-                        col.prop(props, "motor_length", text="Length")
+                        col.prop(props, "joint_base_radius", text="Radius")
+                        col.prop(props, "joint_base_length", text="Length")
 
                     edit_box.separator()
                     col = edit_box.column(align=True)
-                    col.prop(props, "motor_shaft")
-                    if props.motor_shaft:
+                    col.prop(props, "joint_motor_shaft")
+                    if props.joint_motor_shaft:
                         sub = col.column(align=True)
                         sub.label(text="Shaft:")
-                        sub.prop(props, "motor_shaft_radius", text="Radius")
-                        sub.prop(props, "motor_shaft_length", text="Length")
+                        sub.prop(props, "joint_motor_shaft_radius", text="Radius")
+                        sub.prop(props, "joint_motor_shaft_length", text="Length")
                 elif 'IC' in props.type_electronics:
                     edit_box.prop(props, "ic_width", text="Width")
                     edit_box.prop(props, "ic_length", text="Length")

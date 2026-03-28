@@ -85,6 +85,14 @@ def regenerate_mech_mesh(obj: bpy.types.Object, context: bpy.types.Context):
     # 2. Standard BMesh Bounding Box/Generation Categories
     update_mesh_data(obj, context, lambda bm: dispatch_generation(bm, props, obj, context))
     
+    # --- AI Editor Note: Sub-Component Regeneration ---
+    # We must also regenerate all stationary or auxiliary objects (stator, screw, etc.)
+    for attr in ["joint_stator_obj", "joint_screw_obj", "joint_pin_obj"]:
+        sub_obj = getattr(props, attr, None)
+        if sub_obj and sub_obj.type == 'MESH':
+            # Use specific generator logic for the sub-object
+            update_mesh_data(sub_obj, context, lambda bm: generate_stator_mesh(bm, props, sub_obj, context))
+    
     # 3. Post-generation Modifiers and Shading
     finalize_modifiers(obj, props, context)
 
@@ -202,10 +210,10 @@ def generate_electronics_mesh(bm: bmesh.types.BMesh, props, obj):
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
     if 'MOTOR' in props.type_electronics:
-        r = props.motor_radius * s; l = props.motor_length * s
+        r = props.joint_motor_radius * s; l = props.joint_motor_length * s
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=l, segments=32)
-        if props.motor_shaft:
-            sl = props.motor_shaft_length * s; sr = props.motor_shaft_radius * s
+        if props.joint_motor_shaft:
+            sl = props.joint_motor_shaft_length * s; sr = props.joint_motor_shaft_radius * s
             bmesh.ops.create_cone(bm, cap_ends=True, radius1=sr, radius2=sr, depth=sl, segments=12, matrix=mathutils.Matrix.Translation((0,0,l/2+sl/2)))
     else:
         # Default box fallback
@@ -224,46 +232,87 @@ def generate_pulley_mesh(bm: bmesh.types.BMesh, props, obj):
     r = props.pulley_radius * s; w = props.pulley_width * s
     bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=32)
 
+def generate_stator_mesh(bm: bmesh.types.BMesh, props, obj, context):
+    """Generates the stationary (base) components of a mechatronic joint."""
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+    r = props.joint_radius * s; w = props.joint_width * s
+
+    if props.type_basic_joint == 'JOINT_REVOLUTE':
+        # Frame (Stator)
+        fw = props.joint_frame_width * s; fl = props.joint_frame_length * s
+        # Align frame with the eye/axis
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, -fl/2 - r, 0)) @ mathutils.Matrix.Scale(fw, 4, (1,0,0)) @ mathutils.Matrix.Scale(fl, 4, (0,1,0)) @ mathutils.Matrix.Scale(w, 4, (0,0,1)))
+    
+    elif props.type_basic_joint == 'JOINT_CONTINUOUS':
+        # Motor Body (Stator)
+        br = props.joint_base_radius * s; bl = props.joint_base_length * s
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=br, radius2=br, depth=bl, segments=32)
+    
+    elif props.type_basic_joint == 'JOINT_PRISMATIC':
+        # Screw Shaft (Stator) - Reoriented to VERTICAL (Z)
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=16)
+    
+    elif 'WHEELS' in props.type_basic_joint:
+        # Rack Rail (Stator) - Already Vertical (Z)
+        rl = props.rack_length * s; rw = props.rack_width * s; rt = props.joint_sub_thickness * s
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(rt, 4, (1,0,0)) @ mathutils.Matrix.Scale(rw, 4, (0,1,0)) @ mathutils.Matrix.Scale(rl, 4, (0,0,1)))
+
 def generate_basic_joint_mesh(bm: bmesh.types.BMesh, props, obj, context):
+    """Generates the moving (rotor/carriage) components of a mechatronic joint."""
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
     r = props.joint_radius * s; w = props.joint_width * s
     sub_s = props.joint_sub_size * s; sub_t = props.joint_sub_thickness * s
 
     if props.type_basic_joint == 'JOINT_REVOLUTE':
-        # Eye bolt style: Cylinder base + Frame box
-        # Frame
-        fw = props.joint_frame_width * s; fl = props.joint_frame_length * s
-        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, -fl/2 - r, 0)) @ mathutils.Matrix.Scale(fw, 4, (1,0,0)) @ mathutils.Matrix.Scale(fl, 4, (0,1,0)) @ mathutils.Matrix.Scale(w, 4, (0,0,1)))
         # Eye (Cylinder)
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=32)
-        # Pin (smaller cylinder)
+        # Pin
         pr = props.joint_pin_radius * s
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=pr, radius2=pr, depth=w*1.5, segments=16)
+        
+        # --- Rotor Arm Implementation ---
+        al = props.rotor_arm_length * s; aw = props.rotor_arm_width * s; ah = props.rotor_arm_height * s
+        # Arm extends outward from the eye (Y axis in current frame logic)
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, al/2 + r, 0)) @ mathutils.Matrix.Scale(aw, 4, (1,0,0)) @ mathutils.Matrix.Scale(al, 4, (0,1,0)) @ mathutils.Matrix.Scale(ah, 4, (0,0,1)))
+
     elif props.type_basic_joint == 'JOINT_CONTINUOUS':
-        # Motor style
-        mr = props.motor_radius * s; ml = props.motor_length * s
-        bmesh.ops.create_cone(bm, cap_ends=True, radius1=mr, radius2=mr, depth=ml, segments=32)
-        sr = props.motor_shaft_radius * s; sl = props.motor_shaft_length * s
-        bmesh.ops.create_cone(bm, cap_ends=True, radius1=sr, radius2=sr, depth=sl, segments=12, matrix=mathutils.Matrix.Translation((0,0,ml/2+sl/2)))
+        # Shaft Only (Rotor)
+        sr = props.joint_motor_shaft_radius * s; sl = props.joint_motor_shaft_length * s
+        bl = props.joint_base_length * s
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=sr, radius2=sr, depth=sl, segments=12, matrix=mathutils.Matrix.Translation((0,0,bl/2+sl/2)))
+        
+        # --- Rotor Arm (Optional for motors) ---
+        al = props.rotor_arm_length * s; aw = props.rotor_arm_width * s; ah = props.rotor_arm_height * s
+        if al > 0:
+             bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, al/2 + sr, bl/2 + sl - ah/2)) @ mathutils.Matrix.Scale(aw, 4, (1,0,0)) @ mathutils.Matrix.Scale(al, 4, (0,1,0)) @ mathutils.Matrix.Scale(ah, 4, (0,0,1)))
+
     elif props.type_basic_joint == 'JOINT_PRISMATIC':
-        # Screw/Linear style
-        bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=16, matrix=mathutils.Matrix.Rotation(math.radians(90),4,'Y'))
-        bmesh.ops.create_cube(bm, size=sub_s, matrix=mathutils.Matrix.Translation((0,0,0)))
+        # Nut Block Only (Rotor) - Influenced by moving gizmo
+        # Logic: Moves along the Screw Shaft (Z)
+        bmesh.ops.create_cube(bm, size=sub_s)
+    
     elif props.type_basic_joint == 'JOINT_SPHERICAL':
         # Ball and Socket
         bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=r)
-        # Handle/Stem
         sr = props.joint_pin_radius * s; sl = props.joint_pin_length * s
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=sr, radius2=sr, depth=sl, segments=12, matrix=mathutils.Matrix.Translation((0,0,r+sl/2)))
+
     elif 'WHEELS' in props.type_basic_joint:
-        # Prismatic Wheels (Rack and Carriage)
-        # Rack
-        rl = props.rack_length * s; rw = props.rack_width * s
-        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((rl/2, 0, -sub_t/2)) @ mathutils.Matrix.Scale(rl, 4, (1,0,0)) @ mathutils.Matrix.Scale(rw, 4, (0,1,0)) @ mathutils.Matrix.Scale(sub_t, 4, (0,0,1)))
-        # Carriage
-        cw = props.joint_carriage_width * s; ct = props.joint_carriage_thickness * s
-        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, 0, ct/2)) @ mathutils.Matrix.Scale(sub_s, 4, (1,0,0)) @ mathutils.Matrix.Scale(cw, 4, (0,1,0)) @ mathutils.Matrix.Scale(ct, 4, (0,0,1)))
+        # Carriage & Wheels (Rotor)
+        cw = props.joint_carriage_width * s; cl = props.joint_sub_size * s; ct = props.joint_carriage_thickness * s
+        wt = props.wheel_thickness * s; wr = props.joint_radius * s
+        
+        # Carriage Plate (Vertical in XZ, moves on Z)
+        # Note: Original code was oriented differently, reorienting to vertical rack rail.
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(cw, 4, (1,0,0)) @ mathutils.Matrix.Scale(ct, 4, (0,1,0)) @ mathutils.Matrix.Scale(cl, 4, (0,0,1)))
+        
+        # Wheels
+        for side in [-1, 1]:
+            for end in [-1, 1]:
+                mat = mathutils.Matrix.Translation((side * (cw/2 + wt/2), 0, end * (cl/2 - wr))) @ mathutils.Matrix.Rotation(math.radians(90), 4, 'Y')
+                bmesh.ops.create_cone(bm, cap_ends=True, radius1=wr, radius2=wr, depth=wt, segments=16, matrix=mat)
     else:
         # Default simple cylinder
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=32)

@@ -29,6 +29,7 @@ from . import ui_assets
 from . import ui_export
 from . import ui_preferences
 from . import ui_main
+from . import ui_camera
 
 modules = [
     ui_common,
@@ -48,6 +49,7 @@ modules = [
     ui_assets,
     ui_export,
     ui_preferences,
+    ui_camera,
     ui_main,
 ]
 

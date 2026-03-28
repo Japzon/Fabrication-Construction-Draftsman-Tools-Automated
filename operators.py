@@ -2017,6 +2017,9 @@ class FCD_OT_AddParametricAnchor(bpy.types.Operator):
         if not obj or obj.type != 'MESH':
             return {'CANCELLED'}
         
+        unit_scale = context.scene.unit_settings.scale_length
+        s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+        
         # Get selection center
         bm = bmesh.from_edit_mesh(obj.data)
         selected_verts = [v for v in bm.verts if v.select]
@@ -2039,8 +2042,8 @@ class FCD_OT_AddParametricAnchor(bpy.types.Operator):
         # Create Empty
         empty = bpy.data.objects.new(f"Hook_{obj.name}", None)
         empty.location = world_center
-        empty.empty_display_type = 'SPHERE'
-        empty.empty_display_size = 0.1
+        empty.empty_display_type = 'PLAIN_AXES'
+        empty.empty_display_size = 0.1 * s
         context.collection.objects.link(empty)
         
         # Create Vertex Group for the selection
@@ -5952,8 +5955,83 @@ class FCD_OT_ToonifySelectedLights(bpy.types.Operator):
         self.report({'INFO'}, f"Toonified {count} light sources.")
         return {'FINISHED'}
 
+# ------------------------------------------------------------------------
+#   OPERATOR: CAMERA CINEMATOGRAPHY
+# ------------------------------------------------------------------------
+
+class FCD_OT_Camera_Setup(bpy.types.Operator):
+    """Binds camera to targets and paths for high-fidelity simulation recording."""
+    bl_label = "Apply Camera Setup"
+    bl_idname = "fcd.camera_setup"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        cam_obj = context.active_object
+        if not cam_obj or cam_obj.type != 'CAMERA':
+             self.report({'ERROR'}, "Invalid Camera Object Selection")
+             return {'CANCELLED'}
+        
+        props = cam_obj.fcd_pg_mech_props
+        
+        # 1. Lens Properties Synchronization
+        cam_obj.data.lens = props.camera_focal_length
+        cam_obj.data.dof.use_dof = props.camera_dof_enabled
+        if props.camera_dof_enabled:
+            cam_obj.data.dof.aperture_fstop = props.camera_fstop
+            if props.camera_target:
+                cam_obj.data.dof.focus_object = props.camera_target
+        
+        # 2. Path Kinematics (Follow Path)
+        if props.camera_path:
+             c_path = next((c for c in cam_obj.constraints if c.type == 'FOLLOW_PATH'), None)
+             if not c_path:
+                  c_path = cam_obj.constraints.new('FOLLOW_PATH')
+             
+             c_path.target = props.camera_path
+             c_path.use_fixed_location = True # Essential for absolute path driving
+             
+             # Driver Implementation: Connect custom offset to internal constraint factor
+             if not c_path.driver_add("offset_factor").driver:
+                  fcurve = c_path.driver_add("offset_factor")
+                  driver = fcurve.driver
+                  driver.type = 'AVERAGE'
+                  var = driver.variables.new()
+                  var.name = "offset"
+                  var.type = 'SINGLE_PROP'
+                  var.targets[0].id = cam_obj
+                  var.targets[0].data_path = "fcd_pg_mech_props.camera_path_offset"
+                  driver.expression = "offset"
+        
+        # 3. Track To / Lock View (Look At Target)
+        if props.camera_target:
+             c_look = next((c for c in cam_obj.constraints if c.type == 'TRACK_TO'), None)
+             if not c_look:
+                  c_look = cam_obj.constraints.new('TRACK_TO')
+             c_look.target = props.camera_target
+             c_look.track_axis = 'TRACK_NEGATIVE_Z'
+             c_look.up_axis = 'UP_Y'
+             c_look.target_space = 'WORLD'
+             c_look.owner_space = 'WORLD'
+        
+        return {'FINISHED'}
+
+class FCD_OT_Camera_Look_Through(bpy.types.Operator):
+    """Makes the active camera the primary scene viewport."""
+    bl_label = "View Through Camera"
+    bl_idname = "fcd.camera_look_through"
+
+    def execute(self, context):
+        if context.active_object and context.active_object.type == 'CAMERA':
+            context.scene.camera = context.active_object
+            # Switch the viewport perspective immediately
+            for area in context.screen.areas:
+                if area.type == 'VIEW_3D':
+                    area.spaces.active.region_3d.view_perspective = 'CAMERA'
+        return {'FINISHED'}
+
 def register():
     CLASSES = [
+        FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
         FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
@@ -5983,6 +6061,7 @@ def register():
 
 def unregister():
     CLASSES = [
+        FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
         FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 

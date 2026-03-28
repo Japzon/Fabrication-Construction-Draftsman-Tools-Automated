@@ -222,6 +222,7 @@ class FCD_PG_Mech_Props(bpy.types.PropertyGroup):
     chain_pitch: bpy.props.FloatProperty(name="Chain Pitch", default=0.0127, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     chain_roller_radius: bpy.props.FloatProperty(name="Roller Radius", default=0.004, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
     chain_roller_length: bpy.props.FloatProperty(name="Roller Length", default=0.008, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    chain_curve_res: bpy.props.IntProperty(name="Curve Resolution", default=12, min=1, max=64, update=update_mesh_wrapper)
     chain_plate_height: bpy.props.FloatProperty(name="Plate Height", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     chain_plate_thickness: bpy.props.FloatProperty(name="Plate Thickness", default=0.0015, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
     belt_width: bpy.props.FloatProperty(name="Belt Width", default=0.015, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
@@ -253,29 +254,41 @@ class FCD_PG_Mech_Props(bpy.types.PropertyGroup):
     rope_strands: bpy.props.IntProperty(name="Strands", default=7, min=1, update=update_mesh_wrapper)
 
     # 9. BASIC JOINTS
-    joint_width: bpy.props.FloatProperty(name="Joint Width", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.02, min=0.001, unit='LENGTH', update=update_radius_prop)
-    joint_pin_radius: bpy.props.FloatProperty(name="Pin Radius", default=0.005, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_width: bpy.props.FloatProperty(name="Joint Width", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.03, min=0.001, unit='LENGTH', update=update_radius_prop)
+    joint_pin_radius: bpy.props.FloatProperty(name="Pin Radius", default=0.007, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     joint_pin_length: bpy.props.FloatProperty(name="Pin Length", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_sub_size: bpy.props.FloatProperty(name="Sub-Size", default=0.04, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_sub_thickness: bpy.props.FloatProperty(name="Sub-Thickness", default=0.005, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_frame_width: bpy.props.FloatProperty(name="Frame Width", default=0.04, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_frame_length: bpy.props.FloatProperty(name="Frame Length", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_sub_size: bpy.props.FloatProperty(name="Sub-Size/Overhang", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
+    
+    # Joint Generator Tracking Pointers (AI Added for Stability)
+    joint_stator_obj: bpy.props.PointerProperty(name="Stator Object", type=bpy.types.Object)
+    joint_rotor_obj: bpy.props.PointerProperty(name="Rotor Object", type=bpy.types.Object)
+    joint_screw_obj: bpy.props.PointerProperty(name="Screw Object", type=bpy.types.Object)
+    joint_pin_obj: bpy.props.PointerProperty(name="Pin Object", type=bpy.types.Object)
+    joint_sub_thickness: bpy.props.FloatProperty(name="Sub-Thickness", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_frame_width: bpy.props.FloatProperty(name="Frame Width", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_frame_length: bpy.props.FloatProperty(name="Frame Length", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     joint_carriage_width: bpy.props.FloatProperty(name="Carriage Width", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     joint_carriage_thickness: bpy.props.FloatProperty(name="Carriage Thickness", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_length: bpy.props.FloatProperty(name="Rotor Arm Length", default=0.15, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_width: bpy.props.FloatProperty(name="Rotor Arm Width", default=0.03, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_height: bpy.props.FloatProperty(name="Rotor Arm Height", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    rotor_arm_length: bpy.props.FloatProperty(name="Rotor Arm Length", default=0.194, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    rotor_arm_width: bpy.props.FloatProperty(name="Rotor Arm Width", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
+    rotor_arm_height: bpy.props.FloatProperty(name="Rotor Arm Height", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
 
-    # 10. ELECTRONICS
-    motor_radius: bpy.props.FloatProperty(name="Motor Radius", default=0.018, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    motor_length: bpy.props.FloatProperty(name="Motor Length", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    motor_height: bpy.props.FloatProperty(name="Motor Height", default=0.035, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    motor_shaft_radius: bpy.props.FloatProperty(name="Shaft Radius", default=0.003, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
-    motor_shaft_length: bpy.props.FloatProperty(name="Shaft Length", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    # 10. ELECTRONICS / CONTINUOUS JOINTS
+    joint_base_radius: bpy.props.FloatProperty(name="Base Radius", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_base_length: bpy.props.FloatProperty(name="Base Length", default=0.12, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_motor_height: bpy.props.FloatProperty(name="Motor Height", default=0.035, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    joint_motor_shaft_radius: bpy.props.FloatProperty(name="Shaft Radius", default=0.01, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
+    joint_motor_shaft_length: bpy.props.FloatProperty(name="Shaft Length", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
     
-    # ... (Keep all other properties, just rename them and callbacks)
-    motor_shaft: bpy.props.BoolProperty(name="Include Shaft", default=True, update=update_mesh_wrapper)
+    # 11. CAMERA SETUP & ANIMATION
+    camera_target: bpy.props.PointerProperty(name="Look At Target", type=bpy.types.Object)
+    camera_path: bpy.props.PointerProperty(name="Animation Path", type=bpy.types.Object, poll=lambda self, obj: obj.type == 'CURVE')
+    camera_focal_length: bpy.props.FloatProperty(name="Focal Length", default=35.0, min=1.0, max=5000.0, update=update_mesh_wrapper)
+    camera_dof_enabled: bpy.props.BoolProperty(name="Enable Depth of Field", default=False)
+    camera_fstop: bpy.props.FloatProperty(name="F-Stop", default=2.8, min=0.1, max=128.0)
+    camera_follow_path: bpy.props.BoolProperty(name="Follow Path", default=False)
+    camera_path_offset: bpy.props.FloatProperty(name="Path Offset", default=0.0, min=-1000.0, max=1000.0)
     
     # Final Pointers
     spring_start_obj: bpy.props.PointerProperty(type=bpy.types.Object)
@@ -499,8 +512,9 @@ def register():
         "fcd_order_transmission",  # 12: Transmission
         "fcd_order_materials",     # 13: Materials & Textures
         "fcd_order_lighting",      # 14: Environment & Lighting
-        "fcd_order_export",        # 15: Export System
-        "fcd_order_preferences"    # 16: Preferences
+        "fcd_order_camera",        # 15: Camera Studio & Pathing
+        "fcd_order_export",        # 16: Export System
+        "fcd_order_preferences"    # 17: Preferences
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))

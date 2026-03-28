@@ -50,6 +50,7 @@ FCD_PANEL_PROPS: List[str] = [
     "fcd_panel_enabled_transmission", "fcd_show_panel_transmission",
     "fcd_panel_enabled_export", "fcd_show_panel_export",
     "fcd_panel_enabled_assets", "fcd_show_panel_assets",
+    "fcd_panel_enabled_camera", "fcd_show_panel_camera",
     "fcd_panel_enabled_architectural", "fcd_show_panel_architectural",
     "fcd_panel_enabled_vehicle", "fcd_show_panel_vehicle",
     "fcd_panel_enabled_preferences", "fcd_show_panel_preferences",

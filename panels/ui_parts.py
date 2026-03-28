@@ -369,10 +369,10 @@ class FCD_PT_Mechanical_Presets:
                         pin_box.prop(props, "joint_pin_radius", text="Pin Radius")
                         pin_box.prop(props, "joint_sub_size", text="Pin Overhang")
                     elif props.type_basic_joint == 'JOINT_CONTINUOUS':
-                        edit_box.prop(props, "motor_radius")
-                        edit_box.prop(props, "motor_length")
-                        edit_box.prop(props, "motor_shaft_radius")
-                        edit_box.prop(props, "motor_shaft_length")
+                        edit_box.prop(props, "joint_base_radius")
+                        edit_box.prop(props, "joint_base_length")
+                        edit_box.prop(props, "joint_motor_shaft_radius")
+                        edit_box.prop(props, "joint_motor_shaft_length")
                     elif props.type_basic_joint == 'JOINT_PRISMATIC':
                         edit_box.prop(props, "joint_width", text="Screw Length")
                         edit_box.prop(props, "joint_radius", text="Screw Radius")

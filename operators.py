@@ -905,7 +905,7 @@ class FCD_OT_ApplyJointSettings(bpy.types.Operator):
                 core.clean_conflicting_mechanics(bone)
                 core.update_single_bone_gizmo(bone, scene.fcd_viz_gizmos, scene.fcd_gizmo_style)
                 core.apply_native_constraints(bone)
-                core.update_ik_chain_length(props, ctx)
+                core.update_ik_chain_length(bone, ctx)
         except Exception as e:
             msg = f"FCD Error during joint application: {e}"
             print(msg)
@@ -940,11 +940,18 @@ class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return context.mode == 'POSE' and context.active_pose_bone is not None
+        # AI Editor Note: Relaxed poll for timer stability.
+        # Operators called via bpy.ops in a timer must have a permissive poll.
+        if not context or not hasattr(context, 'scene'): 
+            return False
+        return True
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        source_bone = context.active_pose_bone
+        # AI Editor Note: Robust context retrieval for Timer-based calls.
+        ctx = context if context and hasattr(context, 'scene') else bpy.context
+        source_bone = getattr(ctx, 'active_pose_bone', None)
         if not source_bone:
+            # If no active bone, we can't propagate anything
             return {'CANCELLED'}
         source_props = source_bone.fcd_pg_kinematic_props
         
@@ -962,8 +969,8 @@ class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
         # Guard to prevent feedback loops
         core._prop_update_guard = True
         try:
-            show = context.scene.fcd_viz_gizmos
-            style = context.scene.fcd_gizmo_style
+            show = ctx.scene.fcd_viz_gizmos
+            style = ctx.scene.fcd_gizmo_style
 
             for bone in bones_to_update:
                 target_props = bone.fcd_pg_kinematic_props
@@ -980,17 +987,17 @@ class FCD_OT_ApplyBoneConstraints(bpy.types.Operator):
                 core.clean_conflicting_mechanics(bone)
                 core.update_single_bone_gizmo(bone, show, style)
                 core.apply_native_constraints(bone)
-                core.update_ik_chain_length(target_props, context)
+                core.update_ik_chain_length(bone, ctx)
             
             # Apply to active as well just to be sure
             core.clean_conflicting_mechanics(source_bone)
             core.update_single_bone_gizmo(source_bone, show, style)
             core.apply_native_constraints(source_bone)
-            core.update_ik_chain_length(source_props, context)
+            core.update_ik_chain_length(source_bone, ctx)
 
         finally:
             core._prop_update_guard = False
-            context.view_layer.update()
+            ctx.view_layer.update()
 
         return {'FINISHED'}
 
@@ -5649,7 +5656,10 @@ class FCD_OT_AddBone(bpy.types.Operator):
         original_mode = rig.mode
         original_active = context.view_layer.objects.active
         
-        bpy.ops.object.select_all(action='DESELECT')
+        # AI Editor Note: Use manual de-selection to avoid operator 'poll' failures in certain contexts.
+        for obj in context.view_layer.objects:
+            obj.select_set(False)
+            
         context.view_layer.objects.active = rig
         rig.select_set(True)
 

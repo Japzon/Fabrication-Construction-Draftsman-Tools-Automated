@@ -788,23 +788,23 @@ def get_gizmo_rotation_matrix(joint_type: str, axis_enum: str) -> mathutils.Matr
     Returns:
         A 3x3 rotation matrix.
     """
-    rot_matrix = mathutils.Matrix.Identity(3)
+    rot_matrix = mathutils.Matrix.Identity(4)
     target_axis = axis_enum.replace("-", "")
 
     if joint_type == 'prismatic':
         # The default prismatic gizmo is a line along the Y-axis.
         # We need to rotate it to align with the target axis.
         if target_axis == 'X':
-            rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 3, 'Z')
+            rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 4, 'Z')
         elif target_axis == 'Z':
-            rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 3, 'X')
+            rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 4, 'X')
     else:  # 'revolute'
         # The default revolute gizmo is a circle in the XY plane, rotating around Z.
         # We need to rotate it so its rotation axis matches the target axis.
         if target_axis == 'X':
-            rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 3, 'Y')
+            rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 4, 'Y')
         elif target_axis == 'Y':
-            rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 3, 'X')
+            rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 4, 'X')
 
     return rot_matrix
 
@@ -1223,7 +1223,7 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
     Args:
         shape_type: The type of gizmo to create ('ROTATION', 'SLIDER', 'FIXED').
         target_axis: The axis the gizmo should be aligned to ('X', 'Y', 'Z').
-        style: The visual style of the gizmo ('DEFAULT', 'MODERN_3D', 'LILY_2D').
+        style: The visual style of the gizmo ('DEFAULT', '3D').
 
     Returns:
         The gizmo object, or None if creation fails (e.g., during rendering).
@@ -1267,7 +1267,7 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
         # Generate the gizmo's geometry using BMesh.
         bm = bmesh.new()
         
-        if style == 'MODERN_3D':
+        if style == '3D':
             if shape_type == 'ROTATION':
                 # Thick ring (Washer)
                 bmesh.ops.create_cone(bm, cap_ends=True, radius1=1.0, radius2=1.0, depth=0.1, segments=32)
@@ -1275,29 +1275,11 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
                 bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((1.0, 0, 0)))
             elif shape_type == 'SLIDER':
                 # Cylinder shaft (Y-aligned)
-                mat_y = mathutils.Matrix.Rotation(math.radians(-90), 3, 'X')
+                mat_y = mathutils.Matrix.Rotation(math.radians(-90), 4, 'X')
                 bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.1, radius2=0.1, depth=2.0, segments=16, matrix=mat_y)
                 # Arrow heads
                 bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((0, 1.2, 0)))
-                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((0, -1.2, 0)) @ mathutils.Matrix.Rotation(math.radians(180), 3, 'X'))
-            elif shape_type == 'FIXED':
-                bmesh.ops.create_cube(bm, size=0.5)
-        
-        elif style == 'LILY_2D':
-            if shape_type == 'ROTATION':
-                # Flower shape
-                bmesh.ops.create_circle(bm, cap_ends=False, radius=1.0, segments=16)
-                # Scale every other vertex to create petals
-                verts = [v for i, v in enumerate(bm.verts) if i % 2 == 0]
-                bmesh.ops.scale(bm, verts=verts, vec=(1.2, 1.2, 1.2))
-                bmesh.ops.contextual_create(bm, geom=bm.verts[:]+bm.edges[:]) # Fill face
-            elif shape_type == 'SLIDER':
-                # Stylized double arrow
-                v1 = bm.verts.new((0, -1.0, 0)); v2 = bm.verts.new((0, 1.0, 0))
-                bm.edges.new((v1, v2))
-                # Diamonds at ends
-                bmesh.ops.create_circle(bm, cap_ends=True, radius=0.3, segments=4, matrix=mathutils.Matrix.Translation((0, 1.0, 0)))
-                bmesh.ops.create_circle(bm, cap_ends=True, radius=0.3, segments=4, matrix=mathutils.Matrix.Translation((0, -1.0, 0)))
+                bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.2, radius2=0.0, depth=0.4, segments=8, matrix=mathutils.Matrix.Translation((0, -1.2, 0)) @ mathutils.Matrix.Rotation(math.radians(180), 4, 'X'))
             elif shape_type == 'FIXED':
                 bmesh.ops.create_cube(bm, size=0.5)
 
@@ -1336,9 +1318,9 @@ def create_flat_gizmo(shape_type: str = 'ROTATION', target_axis: str = 'Z', styl
             axis_len = 1.0
             axis_rad = 0.05
             # X axis (Red)
-            bmesh.ops.create_cone(bm, cap_ends=True, radius1=axis_rad, radius2=axis_rad, depth=axis_len, segments=8, matrix=mathutils.Matrix.Rotation(math.radians(90), 3, 'Y'))
+            bmesh.ops.create_cone(bm, cap_ends=True, radius1=axis_rad, radius2=axis_rad, depth=axis_len, segments=8, matrix=mathutils.Matrix.Rotation(math.radians(90), 4, 'Y'))
             # Y axis (Green)
-            bmesh.ops.create_cone(bm, cap_ends=True, radius1=axis_rad, radius2=axis_rad, depth=axis_len, segments=8, matrix=mathutils.Matrix.Rotation(math.radians(-90), 3, 'X'))
+            bmesh.ops.create_cone(bm, cap_ends=True, radius1=axis_rad, radius2=axis_rad, depth=axis_len, segments=8, matrix=mathutils.Matrix.Rotation(math.radians(-90), 4, 'X'))
             # Z axis (Blue)
             bmesh.ops.create_cone(bm, cap_ends=True, radius1=axis_rad, radius2=axis_rad, depth=axis_len, segments=8)
 
@@ -4657,7 +4639,7 @@ def get_all_children_objects(bone: bpy.types.PoseBone, context: bpy.types.Contex
             
     return list(all_objs)
 
-def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style: str = 'MODERN_3D') -> None:
+def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style: str = 'DEFAULT') -> None:
     """
     Updates the custom shape (widget or "gizmo") for a single bone to visually
     represent its joint properties.
@@ -4665,7 +4647,7 @@ def update_single_bone_gizmo(bone: bpy.types.PoseBone, show_gizmos: bool, style:
     Args:
         bone: The `PoseBone` whose gizmo needs to be updated.
         show_gizmos: A boolean indicating whether gizmos should be visible.
-        style: The visual style of the gizmo ('DEFAULT', 'MODERN_3D', 'LILY_2D').
+        style: The visual style of the gizmo ('DEFAULT', '3D').
     """
     props = bone.fcd_pg_kinematic_props
     if not show_gizmos or props.joint_type == 'none':
@@ -5108,13 +5090,16 @@ def fcd_prop_update(self, context, prop_name: str):
         # We must parse the bone name from the data path to identify which bone changed.
         if isinstance(this_bone, bpy.types.Object) and this_bone.type == 'ARMATURE':
             try:
+                # AI Editor Note: path_from_id() can fail in certain context transition states.
+                # We wrap it in a try-except to prevent the entire handler from crashing.
                 path = self.path_from_id()
                 # Expected path format: pose.bones["BoneName"].fcd_pg_kinematic_props
                 match = re.search(r'pose\.bones\["([^"]+)"\]', path)
                 if match:
                     bone_name = match.group(1)
                     this_bone = this_bone.pose.bones.get(bone_name)
-            except:
+            except (ValueError, RuntimeError):
+                # Fallback to identify bone via name if path parsing fails
                 pass
 
     if not isinstance(this_bone, bpy.types.PoseBone):
@@ -5131,7 +5116,7 @@ def fcd_prop_update(self, context, prop_name: str):
     if prop_name in {'ratio_value', 'ratio_invert'} and self.ratio_target_bone:
         add_native_driver_relation(this_bone, self.ratio_target_bone, self.ratio_value, self.ratio_invert)
     elif prop_name == 'ik_chain_length':
-        update_ik_chain_length(self, context)
+        update_ik_chain_length(this_bone, context)
 
     # --- Part 2: Propagation for Multi-Object Editing (with guard) ---
     # Guard is already checked at the top, but we'll use a local one for safety here if needed.
@@ -5195,9 +5180,12 @@ def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
         try:
             tool_props = scene.fcd_pg_joint_editor_settings
             active_props = target_bone.fcd_pg_kinematic_props
-            # Copy all relevant properties from the bone to the tool
-            for prop_name in tool_props.bl_rna.properties.keys():
+            # Copy all relevant properties from the bone whose data we just selected.
+            # We filter out collections and read-only system properties.
+            for prop_name, prop_data in tool_props.bl_rna.properties.items():
                 if prop_name in {"rna_type", "name"}: continue
+                if prop_data.type == 'COLLECTION': continue
+                
                 if hasattr(active_props, prop_name):
                     setattr(tool_props, prop_name, getattr(active_props, prop_name))
         except Exception as e:
@@ -5408,26 +5396,15 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
     # 3. Garbage collect unused gizmos to prevent "left behind" objects.
     cleanup_unused_gizmos(context)
 
-def update_ik_chain_length(props: 'FCD_PG_Kinematic_Props', context: bpy.types.Context) -> None:
+def update_ik_chain_length(bone: bpy.types.PoseBone, context: bpy.types.Context) -> None:
     """
-    Update callback for the IK chain length property in the UI.
-    Supports multi-object editing by accepting the specific property group instance.
+    Update callback for the IK chain length property on a bone.
+    Synchronizes the IK constraint's chain_count with the property value.
     """
-    # AI Editor Note: Identify the bone from the property group instance.
-    bone = None
-    if isinstance(props.id_data, bpy.types.Object) and props.id_data.type == 'ARMATURE':
-        path = props.path_from_id()
-        match = re.search(r'pose\.bones\["([^"]+)"\]', path)
-        if match:
-            bone = props.id_data.pose.bones.get(match.group(1))
-    
-    # Fallback to active bone if path parsing fails (e.g. from Tool settings)
-    if not bone:
-        bone = context.active_pose_bone
-        
     if not bone:
         return
-
+    
+    props = bone.fcd_pg_kinematic_props
     ik_con = bone.constraints.get(IK_CONSTRAINT_NAME)
     if not ik_con:
         return

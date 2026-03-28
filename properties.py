@@ -397,7 +397,7 @@ def register():
     bpy.types.Scene.fcd_text_placement_mode = bpy.props.BoolProperty(name="Text Placement", default=False)
     bpy.types.Scene.fcd_placement_mode = bpy.props.BoolProperty(name="Object Placement", default=False, update=update_placement_mode_wrapper)
     
-    bpy.types.Scene.fcd_gizmo_style = bpy.props.EnumProperty(name="Style", items=GIZMO_STYLES, default='MODERN_3D')
+    bpy.types.Scene.fcd_gizmo_style = bpy.props.EnumProperty(name="Style", items=GIZMO_STYLES, default='DEFAULT')
     bpy.types.Scene.fcd_bone_mode = bpy.props.EnumProperty(name="Mode", items=BONE_MODES, default='INDIVIDUAL')
     bpy.types.Scene.fcd_bone_axis = bpy.props.EnumProperty(name="Axis", items=BONE_AXES, default='AUTO')
     bpy.types.Scene.fcd_cursor_local_pos = bpy.props.FloatVectorProperty(name="Local Pos", size=3, unit='LENGTH', update=update_cursor_local_wrapper)

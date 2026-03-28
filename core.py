@@ -770,44 +770,117 @@ def apply_auto_smooth(obj: bpy.types.Object, is_rack: bool = False) -> None:
         bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=len(obj.modifiers) - 1)
 
 def get_gizmo_rotation_matrix(joint_type: str, axis_enum: str) -> mathutils.Matrix:
-    """
-    Calculates the rotation matrix needed to align a default gizmo shape to a
-    specific joint axis.
-
-    The default gizmo shapes are created with a standard orientation:
-    - Revolute (ROTATION): A circle in the XY plane (normal along Z).
-    - Prismatic (SLIDER): A line along the Y axis.
-
-    This function computes the transformation to rotate these default shapes so
-    they align with the user-selected joint axis ('X', 'Y', or 'Z').
-
-    Args:
-        joint_type: The type of joint ('prismatic' or 'revolute').
-        axis_enum: The target axis ('X', 'Y', 'Z', '-X', etc.).
-
-    Returns:
-        A 3x3 rotation matrix.
-    """
+    """Calculates the rotation matrix needed to align a default gizmo shape."""
     rot_matrix = mathutils.Matrix.Identity(4)
     target_axis = axis_enum.replace("-", "")
 
     if joint_type == 'prismatic':
-        # The default prismatic gizmo is a line along the Y-axis.
-        # We need to rotate it to align with the target axis.
         if target_axis == 'X':
             rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 4, 'Z')
         elif target_axis == 'Z':
             rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 4, 'X')
-    else:  # 'revolute'
-        # The default revolute gizmo is a circle in the XY plane, rotating around Z.
-        # We need to rotate it so its rotation axis matches the target axis.
+    else: # revolute/continuous
         if target_axis == 'X':
             rot_matrix = mathutils.Matrix.Rotation(math.radians(90.0), 4, 'Y')
         elif target_axis == 'Y':
             rot_matrix = mathutils.Matrix.Rotation(math.radians(-90.0), 4, 'X')
+            
+    return rot_matrix.to_3x3()
 
-    return rot_matrix
+def get_or_create_text_material(target_obj):
+    """Ensures a unique text material exists for the given object and returns it."""
+    if not hasattr(target_obj, "name"):
+         return bpy.data.materials.new("ERROR_MAT")
 
+    mat_name = f"FCD_Material_{target_obj.name}"
+    mat = bpy.data.materials.get(mat_name)
+    if not mat:
+        mat = bpy.data.materials.new(name=mat_name)
+        mat.use_nodes = True
+    
+    # AI Editor Note: Access properties through the FCD_PG_Dimension_Props namespaced PG
+    dim_props = getattr(target_obj, "fcd_pg_dim_props", None)
+    color = dim_props.text_color if dim_props else (0.0, 0.0, 0.0, 1.0)
+    
+    if mat.use_nodes and mat.node_tree:
+        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        if bsdf:
+            bsdf.inputs['Base Color'].default_value = color
+            bsdf.inputs['Emission Color'].default_value = color
+            bsdf.inputs['Emission Strength'].default_value = 1.0
+    
+    mat.diffuse_color = color
+    return mat
+
+def update_dimension_length(obj):
+    """
+    Updates the position of endpoints and procedural line scale for the dimension.
+    Target 'obj' is the Label object (host of properties).
+    """
+    if not obj or not obj.get("fcd_is_dimension"):
+        return
+
+    dim_props = getattr(obj, "fcd_pg_dim_props", None)
+    if not dim_props: return
+    
+    length = dim_props.length
+    
+    # Root of the dimension assembly
+    root = obj.parent
+    if not root: return
+    
+    # Find children to update
+    for child in root.children:
+        # Update Anchor End position
+        if child.get("fcd_is_dimension_anchor") == "END":
+            child.location.z = length
+            child.update_tag()
+            
+        # Update Procedural Line scale
+        elif child.get("fcd_is_dimension_line"):
+            child.scale.z = length
+            child.update_tag()
+            
+    # Update Label position (midpoint)
+    obj.location.z = length / 2
+
+def update_arrow_settings(obj):
+    """Updates the global visual settings (scale, color, direction) for the dimension assembly."""
+    if not obj or not obj.get("fcd_is_dimension"):
+        return
+
+    dim_props = getattr(obj, "fcd_pg_dim_props", None)
+    if not dim_props: return
+    
+    arrow_s = dim_props.arrow_scale
+    text_s = dim_props.text_scale
+    dir_enum = dim_props.direction
+    length = dim_props.length
+    
+    direction_map = {
+        'X': mathutils.Vector((1, 0, 0)),
+        'Y': mathutils.Vector((0, 1, 0)),
+        'Z': mathutils.Vector((0, 0, 1)),
+        '-X': mathutils.Vector((-1, 0, 0)),
+        '-Y': mathutils.Vector((0, -1, 0)),
+        '-Z': mathutils.Vector((0, 0, -1)),
+    }
+    target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
+    rot_euler = target_vec.to_track_quat('Z', 'Y').to_euler()
+
+    # Update Label (Text) Scale
+    obj.scale = (text_s, text_s, text_s)
+    obj.location.y = dim_props.offset # Offset from line
+
+    # Root of the dimension assembly
+    root = obj.parent
+    if root:
+        # Apply Root Scale (This scales both anchors and the line thickness proportionally)
+        root.scale = (arrow_s, arrow_s, arrow_s)
+        root.rotation_euler = rot_euler
+        
+    # Re-trigger length update to ensure consistency
+    update_dimension_length(obj)
 
 def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
     """
@@ -3116,7 +3189,14 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         # Default Architectural: Scale relative to actual base size (Length 5.0m)
         multiplier = scale_factor / 5.0 
         props.length = 5.0 * multiplier; props.height = 2.5 * multiplier
+        props.wall_thickness = 0.2 * multiplier
         if type_sub == 'COLUMN': props.radius = 0.2 * multiplier
+        elif type_sub == 'STAIRS':
+            props.step_count = 12; props.step_height = (2.5 * multiplier) / 12
+            props.step_depth = 0.28 * multiplier
+        elif type_sub == 'WINDOW' or type_sub == 'DOOR':
+            props.window_frame_thickness = 0.05 * multiplier
+            props.glass_thickness = 0.01 * multiplier
     elif category == 'VEHICLE':
         # Realistic scale mapping (units in meters) proportional to scale_factor (Length)
         l = scale_factor

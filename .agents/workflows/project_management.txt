@@ -14,7 +14,7 @@ Category Index: {
 5.  Procedural Safety Limitations
 6.  Code Skeleton Standards (generators.py)
 7.  Naming Transition & Extension Compliance (March 2026)
-8.  Current Session Tasks (2026-03-28)
+8.  Current Session Tasks Log (2026-03-28)
 }
 
 1. Strict Operational Protocols
@@ -106,7 +106,7 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * Mandatory Folder Name (in AppData/Extensions): fabrication_construction_draftsman_tools
 * All internal references must be updated to the new module name to prevent "Inconsistent name mismatch" errors during registration.
 
-8. Current Session Tasks (2026-03-28)
+8. Current Session Tasks Log (2026-03-28)
 * Fix the "Inconsistent name mismatch" error: Rename ADDON_NAME to lowercase 'fabrication_construction_draftsman_tools'.
 * Normalize zip_addon.py to ensure the folder inside the ZIP matches the Extension ID.
 * Synchronize dev_tool.py and reg_test_blender.py with the lowercase ID.
@@ -119,3 +119,5 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * Normalize Console Logs: Silenced legacy check logs in `_dev/cleanup_addons.py` to remove outdated name clutter from startup. (Done)
 * Spherical Gizmo Update: Implement a unique spherical/ball-and-socket gizmo (wireframe sphere) instead of reusing the revolute ring.
 * Sync Joint Radius in Kinematics: Ensure `joint_radius` is correctly stored in physical meters and reflected in both viewport gizmo scaling and gear ratio calculations.
+* Stabilize Dimension Tool: Refactor dimension generation into generators.py and move visual update logic to core.py to resolve AttributeError and comply with architectural standards.
+* Dimensional Utility Enhancement: Implement procedural mesh generation for dimension lines and anchor "Flat Triangles" at endpoints to facilitate mechatronic hook parenting.

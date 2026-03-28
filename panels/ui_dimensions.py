@@ -60,18 +60,19 @@ class FCD_PT_Dimensions_And_Measuring:
             if is_dim:
                 prop_box.label(text="Display Properties", icon='PROPERTIES')
                 col2 = prop_box.column(align=True)
+                dim_props = active_obj.fcd_pg_dim_props
                 
                 # AI Editor Note: 'Length' allows for precise input of dimensions.
-                col2.prop(active_obj, "fcd_dim_length", text="Length")
+                col2.prop(dim_props, "length", text="Length")
                 
                 row2 = col2.row(align=True)
-                row2.prop(active_obj, "fcd_dim_arrow_scale", text="Arrow")
-                row2.prop(active_obj, "fcd_dim_text_scale", text="Label")
-                col2.prop(active_obj, "fcd_dim_line_thickness", text="Line Thickness")
-                col2.prop(active_obj, "fcd_dim_offset", text="Offset from Object")
-                col2.prop(active_obj, "fcd_dim_extension", text="End Extension")
-                col2.prop(active_obj, "fcd_dim_text_color", text="Label Color")
-                col2.prop(active_obj, "fcd_dim_unit_display", text="Units")
+                row2.prop(dim_props, "arrow_scale", text="Arrow")
+                row2.prop(dim_props, "text_scale", text="Label")
+                col2.prop(dim_props, "line_thickness", text="Line Thickness")
+                col2.prop(dim_props, "offset", text="Offset from Object")
+                col2.prop(dim_props, "extension", text="End Extension")
+                col2.prop(dim_props, "text_color", text="Label Color")
+                col2.prop(dim_props, "unit_display", text="Units")
             else:
                 # A display to select a dimension arrow is shown when no arrows are selected
                 row = prop_box.row(align=True)

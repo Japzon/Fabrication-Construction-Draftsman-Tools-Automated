@@ -27,9 +27,10 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 from bpy_extras import view3d_utils
 from gpu_extras.batch import batch_for_shader
 from typing import List, Tuple, Optional, Set, Any, Dict
-from . import config
-from .config import *
+from . import properties
+from . import generators
 from . import core
+from .config import *
 from .core import (
     ensure_default_rig,
     create_parametric_part_object,
@@ -61,9 +62,10 @@ from . import properties
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
 # --- ASSET LIBRARY SYSTEM OPERATORS ---
 class FCD_OT_Open_Asset_Browser(bpy.types.Operator):
-    """Opens the Asset Browser in a new window"""
+    """Opens the Blender Asset Browser window."""
     bl_idname = "fcd.open_asset_browser"
     bl_label = "Open Asset Browser"
+    bl_description = "Opens the Asset Browser editor in a new window"
     def execute(self, context):
         try:
             bpy.ops.wm.window_new()
@@ -76,9 +78,10 @@ class FCD_OT_Open_Asset_Browser(bpy.types.Operator):
         return {'FINISHED'}
 
 class FCD_OT_Add_Asset_Library(bpy.types.Operator):
-    """Adds a new Asset Library to Blender Preferences"""
+    """Adds a new folder path to Blender's Asset Libraries."""
     bl_idname = "fcd.add_asset_library"
     bl_label = "Add Library"
+    bl_description = "Adds the chosen folder path to the asset library list"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -101,10 +104,10 @@ class FCD_OT_Add_Asset_Library(bpy.types.Operator):
         return {'FINISHED'}
 
 class FCD_OT_Register_Asset_Catalog(bpy.types.Operator):
-    """Creates a catalog definition in the selected Asset Library"""
+    """Creates a new catalog ID and folder in the selected library."""
     bl_idname = "fcd.register_asset_catalog"
     bl_label = "Register Catalog"
-    bl_description = "Registers a new catalog in the selected library's catalog file"
+    bl_description = "Defines a new catalog in the catalog definition file of the library"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -156,10 +159,10 @@ class FCD_OT_Register_Asset_Catalog(bpy.types.Operator):
         return {'FINISHED'}
 
 class FCD_OT_Mark_And_Upload_Asset(bpy.types.Operator):
-    """Imports selected items into the active catalog and exports them to its folder"""
+    """Marks selected items as assets and copies them to the chosen library folder."""
     bl_idname = "fcd.mark_and_upload_asset"
     bl_label = "Import Selected to Catalog"
-    bl_description = "Tags the selected objects as assets, assigns catalog UUID, and exports them"
+    bl_description = "Tags selection as assets and organizes them into library folders"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -212,11 +215,10 @@ class FCD_OT_Mark_And_Upload_Asset(bpy.types.Operator):
         return {'FINISHED'}
 
 class FCD_OT_ImportToAssetCatalog(bpy.types.Operator):
-    """Imports an external 3D file, marks it as an asset, and places it in the target catalog.
-    Supports: .obj .fbx .gltf .glb .stl .blend .dae .ply .abc .usd .usda .usdc .usdz .x3d .wrl .3mf .zip"""
+    """Imports a 3D file, marks it as an asset, and moves it to the chosen library."""
     bl_idname = "fcd.import_to_asset_catalog"
     bl_label = "Import to Catalog"
-    bl_description = "Import a 3D file (or ZIP) and register it as an asset in the chosen library catalog"
+    bl_description = "Imports an external file, marks it as an asset, and adds it to the library"
     bl_options = {'REGISTER', 'UNDO'}
 
     def _resolve_file(self, filepath, context):
@@ -2519,7 +2521,7 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         # Set Material
         set_mat = nodes.new('GeometryNodeSetMaterial')
         set_mat.location = (1000, 0)
-        mat = get_or_create_text_material(text_obj)
+        mat = core.get_or_create_text_material(text_obj)
         set_mat.inputs['Material'].default_value = mat
 
         # --- Links ---
@@ -2558,242 +2560,7 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
             elif item.name == "Object B":
                 mod[item.identifier] = obj_b
 
-def get_or_create_text_material(target_obj):
-    """Ensures a unique text material exists for the given object and returns it."""
-    # AI Editor Note: Renamed and added debug check to isolate the Context error.
-    if not hasattr(target_obj, "name"):
-         print(f"CRITICAL ERROR: get_or_create_text_material received {type(target_obj)} with no name: {target_obj}")
-         return bpy.data.materials.new("ERROR_MAT")
-
-    mat_name = f"FCD_Material_{target_obj.name}"
-    mat = bpy.data.materials.get(mat_name)
-    if not mat:
-        mat = bpy.data.materials.new(name=mat_name)
-        mat.use_nodes = True
-    
-    color = getattr(target_obj, "fcd_dim_text_color", (0.0, 0.0, 0.0, 1.0))
-    if mat.use_nodes and mat.node_tree:
-        bsdf = mat.node_tree.nodes.get("Principled BSDF")
-        if bsdf:
-            bsdf.inputs['Base Color'].default_value = color
-            bsdf.inputs['Emission Color'].default_value = color
-            bsdf.inputs['Emission Strength'].default_value = 1.0
-    
-    mat.diffuse_color = color
-    return mat
-
-def update_dimensions_trigger(self, context):
-    """Triggered when per-object dimension properties (like units or thickness) change."""
-    from . import core
-    core.update_dimensions_for_object(self)
-
-def update_dimension_length(self, context):
-    """Updates the position of Arrow B relative to Arrow A based on the Length property."""
-    # AI Editor Note: Refactored to allow the 'Length' property on the label object 
-    # to drive the distance between the two arrow heads.
-    # Logic: Find Arrow B (typically child of Arrow A or linked via GN) and move it locally along Z.
-    obj = self
-    if not obj.get("fcd_is_dimension"):
-        return
-
-    length = getattr(obj, "fcd_dim_length", 0.0)
-    
-    # Identify Arrow heads. We find them via the GN modifier sockets or hierarchy.
-    mod = obj.modifiers.get("Dynamic_Dimension")
-    eb = None
-    if mod and mod.node_group:
-        sock_b = mod.node_group.interface.items_tree.get("Object B")
-        if sock_b:
-            eb = mod[sock_b.identifier]
-
-    if eb:
-        # Arrow B is typically parented to Arrow A or the Label to maintain axis.
-        # Moving along local Z matches our generation orientation.
-        eb.location.z = length
-        # AI Editor Note: Force update to ensure GN and parented parts catch up
-        eb.update_tag()
-
-def create_arrow_mesh_data():
-    """Creates a wireframe arrow mesh with origin at the tip."""
-    mesh_name = "FCD_Arrow_Mesh"
-    mesh = bpy.data.meshes.get(mesh_name)
-    if not mesh:
-        mesh = bpy.data.meshes.new(mesh_name)
-    else:
-        mesh.clear_geometry() # AI Editor Note: Force clear to ensure correct orientation update
-    
-    bm = bmesh.new()
-        
-    # AI Editor Note: Tip at Origin (0,0,0) to anchor head to vertex.
-    v_tip = bm.verts.new((0, 0, 0))
-    # Tail at (0,0,1) - Points away from vertex
-    v_tail = bm.verts.new((0, 0, 1))
-    
-    # Arrowhead
-    w = 0.15
-    z_base = 0.3 # Base is 0.3 units from tip
-    v1 = bm.verts.new((w, w, z_base))
-    v2 = bm.verts.new((-w, w, z_base))
-    v3 = bm.verts.new((-w, -w, z_base))
-    v4 = bm.verts.new((w, -w, z_base))
-    
-    bm.edges.new((v_tip, v_tail))
-    bm.edges.new((v_tip, v1))
-    bm.edges.new((v_tip, v2))
-    bm.edges.new((v_tip, v3))
-    bm.edges.new((v_tip, v4))
-    bm.edges.new((v1, v2))
-    bm.edges.new((v2, v3))
-    bm.edges.new((v3, v4))
-    bm.edges.new((v4, v1))
-    
-    bm.to_mesh(mesh)
-    bm.free()
-    return mesh
-
-def update_arrow_settings(self, context):
-    """Updates the size and scale of dimension arrows for the specific dimension object."""
-    # AI Editor Note: Refactored to work per-object.
-    direction_map = {
-        'X': mathutils.Vector((1, 0, 0)),
-        'Y': mathutils.Vector((0, 1, 0)),
-        'Z': mathutils.Vector((0, 0, 1)),
-        '-X': mathutils.Vector((-1, 0, 0)),
-        '-Y': mathutils.Vector((0, -1, 0)),
-        '-Z': mathutils.Vector((0, 0, -1)),
-    }
-
-    # Handle both Scene-level (global) and Object-level (local) updates
-    if isinstance(self, bpy.types.Scene):
-        # Global update: Sync all dimensions to scene defaults if they don't have local overrides
-        # Actually, for this task, we want PER arrow properties, so we skip global sync
-        # and only update the active object or selected objects.
-        return
-
-    obj = self
-    if not obj.get("fcd_is_dimension"):
-        return
-
-    arrow_s = getattr(obj, "fcd_dim_arrow_scale", 0.1)
-    text_s = getattr(obj, "fcd_dim_text_scale", 0.1)
-    dir_enum = getattr(obj, "fcd_dim_direction", 'Z')
-    target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
-    
-    rot_quat = target_vec.to_track_quat('Z', 'Y')
-    rot_euler = rot_quat.to_euler()
-
-    arrows = []
-    # 1. Check direct constraints (Normal mode)
-    for c in obj.constraints:
-        if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
-            arrows.append(c.target)
-    
-    # 2. Check parent constraints (Placement mode)
-    if not arrows and obj.parent and obj.parent.name.startswith("Anchor_"):
-        for c in obj.parent.constraints:
-            if c.type == 'COPY_LOCATION' and c.target and "Dim_Arrow" in c.target.name:
-                arrows.append(c.target)
-    
-    # Update Text Scale
-    obj.scale = (text_s, text_s, text_s)
-
-    # Smart Position Update
-    if not getattr(obj, "fcd_dim_is_manual", False):
-        obj.location = target_vec * arrow_s
-
-    for arrow in arrows:
-        if arrow.type == 'EMPTY':
-            arrow.empty_display_size = arrow_s
-        else:
-            arrow.scale = (arrow_s, arrow_s, arrow_s)
-        
-        if arrow.parent_type == 'VERTEX':
-            arrow.location = (0, 0, 0)
-        
-        arrow.rotation_euler = rot_euler
-
-def generate_smart_dimension_parametric(context, p1, p2, name="Dim", parent_a=None):
-    """
-    Creates a hierarchical, driven dimension arrow between two points.
-    Anchor (Root) -> Arrow A (Origin) -> Arrow B (End)
-    """
-    scene = context.scene
-    coll = bpy.data.collections.get("FCD_Dimensions")
-    # Store initial mode to restore later
-    original_mode = context.mode
-    if original_mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-    if not coll:
-        coll = bpy.data.collections.new("FCD_Dimensions")
-        context.scene.collection.children.link(coll)
-
-    # 1. Main Anchor (Empty Parent)
-    vec = p2 - p1
-    initial_length = vec.length
-    if initial_length < 0.0001: return None
-    
-    rot_quat = vec.to_track_quat('Z', 'Y')
-    
-    anchor = bpy.data.objects.new(f"{name}_Container", None)
-    anchor.empty_display_type = 'PLAIN_AXES'
-    anchor.empty_display_size = 0.05
-    coll.objects.link(anchor)
-    anchor.location = p1
-    anchor.rotation_euler = rot_quat.to_euler()
-    
-    if parent_a:
-        obj, p_type, p_sub = parent_a
-        anchor.parent = obj
-        if p_type == 'VERTEX':
-            anchor.parent_type = 'VERTEX'
-            anchor.parent_vertices = (p_sub, 0, 0)
-            anchor.location = (0,0,0) # Local to vert
-    
-    # 2. Arrow A (Origin Head)
-    arrow_mesh = create_arrow_mesh_data()
-    aa = bpy.data.objects.new(f"{name}_Arrow_A", arrow_mesh)
-    aa.scale = (scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale)
-    coll.objects.link(aa)
-    aa.parent = anchor
-    aa.location = (0,0,0)
-    
-    # 3. Arrow B (End Head)
-    ab = bpy.data.objects.new(f"{name}_Arrow_B", arrow_mesh)
-    ab.scale = (scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale)
-    coll.objects.link(ab)
-    ab.parent = aa
-    ab.location = (0, 0, initial_length)
-    
-    # 4. Label Object (The UI handle host)
-    txt_mesh = bpy.data.meshes.new(f"{name}_Label_Mesh")
-    txt_obj = bpy.data.objects.new(f"{name}_Label", txt_mesh)
-    coll.objects.link(txt_obj)
-    txt_obj["fcd_is_dimension"] = True
-    txt_obj.fcd_dim_length = initial_length
-    
-    # Position label at midpoint slightly offset
-    txt_obj.parent = aa
-    txt_obj.location = (0, 0.05, initial_length / 2) 
-    
-    # 5. Setup Geometry Nodes & Material
-    setup_dimension_gn(txt_obj, aa, ab, context)
-    mat = get_or_create_text_material(txt_obj)
-    if txt_obj.data.materials: txt_obj.data.materials[0] = mat
-    else: txt_obj.data.materials.append(mat)
-    
-    # Sync visual properties
-    update_arrow_settings(txt_obj, context)
-    
-    # Restore mode with correct mapping for EDIT sub-modes
-    if original_mode != 'OBJECT':
-        # AI Editor Note: mode_set expects 'EDIT', not 'EDIT_MESH' or 'EDIT_ARMATURE'
-        target_mode = 'EDIT' if original_mode.startswith('EDIT') else original_mode
-        try:
-            bpy.ops.object.mode_set(mode=target_mode)
-        except: pass # Fallback for edge cases
-        
-    return txt_obj
+        pass # Functions moved to generators.py and core.py
 
 class FCD_OT_AddTextDescription(bpy.types.Operator):
     """Add a text description label to the selected element"""
@@ -2849,7 +2616,7 @@ class FCD_OT_AddTextDescription(bpy.types.Operator):
         text_obj.show_in_front = True # Always visible (X-Ray)
 
         # Assign Material
-        mat = get_or_create_text_material(text_obj)
+        mat = core.get_or_create_text_material(text_obj)
         if text_obj.data.materials:
             text_obj.data.materials[0] = mat
         else:
@@ -2928,7 +2695,7 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
             sel = context.selected_objects
             p1 = sel[0].matrix_world.translation
             p2 = sel[-1].matrix_world.translation
-            generate_smart_dimension_parametric(context, p1, p2, name="Selection", parent_a=(sel[0], 'OBJECT', None))
+            generators.generate_smart_dimension_parametric(context, p1, p2, name="Selection", parent_a=(sel[0], 'OBJECT', None))
             return {'FINISHED'}
             
         # B. Edit Mode Vertex Selection
@@ -2952,7 +2719,7 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                 
             p1 = obj.matrix_world @ v1.co
             p2 = obj.matrix_world @ v2.co
-            generate_smart_dimension_parametric(context, p1, p2, name="Vertex_to_Vertex", parent_a=(obj, 'VERTEX', v1.index))
+            generators.generate_smart_dimension_parametric(context, p1, p2, name="Vertex_to_Vertex", parent_a=(obj, 'VERTEX', v1.index))
             return {'FINISHED'}
 
         # --- 2. FALLBACK: Bounding Box (Single Selection) ---
@@ -2983,7 +2750,7 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                 p1 = mathutils.Vector((max_x + offset, mid_y, min_z))
                 p2 = mathutils.Vector((max_x + offset, mid_y, max_z))
             
-            generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
+            generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
 
         return {'FINISHED'}
 
@@ -6009,6 +5776,25 @@ class FCD_OT_CreateCamera(bpy.types.Operator):
         self.report({'INFO'}, f"Spawned {preset} Camera at cursor.")
         return {'FINISHED'}
 
+class FCD_OT_Browse_Library(bpy.types.Operator):
+    """Browse for a library directory with accurate Draftsman tooltips."""
+    bl_idname = "fcd.browse_library"
+    bl_label = "Select Directory"
+    bl_options = {'INTERNAL'}
+
+    directory: bpy.props.StringProperty(subtype='DIR_PATH')
+    prop_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        asset_props = context.scene.fcd_pg_asset_props
+        if hasattr(asset_props, self.prop_name):
+            setattr(asset_props, self.prop_name, self.directory)
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
 class FCD_OT_Camera_Setup(bpy.types.Operator):
     """Binds camera to targets and paths for high-fidelity simulation recording."""
     bl_label = "Apply Camera Setup"
@@ -6081,7 +5867,7 @@ class FCD_OT_Camera_Look_Through(bpy.types.Operator):
 
 def register():
     CLASSES = [
-        FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
+        FCD_OT_Browse_Library, FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
         FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
@@ -6111,7 +5897,7 @@ def register():
 
 def unregister():
     CLASSES = [
-        FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
+        FCD_OT_Browse_Library, FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
         FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 

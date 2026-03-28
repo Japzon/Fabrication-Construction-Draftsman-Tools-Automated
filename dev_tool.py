@@ -16,6 +16,7 @@ import subprocess
 import sys
 import shutil
 import re
+import time
 from datetime import datetime
 # Ensure current directory is in path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -191,25 +192,52 @@ def setup_dev():
             # This is more robust than a single string command.
             blender_args = [blender_exe, "--python", cleanup_script]
         else:
-            # Fallback to string command if script is missing
-            if version_float >= 4.2:
-                module_name = f"bl_ext.blender_org.{ADDON_NAME}"
-            else:
-                module_name = ADDON_NAME
-            py_cmd = f"import bpy; bpy.ops.preferences.addon_enable(module='{module_name}'); bpy.ops.wm.save_userpref()"
-            blender_args = [blender_exe, "--python-expr", py_cmd]
+            # Fallback to normal launch if cleanup script is missing
+            blender_args = [blender_exe]
         
-        # We start Blender and keeping the connection to see logs in this terminal.
+        # We start Blender and keep the connection to see logs in this terminal.
         try:
-            # AI Editor Note: Removed DETACHED_PROCESS to allow stdout/stderr logging in current terminal.
-            # Using Popen without detaching and calling wait() keeps the console alive.
-            process = subprocess.Popen(blender_args)
+            # Using Popen and reading stdout/stderr to find the "ready" signal.
+            # bufsize=1 for line-buffered output.
+            process = subprocess.Popen(
+                blender_args, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, 
+                text=True, 
+                bufsize=1
+            )
             
-            print("\n" + "="*50)
-            print("  BLENDER IS RUNNING")
-            print("  Logs are being directed to this console.")
-            print("  DO NOT CLOSE THIS WINDOW if you want to see error logs.")
-            print("="*50 + "\n")
+            ready_marker = "---FCD_BLENDER_READY---"
+            is_standalone_launch = not os.path.exists(cleanup_script)
+            banner_printed = False
+            
+            if is_standalone_launch:
+                # If no cleanup script exists, we just wait a bit as a fallback
+                time.sleep(2)
+                print("\n" + "="*50)
+                print("  BLENDER IS RUNNING")
+                print("  Logs are being directed to this console.")
+                print("  DO NOT CLOSE THIS WINDOW if you want to see error logs.")
+                print("="*50 + "\n")
+                banner_printed = True
+
+            # Stream logs to the console as they come from Blender
+            for line in iter(process.stdout.readline, ""):
+                if not banner_printed and ready_marker in line:
+                    # Print our custom banner when initialization script completes
+                    print("\n" + "="*50)
+                    print("  BLENDER IS RUNNING")
+                    print("  Logs are being directed to this console.")
+                    print("  DO NOT CLOSE THIS WINDOW if you want to see error logs.")
+                    print("="*50 + "\n")
+                    banner_printed = True
+                    continue # Skip printing the internal marker line
+                
+                if ready_marker in line:
+                    continue # Always skip the internal maker line
+                
+                print(line, end="")
+                sys.stdout.flush()
             
             # Wait for Blender to close
             process.wait()

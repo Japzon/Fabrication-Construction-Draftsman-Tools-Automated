@@ -9,7 +9,7 @@ old_names = [
 ]
 
 new_name = "fabrication_construction_draftsman_tools"
-new_extension_name = f"bl_ext.blender_org.{new_name}"
+new_extension_name = f"bl_ext.user_default.{new_name}"
 
 print("\n" + "="*50)
 print("  FCD ADDON REGISTRY CLEANUP")
@@ -25,20 +25,19 @@ for name in old_names:
     except Exception as e:
         pass # Silently fail
 
-# Enable the new one
-print(f"\nChecking for new Extension addon: {new_extension_name}")
-try:
-    bpy.ops.preferences.addon_enable(module=new_extension_name)
-    print(f"[SUCCESS] Enabled new Extension: {new_extension_name}")
-except Exception as e:
-    print(f"[INFO] Namespaced path failed, trying legacy path: {new_name}")
-    try:
-        bpy.ops.preferences.addon_enable(module=new_name)
-        print(f"[SUCCESS] Enabled as Legacy: {new_name}")
-    except Exception as e2:
-        print(f"[CRITICAL ERROR] Could not enable {new_name}: {e2}")
+# The new one is expected to be enabled automatically by Blender 4.2+ extensions
+if new_extension_name in bpy.context.preferences.addons:
+    print(f"[INFO] New Extension active: {new_extension_name}")
+elif new_name in bpy.context.preferences.addons:
+     print(f"[INFO] New extension active (legacy-style): {new_name}")
+else:
+     print(f"[WARNING] Draftsman extension not yet enabled in this Blender instance.")
 
-# Save preferences to ensure it persists after restart
-bpy.ops.wm.save_userpref()
-print("\n[INFO] Blender user preferences saved.")
+# Save preferences only if we disabled old ones
+if any(name in bpy.context.preferences.addons for name in old_names):
+    bpy.ops.wm.save_userpref()
+    print("\n[INFO] Cleanup finished. Blender user preferences updated.")
+
+# Signal to the dev_tool that setup is done
+print("---FCD_BLENDER_READY---")
 print("="*50 + "\n")

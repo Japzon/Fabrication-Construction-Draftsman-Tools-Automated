@@ -15,7 +15,7 @@ addon_name = "fabrication_construction_draftsman_tools"
 if version_float >= 4.2:
     # Target the extensions namespace if it exists, fallback to legacy
     # This prevents 'No module named' errors in modern Blender versions.
-    try_names = [f"bl_ext.blender_org.{addon_name}", addon_name]
+    try_names = [f"bl_ext.user_default.{addon_name}", addon_name]
 else:
     try_names = [addon_name]
 

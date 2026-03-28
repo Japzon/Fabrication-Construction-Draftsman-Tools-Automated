@@ -44,9 +44,14 @@ class FCD_PT_Asset_Library_System:
             # --- Select Target Library ---
             b1 = col.box()
             b1.label(text="Select Target Library", icon='FILE_FOLDER')
-            b1.prop(asset_props, "target_library", text="Library")
+            row_target = b1.row(align=True)
+            row_target.prop(asset_props, "target_library", text="Library")
+            op = row_target.operator("fcd.browse_library", icon='FILE_FOLDER', text="")
+            op.prop_name = "target_library"
             row_lib = b1.row(align=True)
             row_lib.prop(asset_props, "add_library_path", text="")
+            op = row_lib.operator("fcd.browse_library", icon='FILE_FOLDER', text="")
+            op.prop_name = "add_library_path"
             row_lib.operator("fcd.add_asset_library", text="Add Library", icon='ADD')
 
             # --- Register Catalog ---
@@ -74,7 +79,10 @@ class FCD_PT_Asset_Library_System:
             b6 = col.box()
             b6.label(text="Import External 3D File", icon='IMPORT')
             b6.prop(asset_props, "import_source_filepath", text="Import Target")
-            b6.prop(asset_props, "import_target_library", text="Library")
+            row_imp = b6.row(align=True)
+            row_imp.prop(asset_props, "import_target_library", text="Library")
+            op = row_imp.operator("fcd.browse_library", icon='FILE_FOLDER', text="")
+            op.prop_name = "import_target_library"
             b6.prop(asset_props, "import_target_catalog", text="Catalog")
             b6.operator("fcd.import_to_asset_catalog", text="Import & Register as Asset", icon='APPEND_BLEND')
 

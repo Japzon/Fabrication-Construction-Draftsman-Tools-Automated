@@ -75,9 +75,27 @@ def update_placement_mode_wrapper(self, context):
 def update_text_color(self, context):
     """Updates dimension material colors."""
     if hasattr(self, "id_data") and self.id_data.get("fcd_is_dimension"):
-        from . import operators
-        operators.get_or_create_text_material(self.id_data)
+        from . import core
+        core.get_or_create_text_material(self.id_data)
         self.id_data.update_tag()
+
+def update_arrow_settings_timer(self, context):
+    """Dispatches arrow setting update via timer."""
+    def dispatch():
+        from . import core
+        obj = self.id_data
+        if obj: core.update_arrow_settings(obj)
+        return None
+    bpy.app.timers.register(dispatch, first_interval=0.01)
+
+def update_dimension_length_timer(self, context):
+    """Dispatches dimension length update via timer."""
+    def dispatch():
+        from . import core
+        obj = self.id_data
+        if obj: core.update_dimension_length(obj)
+        return None
+    bpy.app.timers.register(dispatch, first_interval=0.01)
 
 def update_cursor_local_wrapper(self, context):
     """Lean dispatcher to core module for cursor tool."""
@@ -122,6 +140,22 @@ class FCD_PG_Inertial_Properties(bpy.types.PropertyGroup):
 
 class FCD_PG_Wrap_Item(bpy.types.PropertyGroup):
     target: bpy.props.PointerProperty(type=bpy.types.Object, name="Wrap Object")
+
+class FCD_PG_Dimension_Props(bpy.types.PropertyGroup):
+    """
+    Parametric properties for dimension labels and arrow heads.
+    Uses timer-based updates to maintain UI responsiveness.
+    """
+    arrow_scale: bpy.props.FloatProperty(name="Arrow Scale", default=0.1, min=0.001, soft_max=2.0, update=update_arrow_settings_timer)
+    text_scale: bpy.props.FloatProperty(name="Label Scale", default=0.1, min=0.001, soft_max=2.0, update=update_arrow_settings_timer)
+    line_thickness: bpy.props.FloatProperty(name="Line Thickness", default=0.002, min=0.0, unit='LENGTH')
+    offset: bpy.props.FloatProperty(name="Offset", default=0.1, unit='LENGTH', update=update_arrow_settings_timer)
+    extension: bpy.props.FloatProperty(name="Extension", default=0.05, unit='LENGTH')
+    text_color: bpy.props.FloatVectorProperty(name="Label Color", subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), size=4, min=0.0, max=1.0, update=update_text_color)
+    unit_display: bpy.props.EnumProperty(name="Units", items=[('METERS', "Meters (m)", ""), ('MM', "Millimeters (mm)", "")], default='METERS')
+    length: bpy.props.FloatProperty(name="Length", default=1.0, unit='LENGTH', update=update_dimension_length_timer)
+    direction: bpy.props.EnumProperty(name="Direction", items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""), ('-X', "-X", ""), ('-Y', "-Y", ""), ('-Z', "-Z", "")], default='Z', update=update_arrow_settings_timer)
+    is_manual: bpy.props.BoolProperty(name="Manual Mode", default=False)
 
 class FCD_PG_Mech_Props(bpy.types.PropertyGroup):
     is_part: bpy.props.BoolProperty(default=False)
@@ -204,6 +238,14 @@ class FCD_PG_Mech_Props(bpy.types.PropertyGroup):
     shape_tube_radius: bpy.props.FloatProperty(name="Tube Radius", default=0.25, update=update_mesh_wrapper)
     shape_horizontal_segments: bpy.props.IntProperty(name="Horizontal Segments", default=48, min=3, update=update_mesh_wrapper)
     shape_vertical_segments: bpy.props.IntProperty(name="Vertical Segments", default=12, min=3, update=update_mesh_wrapper)
+
+    # 12. ARCHITECTURAL PROPERTIES
+    wall_thickness: bpy.props.FloatProperty(name="Wall Thickness", default=0.2, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
+    window_frame_thickness: bpy.props.FloatProperty(name="Frame Thickness", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    glass_thickness: bpy.props.FloatProperty(name="Glass Thickness", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
+    step_count: bpy.props.IntProperty(name="Step Count", default=12, min=1, update=update_mesh_wrapper)
+    step_height: bpy.props.FloatProperty(name="Step Riser", default=0.18, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
+    step_depth: bpy.props.FloatProperty(name="Step Tread", default=0.28, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
 
     # ... (rest of the properties continue)
     
@@ -347,17 +389,17 @@ class FCD_PG_Lighting_Props(bpy.types.PropertyGroup):
     base_color: bpy.props.FloatVectorProperty(name="Tint", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0))
 
 class FCD_PG_Asset_Props(bpy.types.PropertyGroup):
-    target_library: bpy.props.StringProperty(name="Library Path", description="Select an asset library directory. Note: Internal Blender tooltips for folders may mention file-specific modifiers which are not applicable here.", subtype='DIR_PATH')
-    selected_catalog: bpy.props.StringProperty(name="Catalog", description="Name of the selected catalog within the library")
+    target_library: bpy.props.StringProperty(name="Library Path", description="Library folder used for marking and importing assets.")
+    selected_catalog: bpy.props.StringProperty(name="Catalog", description="Choose a catalog folder within the selected library.")
     
     # Path/Management properties used in sidebars/popups
-    add_library_path: bpy.props.StringProperty(name="New Library Path", description="Path for new library registration. Note: Internal Blender tooltips for folders may mention file-specific modifiers which are not applicable here.", subtype='DIR_PATH')
-    new_catalog_name: bpy.props.StringProperty(name="Catalog Name", description="Name for newly created asset catalogs")
+    add_library_path: bpy.props.StringProperty(name="New Library Path", description="Path to a folder to be added as a new Asset Library.")
+    new_catalog_name: bpy.props.StringProperty(name="Catalog Name", description="Name for the new asset catalog folder.")
     
     # Batch Import settings
-    import_source_filepath: bpy.props.StringProperty(name="Import File", description="Path to the external 3D file (GLB, OBJ, FBX) to import", subtype='FILE_PATH')
-    import_target_library: bpy.props.StringProperty(name="Target Library", description="Selected library for imported assets", subtype='DIR_PATH')
-    import_target_catalog: bpy.props.StringProperty(name="Target Catalog", description="Selected catalog for imported assets")
+    import_source_filepath: bpy.props.StringProperty(name="Import File", description="Select a 3D file (.blend, .fbx, .glb) to import.", subtype='FILE_PATH')
+    import_target_library: bpy.props.StringProperty(name="Target Library", description="Library where the imported file will be registered.")
+    import_target_catalog: bpy.props.StringProperty(name="Target Catalog", description="Catalog folder where the imported file will be added.")
 
 class FCD_ExportItem(bpy.types.PropertyGroup):
     """Item for the export list"""
@@ -371,7 +413,7 @@ CLASSES = [
     FCD_PG_Transmission_Properties, FCD_PG_Material_Properties, FCD_PG_Collision_Properties,
     FCD_PG_Inertial_Properties, FCD_PG_Wrap_Item, FCD_PG_Slinky_Hook, FCD_PG_Mech_Props, FCD_PG_Mimic_Driver,
     FCD_PG_Kinematic_Props, FCD_PG_AI_Props, FCD_PG_Lighting_Props, FCD_PG_Asset_Props,
-    FCD_ExportItem
+    FCD_PG_Dimension_Props, FCD_ExportItem
 ]
 
 def register():
@@ -389,6 +431,7 @@ def register():
     bpy.types.Scene.fcd_pg_lighting_props = bpy.props.PointerProperty(type=FCD_PG_Lighting_Props)
     bpy.types.Scene.fcd_pg_asset_props = bpy.props.PointerProperty(type=FCD_PG_Asset_Props)
     bpy.types.Scene.fcd_pg_joint_editor_settings = bpy.props.PointerProperty(type=FCD_PG_Kinematic_Props)
+    bpy.types.Object.fcd_pg_dim_props = bpy.props.PointerProperty(type=FCD_PG_Dimension_Props)
     
     # UI Visibility (Initialize/Reset)
     from .config import FCD_PANEL_PROPS, MECH_CATEGORIES_SORTED, ELECTRONICS_CATEGORIES, ALL_ELECTRONICS_TYPES, ARCHITECTURAL_TYPES, VEHICLE_TYPES, GIZMO_STYLES, BONE_MODES, BONE_AXES
@@ -442,6 +485,16 @@ def register():
             ('8MM', "8mm Security", "Wide surveillance lens"),
         ],
         default='35MM'
+    )
+    
+    # 1.1 Dimension Globals (FCD Scoped)
+    bpy.types.Scene.fcd_dim_arrow_scale = bpy.props.FloatProperty(name="Arrow Scale", default=0.1, min=0.001)
+    bpy.types.Scene.fcd_dim_text_scale = bpy.props.FloatProperty(name="Label Scale", default=0.1, min=0.001)
+    bpy.types.Scene.fcd_dim_offset = bpy.props.FloatProperty(name="Offset", default=0.1, unit='LENGTH')
+    bpy.types.Scene.fcd_dim_axis = bpy.props.EnumProperty(
+        name="Measurement Axis", 
+        items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""), ('ALL', "All Axes", "")], 
+        default='ALL'
     )
     
     # 2. Export List

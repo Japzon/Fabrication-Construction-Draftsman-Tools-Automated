@@ -347,7 +347,56 @@ def generate_basic_shape_mesh(bm: bmesh.types.BMesh, props, obj):
 def generate_architectural_mesh(bm: bmesh.types.BMesh, props, obj):
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-    bmesh.ops.create_cube(bm, size=1.0)
+    raw_type = str(props.type_architectural)
+    
+    l = props.length * s; h = props.height * s
+    th = props.wall_thickness * s
+    
+    if raw_type == 'BEAM':
+        # Centered box
+        rad = props.radius * s
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(l, 4, (1,0,0)) @ mathutils.Matrix.Scale(rad, 4, (0,1,0)) @ mathutils.Matrix.Scale(rad, 4, (0,0,1)))
+        
+    elif raw_type == 'WALL':
+        # Box sitting on ground, centered on XY
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, 0, h/2)) @ mathutils.Matrix.Scale(l, 4, (1,0,0)) @ mathutils.Matrix.Scale(th, 4, (0,1,0)) @ mathutils.Matrix.Scale(h, 4, (0,0,1)))
+        
+    elif raw_type == 'COLUMN':
+        # Vertical cylinder sitting on ground
+        rad = props.radius * s
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=rad, radius2=rad, depth=h, segments=32, matrix=mathutils.Matrix.Translation((0,0,h/2)))
+        
+    elif raw_type == 'STAIRS':
+        # Simple procedural stairs
+        steps = max(1, props.step_count)
+        rh = h / steps; td = l / steps
+        for i in range(steps):
+            # Step box starting from origin
+            mat = mathutils.Matrix.Translation((i * td + td/2, 0, i * rh + rh/2)) @ mathutils.Matrix.Scale(td, 4, (1,0,0)) @ mathutils.Matrix.Scale(props.wall_thickness * s, 4, (0,1,0)) @ mathutils.Matrix.Scale(rh, 4, (0,0,1))
+            bmesh.ops.create_cube(bm, size=1.0, matrix=mat)
+            
+    elif raw_type == 'WINDOW' or raw_type == 'DOOR':
+        # Frame + Glass/Panel
+        ft = props.window_frame_thickness * s
+        gt = props.glass_thickness * s
+        
+        # 4 Frame bars
+        # Bottom
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, 0, ft/2)) @ mathutils.Matrix.Scale(l, 4, (1,0,0)) @ mathutils.Matrix.Scale(ft, 4, (0,1,0)) @ mathutils.Matrix.Scale(ft, 4, (0,0,1)))
+        # Top
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, 0, h - ft/2)) @ mathutils.Matrix.Scale(l, 4, (1,0,0)) @ mathutils.Matrix.Scale(ft, 4, (0,1,0)) @ mathutils.Matrix.Scale(ft, 4, (0,0,1)))
+        # Left
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((-l/2 + ft/2, 0, h/2)) @ mathutils.Matrix.Scale(ft, 4, (1,0,0)) @ mathutils.Matrix.Scale(ft, 4, (0,1,0)) @ mathutils.Matrix.Scale(h, 4, (0,0,1)))
+        # Right
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((l/2 - ft/2, 0, h/2)) @ mathutils.Matrix.Scale(ft, 4, (1,0,0)) @ mathutils.Matrix.Scale(ft, 4, (0,1,0)) @ mathutils.Matrix.Scale(h, 4, (0,0,1)))
+        
+        # Center Panel (Glass or Door)
+        # Sitting slightly recessed? No, centered in Y.
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Translation((0, 0, h/2)) @ mathutils.Matrix.Scale(l - 2*ft, 4, (1,0,0)) @ mathutils.Matrix.Scale(gt, 4, (0,1,0)) @ mathutils.Matrix.Scale(h - 2*ft, 4, (0,0,1)))
+    
+    else:
+        # Fallback
+        bmesh.ops.create_cube(bm, size=0.1*s)
 
 def generate_vehicle_mesh(bm: bmesh.types.BMesh, props, obj):
     unit_scale = bpy.context.scene.unit_settings.scale_length
@@ -423,3 +472,154 @@ def update_native_rope_properties(obj, props, context):
     obj["rope_radius"] = props.rope_radius
     obj["rope_strands"] = props.rope_strands
     obj["rope_twist"] = props.twist
+
+# ------------------------------------------------------------------------
+#   DIMENSION GENERATORS
+# ------------------------------------------------------------------------
+
+def create_triangle_anchor_mesh(name_prefix: str) -> bpy.types.Mesh:
+    """Procedurally creates a flat triangle mesh for hook parenting."""
+    mesh = bpy.data.meshes.new(f"{name_prefix}_Triangle_Anchor")
+    bm = bmesh.new()
+    
+    # Create a 3-sided circle (Triangle) effectively
+    bmesh.ops.create_circle(bm, cap_ends=True, radius=0.05, segments=3)
+    
+    # Rotate it to face the measuring axis (Z)
+    bmesh.ops.rotate(bm, verts=bm.verts, matrix=mathutils.Matrix.Rotation(math.radians(90), 4, 'X'))
+    
+    bm.to_mesh(mesh)
+    bm.free()
+    return mesh
+
+def create_dimension_line_mesh(name_prefix: str) -> bpy.types.Mesh:
+    """Procedurally creates a basic line segment mesh for the dimension body."""
+    mesh = bpy.data.meshes.new(f"{name_prefix}_Line")
+    bm = bmesh.new()
+    
+    # Simple thin cylinder as the line (default 1m long along Z)
+    bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.002, radius2=0.002, depth=1.0, segments=8, matrix=mathutils.Matrix.Translation((0,0,0.5)))
+    
+    bm.to_mesh(mesh)
+    bm.free()
+    return mesh
+
+def create_arrow_mesh_data(name_prefix: str) -> bpy.types.Mesh:
+    """Procedurally creates a mechatronic-style arrow head mesh."""
+    mesh = bpy.data.meshes.new(f"{name_prefix}_Arrow")
+    bm = bmesh.new()
+    # Create cone for the tip
+    bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.0, radius2=0.05, depth=0.15, segments=12, matrix=mathutils.Matrix.Translation((0,0,0.075)))
+    # Create cylinder for the base
+    bmesh.ops.create_cone(bm, cap_ends=True, radius1=0.01, radius2=0.01, depth=0.1, segments=8, matrix=mathutils.Matrix.Translation((0,0,-0.05)))
+    bm.to_mesh(mesh)
+    bm.free()
+    return mesh
+
+def setup_dimension_gn(obj: bpy.types.Object):
+    """Sets up Dynamic Dimension Geometry Nodes for real-time length sync."""
+    mod = obj.modifiers.get("Dynamic_Dimension") or obj.modifiers.new("Dynamic_Dimension", 'NODES')
+    group_name = "FCD_Dynamic_Dimension"
+    group = bpy.data.node_groups.get(group_name)
+    
+    if not group:
+        group = bpy.data.node_groups.new(group_name, 'GeometryNodeTree')
+        group.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+        group.interface.new_socket("Length", in_out='INPUT', socket_type='NodeSocketFloat')
+        group.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+        
+        input_node = group.nodes.new('NodeGroupInput')
+        output_node = group.nodes.new('NodeGroupOutput')
+        transform_node = group.nodes.new('GeometryNodeTransform')
+        join_node = group.nodes.new('GeometryNodeJoinGeometry')
+        
+        # Logic: Instance an arrow at 0 and at Length.
+        # For simplicity in this procedural generator, we just pass the original mesh 
+        # and transform a duplicate.
+        group.links.new(input_node.outputs['Geometry'], join_node.inputs[0])
+        group.links.new(input_node.outputs['Geometry'], transform_node.inputs['Geometry'])
+        group.links.new(input_node.outputs['Length'], transform_node.inputs['Translation']) # Assuming Z scale/pos
+        group.links.new(transform_node.outputs['Geometry'], join_node.inputs[0])
+        group.links.new(join_node.outputs['Geometry'], output_node.inputs[0])
+    
+    mod.node_group = group
+
+def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", parent_a=None):
+    """
+    Spawns a procedural dimension line with mechatronic anchor triangles.
+    Uses the Scene fcd_dim_ settings as initial defaults.
+    """
+    scene = context.scene
+    coll = context.collection
+    
+    # 1. Orientation Logic
+    dist_vec = p2 - p1
+    initial_length = dist_vec.length
+    if initial_length < 0.001: return
+    
+    # 2. Spawn Anchor Start (Triangle)
+    tri_mesh = create_triangle_anchor_mesh(name)
+    aa = bpy.data.objects.new(name, tri_mesh)
+    coll.objects.link(aa)
+    aa["fcd_is_dimension_anchor"] = "START"
+    
+    # Initial transform to point p1->p2
+    aa.location = p1
+    aa.rotation_mode = 'QUATERNION'
+    aa.rotation_quaternion = dist_vec.to_track_quat('Z', 'Y')
+    
+    # APPLY SCENE DEFAULTS
+    aa.scale = (scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale, scene.fcd_dim_arrow_scale)
+    
+    # 3. Spawn Anchor End (Triangle, Child of AA)
+    ab = bpy.data.objects.new(f"{name}_End", tri_mesh.copy())
+    coll.objects.link(ab)
+    ab.parent = aa
+    ab["fcd_is_dimension_anchor"] = "END"
+    ab.location = (0, 0, initial_length)
+    ab.scale = (1.0, 1.0, 1.0) # Relative
+    
+    # 4. Procedural Dimension Line (Body)
+    line_mesh = create_dimension_line_mesh(name)
+    dim_line = bpy.data.objects.new(f"{name}_Line", line_mesh)
+    coll.objects.link(dim_line)
+    dim_line.parent = aa
+    dim_line["fcd_is_dimension_line"] = True
+    dim_line.location = (0, 0, 0)
+    dim_line.scale = (1.0, 1.0, initial_length) # Procedural scaling
+    
+    # 5. Label Object (The UI handle host)
+    txt_mesh = bpy.data.meshes.new(f"{name}_Label_Mesh")
+    txt_obj = bpy.data.objects.new(f"{name}_Label", txt_mesh)
+    coll.objects.link(txt_obj)
+    txt_obj["fcd_is_dimension"] = True
+    
+    dim_props = txt_obj.fcd_pg_dim_props
+    dim_props.length = initial_length
+    dim_props.arrow_scale = scene.fcd_dim_arrow_scale
+    dim_props.text_scale = scene.fcd_dim_text_scale
+    
+    # Position label at midpoint slightly offset
+    txt_obj.parent = aa
+    txt_obj.location = (0, scene.fcd_dim_offset, initial_length / 2)
+    txt_obj.scale = (scene.fcd_dim_text_scale, scene.fcd_dim_text_scale, scene.fcd_dim_text_scale)
+    
+    # Assign Material
+    core.get_or_create_text_material(txt_obj)
+    aa.active_material = core.get_or_create_text_material(txt_obj)
+    ab.active_material = aa.active_material
+    dim_line.active_material = aa.active_material
+    
+    # Parent A to specific vertex if provided
+    if parent_a:
+        obj, type, index = parent_a
+        aa.parent = obj
+        if type == 'VERTEX':
+            aa.parent_type = 'VERTEX'
+            aa.parent_vertices[0] = index
+    
+    # Finalize setup
+    if hasattr(core, 'update_dimension_length'):
+         core.update_dimension_length(txt_obj)
+    
+    return txt_obj

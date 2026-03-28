@@ -1,4 +1,4 @@
-# Fabrication & Construction Draftsman Tools (Automated) - AI Update Plan
+# Fabrication & Construction Draftsman Tools - AI Update Plan
 
 ## Objective
 Finalize the structural overhaul following the FCD mandate and ensure full stability of the addon in Blender 4.5.6 LTS.

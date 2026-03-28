@@ -1,6 +1,6 @@
 # GNU GENERAL PUBLIC LICENSE (GPL)
 
-This software, "Fabrication & Construction Draftsman Tools (Automated)," is licensed under the **GNU General Public License (v3 or later)**.
+This software, "Fabrication & Construction Draftsman Tools," is licensed under the **GNU General Public License (v3 or later)**.
 
 ## COPYRIGHT AND AUTHORSHIP
 Copyright (c) 2026 Greenlex Systems Services Incorporated. All rights reserved.
@@ -14,4 +14,4 @@ This work is provided "as is" without warranty of any kind.
 
 ---
 **AUTHOR**: Greenlex Systems Services Incorporated
-**REPOSITORY**: https://github.com/Greenlex-Systems-Services-Incorporated/Fabrication-Construction-Draftsman-Tools-Automated
+

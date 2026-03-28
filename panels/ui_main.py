@@ -50,12 +50,12 @@ from .ui_assets import FCD_PT_Asset_Library_System
 from .ui_export import FCD_PT_Import_Export_System
 from .ui_preferences import FCD_PT_Preferences
 
-class FCD_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
+class FCD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
     """
     The Master Panel that acts as a container for all other panels.
     It dynamically draws the sub-panels in the order defined by the user.
     """
-    bl_label = "Fabrication & Construction Draftsman Tools (Automated)"
+    bl_label = "Fabrication & Construction Draftsman Tools"
     bl_idname = "VIEW3D_PT_fcd_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -111,7 +111,7 @@ class FCD_PT_FabricationConstructionDraftsmanToolsAutomated(bpy.types.Panel):
 
 
 def register():
-    for cls in [FCD_PT_FabricationConstructionDraftsmanToolsAutomated]:
+    for cls in [FCD_PT_FabricationConstructionDraftsmanTools]:
         if hasattr(cls, 'bl_rna'):
             try:
                 bpy.utils.register_class(cls)
@@ -119,7 +119,7 @@ def register():
                 pass
 
 def unregister():
-    for cls in reversed([FCD_PT_FabricationConstructionDraftsmanToolsAutomated]):
+    for cls in reversed([FCD_PT_FabricationConstructionDraftsmanTools]):
         if hasattr(cls, 'bl_rna'):
             bpy.utils.unregister_class(cls)
 

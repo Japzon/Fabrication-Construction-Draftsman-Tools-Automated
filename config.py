@@ -13,7 +13,7 @@ from operator import itemgetter
 from typing import List, Tuple, Set, Dict
 
 # --- Versioning and Naming ---
-ADDON_VERSION: Tuple[int, int, int] = (7, 45, 0)
+ADDON_VERSION: Tuple[int, int, int] = (0, 1, 0)
 
 # --- Naming Conventions (Mandated FCD Prefix) ---
 MOD_PREFIX: str = "FCD_"

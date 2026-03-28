@@ -1,6 +1,6 @@
-Fabrication & Construction Draftsman Tools (Automated) AI Agent Update Workflow
+Fabrication & Construction Draftsman Tools AI Agent Update Workflow
 
-This workflow is the absolute source of truth for AI agents interacting with this repository: https://github.com/Greenlex Systems Services Incorporated/Fabrication-Construction-Draftsman-Tools-Automated.git
+This workflow is the absolute source of truth for AI agents interacting with this repository: https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon.git
 Follow these exact, descriptive steps meticulously to robustly update or create new features, preserving the addon's unique framework and preventing major structural or memory errors across future Blender 4.5.6 LTS updates.
 
 1. Strict Operational Protocols

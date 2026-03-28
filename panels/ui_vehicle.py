@@ -16,7 +16,7 @@ class FCD_PT_Vehicle_Presets:
     """
     AI Editor Note:
     This class is a drawing helper for the 'Vehicle Presets' panel. It is not a
-    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanToolsAutomated
+    registered bpy.types.Panel, but is called by the main FCD_PT_FabricationConstructionDraftsmanTools
     to draw its content. This structure allows for dynamic reordering of panels.
     """
     

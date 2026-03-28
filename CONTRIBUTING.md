@@ -1,4 +1,4 @@
-# Contributing to Fabrication & Construction Draftsman Tools (Automated)
+# Contributing to Fabrication & Construction Draftsman Tools
 
 We welcome community contributions! To ensure the project's integrity and long-term maintenance, we follow these guidelines:
 

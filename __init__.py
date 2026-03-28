@@ -12,15 +12,15 @@
 
 
 bl_info = {
-    "name": "Fabrication & Construction Draftsman Tools (Automated)",
+    "name": "Fabrication & Construction Draftsman Tools",
     "author": "Greenlex Systems Services Incorporated",
-    "version": (7, 45, 0),
+    "version": (0, 1, 0),
     "blender": (4, 5, 6),
     "location": "View3D > Sidebar > Draftsman Tools",
     "description": "A comprehensive toolkit for native, non-destructive URDF creation and rigging for ROS/Gazebo.",
     "category": "Import-Export",
-    "doc_url": "https://github.com/Greenlex-Systems-Services-Incorporated/Fabrication-Construction-Draftsman-Tools-Automated.git",
-    "tracker_url": "https://github.com/Greenlex-Systems-Services-Incorporated/Fabrication-Construction-Draftsman-Tools-Automated/issues",
+    "doc_url": "https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon.git",
+    "tracker_url": "https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon/issues",
 }
 
 import bpy

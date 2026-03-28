@@ -62,6 +62,17 @@ When asked to implement or update a function, execute these exact critical steps
    * Signature Compliance: Enforce the (scene, depsgraph) signature for all depsgraph handlers to ensure stability across Blender 4.5+ releases.
 * Propagative Update Guards: To prevent recursive loops and feedback during multi-bone editing, you MUST use `core._prop_update_guard = True` and `core._joint_editor_update_guard = True` within operators, while wrapping the logic in try/finally to ensure they are reset. In core.py, these must be defined as module-level globals and accessed via `global` within the setter functions.
 
+4.1 Timer-based Update Discipline (Mandatory)
+To ensure Blender's stability and avoid "read-only" context errors during property update callbacks, all complex operations (mesh generation, rig updates, gizmo creation) triggered from a property update MUST be dispatched via a short-interval timer.
+* Standard Pattern: `bpy.app.timers.register(lambda: bpy.ops.prefix.operator_name(), first_interval=0.01)`
+* Guard Check: Always verify that the relevant update guard is False before registering the timer to prevent infinite execution loops. If the operator itself sets a guard, ensure it's properly handled in a try/finally block so code doesn't permanently freeze.
+
+4.2 Debugging and Console Discipline (Mandatory)
+When testing complex kinematic operations, the Blender System Console must be utilized for error reporting. 
+* Persistent Shell: Launch Blender through the provided 'start_blender_with_addon.bat' or 'dev_tool.py' without detaching, to ensure stdout/stderr are forwarded to the primary development terminal.
+* Informative Errors: Proactively log critical state changes (selection results, transformation calculated, and constraint application status) to the console to avoid the 'notification shown but nothing changed' failure pattern.
+* Error Capture: Always wrap timer-based operations in broad try/except blocks to log potential context or registration errors that Blender would otherwise swallow silently.
+
 5. Procedural Safety Limitations
  * Boolean Cut Data Purging: If a feature generates procedural cut planes or boolean objects (like Bore Holes inside gears), you must explicitly clear the previous cutter data geometry via bpy.data.objects.remove() before appending the new shape. Overlapping legacy geometry triggers Blender boolean z-fighting, resulting in corrupted, half-rendered meshes during parametric slider adjustments.
  * Real Units and Precision Scaling: Properties representing spatial dimensions (e.g., Cage Size, Part Length, Hole Depth) must explicitly include unit='LENGTH' in their bpy.props definition. This ensures Blender 4.5.6 LTS interprets them correctly as meters/millimeters in the UI. When utilizing a "Size Cage", the generation multiplier must be calculated against the precise bounding box volume (obj.dimensions) of the part's default state to ensure perfect dimensional conformity.

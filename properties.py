@@ -48,7 +48,7 @@ def update_joint_tool_live(self, context):
     if isinstance(self.id_data, bpy.types.Scene):
         if not core._joint_editor_update_guard:
             # Using a small timer ensures the operator runs in a clean context
-            bpy.app.timers.register(lambda: bpy.ops.fcd.apply_joint_settings(), first_interval=0.01)
+            bpy.app.timers.register(lambda: (bpy.ops.fcd.apply_joint_settings() and None), first_interval=0.01)
     else:
         # Individual bone update
         if not core._prop_update_guard:
@@ -56,7 +56,8 @@ def update_joint_tool_live(self, context):
                 # AI Editor Note: Use a timer for stability! 
                 # Property callbacks cannot safely create meshes/objects for gizmos 
                 # in the current thread. Transitioning to a timer avoids "readonly mode" errors.
-                bpy.app.timers.register(lambda: bpy.ops.fcd.apply_bone_constraints() or None, first_interval=0.01)
+                # Returning None ensures the timer runs only once.
+                bpy.app.timers.register(lambda: (bpy.ops.fcd.apply_bone_constraints() and None), first_interval=0.01)
 
 def update_placement_mode_wrapper(self, context):
     """Lean dispatcher for placement mode state change."""
@@ -300,6 +301,7 @@ class FCD_PG_Kinematic_Props(bpy.types.PropertyGroup):
     gizmo_radius: bpy.props.FloatProperty(name="Gizmo Radius", default=0.1, min=0.0, unit='LENGTH', update=update_joint_tool_live)
     lower_limit: bpy.props.FloatProperty(name="Lower", default=-90.0, update=update_joint_tool_live)
     upper_limit: bpy.props.FloatProperty(name="Upper", default=90.0, update=update_joint_tool_live)
+    ik_chain_length: bpy.props.IntProperty(name="IK Chain Length", default=0, min=0, max=255, update=update_joint_tool_live)
     ratio_value: bpy.props.FloatProperty(name="Ratio", default=1.0)
     ratio_target_bone: bpy.props.StringProperty(name="Target Bone")
     ratio_ref_bone: bpy.props.StringProperty(name="Ref Bone")

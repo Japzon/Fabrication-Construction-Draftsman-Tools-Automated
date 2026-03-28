@@ -43,11 +43,11 @@ def register():
     # Register Core (Handlers)
     core.register()
     
+    # Register Operators FIRST to ensure callbacks have access to them
+    operators.register()
+    
     # Register Properties
     properties.register()
-    
-    # Register Operators
-    operators.register()
     
     # Register Panels
     panels.register()

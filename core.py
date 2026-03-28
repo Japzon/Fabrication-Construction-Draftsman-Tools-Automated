@@ -471,7 +471,7 @@ def load_panel_order_handler(dummy: Any) -> None:
     Applies the saved panel order from scene properties after loading a file.
     """
     # Use a timer to ensure context is ready
-    bpy.app.timers.register(lambda: bpy.ops.fcd.update_panel_order() or None, first_interval=0.2)
+    bpy.app.timers.register(lambda: (bpy.ops.fcd.update_panel_order() and None), first_interval=0.2)
 
 @persistent
 def set_scene_units_handler(dummy: Any) -> None:
@@ -4914,11 +4914,13 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
     # 'Y' affected 'Z', and 'Z' affected 'X'. To correct this, we apply an
     # inverse permutation to the axis index before it's used for constraints.
     # AI Editor Note: DO NOT CHANGE THIS MAPPING. It is notoriously tricky to align.
-    # Future AI: Do not "correct" this unless explicitly instructed.
     axis_map = {0: 2, 1: 0, 2: 1}
     unlocked_idx = axis_map.get(ui_idx, ui_idx)
 
-    is_placing = bpy.context.scene.fcd_placement_mode
+    # AI Editor Note: Avoid using global bpy.context where possible for timer safety.
+    # Get the scene from the bone's armature object.
+    scene = bone.id_data.users_scene[0] if bone.id_data.users_scene else bpy.context.scene
+    is_placing = scene.fcd_placement_mode
 
     # --- 1. Handle Special Modes (Placement / None) ---
     if is_placing:
@@ -5075,7 +5077,8 @@ def local_cursor_depsgraph_handler(scene: bpy.types.Scene, depsgraph: bpy.types.
     cursor_local_vec = obj.matrix_world.inverted() @ scene.cursor.location
 
     global _local_cursor_update_guard
-    if (scene.fcd_cursor_local_pos - cursor_local_vec).length > 0.0001:
+    # Convert property array to mathutils.Vector before subtraction
+    if (mathutils.Vector(scene.fcd_cursor_local_pos) - cursor_local_vec).length > 0.0001:
         _local_cursor_update_guard = True
         try:
             scene.fcd_cursor_local_pos = cursor_local_vec
@@ -5336,7 +5339,7 @@ def fcd_joint_editor_update_callback(self, context):
 
     # Using a timer ensures the operator runs in a clean context after the update.
     # The operator's poll method will handle context checks (e.g., pose mode).
-    bpy.app.timers.register(lambda: bpy.ops.fcd.apply_joint_settings(), first_interval=0.01)
+    bpy.app.timers.register(lambda: (bpy.ops.fcd.apply_joint_settings() and None), first_interval=0.01)
     return None
 
 
@@ -5405,22 +5408,23 @@ def update_all_gizmos(self: bpy.types.Scene, context: bpy.types.Context) -> None
     # 3. Garbage collect unused gizmos to prevent "left behind" objects.
     cleanup_unused_gizmos(context)
 
-def update_ik_chain_length(self: 'FCD_Properties', context: bpy.types.Context) -> None:
+def update_ik_chain_length(props: 'FCD_PG_Kinematic_Props', context: bpy.types.Context) -> None:
     """
     Update callback for the IK chain length property in the UI.
-
-    This function is triggered when the user adjusts the 'IK Chain Length' slider.
-    It ensures that the length of the IK chain on the active bone is updated in
-    real-time.
-
-    It also includes validation to prevent the chain length from exceeding the
-    actual number of parent bones available, ensuring stability.
-
-    Args:
-        self: The `FCD_Properties` instance that was changed.
-        context: The current Blender context.
+    Supports multi-object editing by accepting the specific property group instance.
     """
-    bone = context.active_pose_bone
+    # AI Editor Note: Identify the bone from the property group instance.
+    bone = None
+    if isinstance(props.id_data, bpy.types.Object) and props.id_data.type == 'ARMATURE':
+        path = props.path_from_id()
+        match = re.search(r'pose\.bones\["([^"]+)"\]', path)
+        if match:
+            bone = props.id_data.pose.bones.get(match.group(1))
+    
+    # Fallback to active bone if path parsing fails (e.g. from Tool settings)
+    if not bone:
+        bone = context.active_pose_bone
+        
     if not bone:
         return
 
@@ -5428,20 +5432,20 @@ def update_ik_chain_length(self: 'FCD_Properties', context: bpy.types.Context) -
     if not ik_con:
         return
 
-    # Calculate the maximum possible chain length by traversing up the bone hierarchy.
+    # Calculate the maximum possible chain length
     max_len = 0
     current = bone
     while current:
         max_len += 1
         current = current.parent
 
-    # Clamp the user's desired length to the valid range (0 to max_len).
-    new_length = min(self.ik_chain_length, max_len)
+    # Clamp to valid range
+    new_length = min(props.ik_chain_length, max_len)
     ik_con.chain_count = new_length
 
-    # If the user's value was clamped, update the UI property to reflect the change.
-    if self.ik_chain_length != new_length:
-        self.ik_chain_length = new_length
+    # Update the property to reflect clamping
+    if props.ik_chain_length != new_length:
+        props.ik_chain_length = new_length
 
 # ------------------------------------------------------------------------
 
@@ -5552,7 +5556,8 @@ def register():
     if safe_dimension_update not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(safe_dimension_update)
 
     # 3. Timers
-    bpy.app.timers.register(lambda: ensure_default_rig(bpy.context) or None, first_interval=0.1)
+    # Timer MUST return None (or float) to satisfy Blender's UI thread
+    bpy.app.timers.register(lambda: (ensure_default_rig(bpy.context) and None), first_interval=0.1)
 
 def unregister():
     # 1. Remove Handlers

@@ -158,22 +158,24 @@ def setup_dev():
         print(f"\n[SUCCESS] Attempting to launch Blender {version}...")
         py_cmd = f"import bpy; bpy.ops.preferences.addon_enable(module='{ADDON_NAME}')"
         
-        # 0x00000008 is DETACHED_PROCESS
-        # 0x00000010 is CREATE_NEW_CONSOLE
-        # 0x04000000 is CREATE_NO_WINDOW
-        DETACHED_PROCESS = 0x00000008
-        
+        # We start Blender and keeping the connection to see logs in this terminal.
         try:
-            # We use subprocess.Popen with DETACHED_PROCESS to ensure it outlives this script
-            subprocess.Popen([blender_exe, "--python-expr", py_cmd], 
-                             creationflags=DETACHED_PROCESS,
-                             close_fds=True,
-                             shell=False)
+            # AI Editor Note: Removed DETACHED_PROCESS to allow stdout/stderr logging in current terminal.
+            # Using Popen without detaching and calling wait() keeps the console alive.
+            process = subprocess.Popen([blender_exe, "--python-expr", py_cmd])
             
-            print("\n[DONE] Blender launch command processed.")
-            print("The terminal will now close automatically.")
-            import time
-            time.sleep(1.5) 
+            print("\n" + "="*50)
+            print("  BLENDER IS RUNNING")
+            print("  Logs are being directed to this console.")
+            print("  DO NOT CLOSE THIS WINDOW if you want to see error logs.")
+            print("="*50 + "\n")
+            
+            # Wait for Blender to close
+            process.wait()
+            
+            print("\n[INFO] Blender has closed.")
+            print("Press Enter to close this development tool...")
+            input()
             return True
         except Exception as e:
             print(f"[ERROR] Launch failed: {e}")

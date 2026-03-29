@@ -2042,11 +2042,11 @@ class FCD_OT_AddParametricAnchor(bpy.types.Operator):
             # Switch to Object Mode to create Empty and VG
             bpy.ops.object.mode_set(mode='OBJECT')
         
-        # Create Empty
+        # Create Empty (Hook visualization)
         empty = bpy.data.objects.new(f"Hook_{obj.name}", None)
         empty.location = world_center
-        empty.empty_display_type = 'PLAIN_AXES'
-        empty.empty_display_size = 0.1 * s
+        empty.empty_display_type = 'CUBE'
+        empty.empty_display_size = 0.05 * s
         context.collection.objects.link(empty)
         
         # Create Vertex Group for the selection
@@ -2702,7 +2702,7 @@ class FCD_OT_Remove_Dimension(bpy.types.Operator):
 class FCD_OT_Add_Dimension(bpy.types.Operator):
     """First selected is the static point, second selected is the variable point."""
     bl_idname = "fcd.add_dimension"
-    bl_label = "Generate Dimensions for Selected"
+    bl_label = "Generate Dimension (Object Mode)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -2722,18 +2722,33 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
              import bmesh
              per_obj_data = [] # (obj, selection_center, parent_vert_index)
              
+             # AI Editor Note: Mandatory sync before accessing Edit Mesh data
+             context.view_layer.update()
+             context.evaluated_depsgraph_get().update()
+
              for obj in context.objects_in_mode:
                   if obj.type == 'MESH':
+                       # FORCE SYNC: Briefly toggling mode is a known fix for stale vertex positions
+                       bpy.ops.object.mode_set(mode='OBJECT')
+                       obj.update_from_editmode()
+                       bpy.ops.object.mode_set(mode='EDIT')
+                       
                        bm = bmesh.from_edit_mesh(obj.data)
+                       bm.verts.ensure_lookup_table()
                        sel_verts = [v for v in bm.verts if v.select]
+                       
                        if sel_verts:
                             # AI Editor Note: Centering Fix - Average of ALL selected points on this specific part
                             pts = [obj.matrix_world @ v.co.copy() for v in sel_verts]
                             center = sum(pts, mathutils.Vector()) / len(pts)
                             
-                            # Parent vert is just an anchor for the mechatronic assembly to follow.
-                            # Standard drafting: Parent to first selected member.
+                            # Standard drafting: Parent to first selected member in history if possible
+                            # otherwise fall back to first in selection list.
                             pvid = sel_verts[0].index
+                            hist_verts = [e for e in bm.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
+                            if hist_verts:
+                                pvid = hist_verts[0].index
+
                             per_obj_data.append((obj, center, pvid))
              
              if len(per_obj_data) >= 2:
@@ -2749,8 +2764,11 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                   # Case B: Only one object has selection (must use vertex-to-vertex order)
                   obj, center, _ = per_obj_data[0]
                   bm = bmesh.from_edit_mesh(obj.data)
+                  bm.verts.ensure_lookup_table()
                   hist = [e for e in bm.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
+                  
                   if len(hist) >= 2:
+                       # STRICT: Use specific selected parts (vertices)
                        v1, v2 = hist[-2], hist[-1]
                        p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
                        parent_a = (obj, 'VERTEX', v1.index)
@@ -2758,6 +2776,7 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                   else:
                        v_sel = [v for v in bm.verts if v.select]
                        if len(v_sel) >= 2:
+                            # Fallback to selection list if history is unclear
                             v1, v2 = v_sel[0], v_sel[-1]
                             p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
                             parent_a = (obj, 'VERTEX', v1.index)
@@ -2767,6 +2786,16 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
         if is_edit and (p1 is None or p2 is None):
              self.report({'WARNING'}, "Please select at least two points sequentially in Edit Mode.")
              return {'CANCELLED'}
+        
+        # AI Editor Note: BLENDER 4.5+ ULTIMATE PARENTING SYNC
+        # Pre-evaluating world coordinates from BMesh before mode switch.
+        if is_edit:
+             # Push all current Edit Mode changes to the Mesh data
+             for o in context.objects_in_mode:
+                  if o.type == 'MESH':
+                       o.update_from_editmode()
+             context.view_layer.update()
+             context.evaluated_depsgraph_get().update()
              
         elif not is_edit:
              sel = context.selected_objects
@@ -2776,17 +2805,36 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                   def get_obj_center(o):
                       pts = [o.matrix_world @ mathutils.Vector(b) for b in o.bound_box]
                       return sum(pts, mathutils.Vector()) / 8
+                  
                   o2 = context.active_object if context.active_object in valid_sel else valid_sel[-1]
                   o1 = next((o for o in valid_sel if o != o2), valid_sel[0])
-                  p1, p2 = get_obj_center(o1).copy(), get_obj_center(o2).copy()
+                  
+                  # AI Editor Note: Explicitly evaluate centers in World Space
+                  context.view_layer.update()
+                  p1 = get_obj_center(o1).copy()
+                  p2 = get_obj_center(o2).copy()
                   parent_a, parent_b = (o1, 'OBJECT', 0), (o2, 'OBJECT', 0)
         
         # --- 2. GENERATION (Deselect all to prevent bleeding) ---
         if p1 is not None and p2 is not None:
              # Ensure depsgraph evaluation before mode switch if we're coming from edit mode
              if context.mode != 'OBJECT':
+                  # Pass 1: Flush Edit Mode data to the mesh
                   context.view_layer.update()
                   bpy.ops.object.mode_set(mode='OBJECT')
+                  
+                  # Pass 2: Forced scene-wide refresh
+                  for o in context.scene.objects:
+                       if o.type == 'MESH':
+                            o.update_tag()
+                  
+                  # Hard Global Sync
+                  context.view_layer.update()
+                  context.evaluated_depsgraph_get().update()
+                  context.view_layer.update()
+                  
+                  # Final verification update
+                  context.view_layer.update()
              
              bpy.ops.object.select_all(action='DESELECT')
              generators.generate_smart_dimension_parametric(context, p1, p2, parent_a=parent_a, parent_b=parent_b)
@@ -5963,7 +6011,11 @@ class FCD_OT_AccurateScale(bpy.types.Operator):
         if obj.dimensions.z > 0 and axes[2]:
             obj.scale.z *= (target_dim / obj.dimensions.z)
         
-        self.report({'INFO'}, f"Set dimension to {target_dim}m on selected axes")
+        # AI Editor Note: Automatically apply scale transformation to keep scale 1.0
+        # This makes the new dimensions permanent in the mesh data.
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        
+        self.report({'INFO'}, f"Applied accurate scale: {target_dim}m on selected axes")
         return {'FINISHED'}
 
 def register():

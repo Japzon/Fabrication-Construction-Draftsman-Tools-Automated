@@ -63,14 +63,14 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
                 if has_hooks:
                     anchor_box.label(text="Mesh has active hooks", icon='INFO')
 
-            # --- Smart Dimension Generator ---
-            gen_box = box.box()
-            col = gen_box.column(align=True)
-            col.operator("fcd.add_dimension", text="Generate Dimensions for Selected", icon='DRIVER_DISTANCE')
+            # --- Smart Dimension Toolkit (Unified) ---
+            dim_toolkit_box = box.box()
+            dim_toolkit_box.label(text="Dimension Generator & Properties", icon='DRIVER_DISTANCE')
+            col = dim_toolkit_box.column(align=True)
+            col.operator("fcd.add_dimension", text="Generate Dimension (Object Mode)", icon='ADD')
             
             # --- Remove Selected Dimension ---
             active_obj = context.active_object
-            
             from .. import core
             dim_host = core.get_dimension_host(active_obj)
             is_dim = dim_host is not None
@@ -79,51 +79,47 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
                 col.separator()
                 col.operator("fcd.remove_dimension", text="Remove Selected Dimension", icon='TRASH')
             
-            # --- Display Properties (Sub-Panel) ---
-            prop_box = box.box()
+            # --- Unified Display Properties ---
+            col.separator()
             if is_dim:
-                prop_box.label(text="Display Properties", icon='PROPERTIES')
-                col2 = prop_box.column(align=True)
+                # prop_box.label(text="Display Properties", icon='PROPERTIES')
                 dim_props = dim_host.fcd_pg_dim_props
                 
                 # 'Length' allows for precise input of dimensions.
-                col2.prop(dim_props, "length", text="Line Length")
+                col.prop(dim_props, "length", text="Line Length")
                 
-                row2 = col2.row(align=True)
+                row2 = col.row(align=True)
                 row2.prop(dim_props, "arrow_scale", text="Arrow")
                 row2.prop(dim_props, "text_scale", text="Text Size")
-                col2.prop(dim_props, "line_thickness", text="Line Thickness")
-                col2.prop(dim_props, "offset", text="Offset from Target")
-                col2.prop(dim_props, "extension_line", text="Extension Line")
-                col2.prop(dim_props, "text_color", text="Label Color")
-                col2.prop(dim_props, "flip_text", text="Flip Text")
-                col2.prop(dim_props, "text_rotation", text="Text Rotation")
-                col2.prop(dim_props, "unit_display", text="Units")
+                col.prop(dim_props, "line_thickness", text="Line Thickness")
+                col.prop(dim_props, "offset", text="Offset from Target")
+                col.prop(dim_props, "extension_line", text="Extension Line")
+                col.prop(dim_props, "text_color", text="Label Color")
+                col.prop(dim_props, "flip_text", text="Flip Text")
+                col.prop(dim_props, "text_rotation", text="Text Rotation")
+                col.prop(dim_props, "unit_display", text="Units")
                 
                 # Planar Display Mode Toggle
-                col2.separator()
-                col2.label(text="Dimension Offset Alignment", icon='VIEW_ORTHO')
-                row3 = col2.row(align=True)
+                col.separator()
+                col.label(text="Dimension Offset Alignment", icon='VIEW_ORTHO')
                 
                 # Layout the options in a grid-like fashion
-                row_pos = col2.row(align=True)
+                row_pos = col.row(align=True)
                 row_pos.prop(dim_props, "align_x", toggle=True, text="+X")
                 row_pos.prop(dim_props, "align_y", toggle=True, text="+Y")
                 row_pos.prop(dim_props, "align_z", toggle=True, text="+Z")
                 
-                row_neg = col2.row(align=True)
+                row_neg = col.row(align=True)
                 row_neg.prop(dim_props, "align_nx", toggle=True, text="-X")
                 row_neg.prop(dim_props, "align_ny", toggle=True, text="-Y")
                 row_neg.prop(dim_props, "align_nz", toggle=True, text="-Z")
                 
-                col2.separator()
-                col2.label(text="Text Alignment", icon='ALIGN_CENTER')
-                row_text = col2.row(align=True)
+                col.separator()
+                col.label(text="Text Alignment", icon='ALIGN_CENTER')
+                row_text = col.row(align=True)
                 row_text.prop(dim_props, "text_alignment", expand=True)
             else:
-                row = prop_box.row(align=True)
-                row.alignment = 'CENTER'
-                row.label(text="Select a dimension arrow to adjust", icon='INFO')
+                col.label(text="Select a dimension arrow to adjust", icon='INFO')
 
             # --- Accurate Scale (New) ---
             scale_box = box.box()

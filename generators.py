@@ -582,30 +582,29 @@ def setup_dimension_gn(obj: bpy.types.Object):
     mod.node_group = group
 
 def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", parent_a=None, parent_b=None):
-    """
-    Spawns a procedural dimension assembly using an Empty root for clean hierarchy.
-    Ensures children (anchors, lines, labels) have independent scaling.
-    """
-    # AI Editor Note: Mandatory transition to Object Mode.
-    # Procedural assembly and parenting are only stable in Object Mode.
+    # AI Editor Note: BLENDER 4.5+ ULTIMATE SYNC PASS
     if context.mode != 'OBJECT':
          bpy.ops.object.mode_set(mode='OBJECT')
          
+    # Pass 3: Hard flush in Object Mode
+    context.view_layer.update()
+    context.evaluated_depsgraph_get().update()
+    context.view_layer.update() 
+    
+    # Sync loop to make sure evaluated mesh is stable
+    # This specifically addresses the 'give_parvert' timing issue
+    def force_sync():
+        context.view_layer.update()
+        context.evaluated_depsgraph_get().update()
+        
+    force_sync()
     scene = context.scene
     coll = context.collection
     
-    # 1. Orientation Logic
+    # AI Editor Note: Initial orientation logic MUST happen before Root creation
     dist_vec = p2 - p1
     initial_length = dist_vec.length
     if initial_length < 0.001: return
-    
-    # AI Editor Note: Mandatory update to ensure evaluated mesh is available for vertex parenting
-    # We must ensure we are in OBJECT mode and the scene is fully evaluated.
-    if context.mode != 'OBJECT':
-         bpy.ops.object.mode_set(mode='OBJECT')
-         
-    context.view_layer.update()
-    context.evaluated_depsgraph_get().update()
     
     # AI Editor Note: Design Strategy - The 'Root' is an Empty that handles 
     # the coordinate system and orientation. Components are siblings.
@@ -613,15 +612,39 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     root = bpy.data.objects.new(f"{name}_Root", None)
     dim_coll = get_dimensions_collection(context)
     dim_coll.objects.link(root)
-    root.empty_display_type = 'ARROWS'
-    root.empty_display_size = 0.5
-    root.location = p1
+    # AI Editor Note: Blender doesn't have a 'NONE' display type. 
+    # We use PLAIN_AXES but hide the object completely for visibility.
+    root.empty_display_type = 'PLAIN_AXES'
+    root.hide_viewport = True
+    root.hide_render = True
+    root.empty_display_size = 0.05
+    
+    # ULTIMATE ORIENTATION FIX: High-Precision Matrix Constructor
+    # We build the world matrix manually to bypass TrackTo lag entirely.
+    direction = (p2 - p1)
+    length = direction.length
+    if length > 0.0001:
+        # Construct rotation matrix from direction vector (Z points to target)
+        z_axis = direction.normalized()
+        # Find a stable up vector
+        up = mathutils.Vector((0, 0, 1))
+        if abs(z_axis.dot(up)) > 0.99:
+            up = mathutils.Vector((0, 1, 0))
+        x_axis = up.cross(z_axis).normalized()
+        y_axis = z_axis.cross(x_axis).normalized()
+        
+        # Create 3x3 rotation component
+        rot_mat = mathutils.Matrix((x_axis, y_axis, z_axis)).transposed()
+        # Combine into world_matrix
+        root.matrix_world = rot_mat.to_4x4()
+        root.matrix_world.translation = p1
+    
+    context.view_layer.update() 
+    dist_vec = direction
     root["fcd_dist_vec"] = [dist_vec.x, dist_vec.y, dist_vec.z]
     
-    # AI Editor Note: Initial orientation tracks the target p2 directly with Z
-    rot_quat = dist_vec.to_track_quat('Z', 'Y')
-    root.rotation_mode = 'QUATERNION'
-    root.rotation_quaternion = rot_quat
+    # AI Editor Note: Cache world transformation for parenting restoration
+    old_mat = root.matrix_world.copy()
     
     # 2. Spawn Anchor Start (Triangle, Child of Root)
     tri_mesh = create_triangle_anchor_mesh(name)
@@ -716,35 +739,66 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
         # AI Editor Note: Pre-parenting sync
         if obj_a.type == 'MESH':
              obj_a.data.update()
+             # We must force Blender to see the 'evaluated' version for parenting
+             dg = context.evaluated_depsgraph_get()
+             obj_eval = obj_a.evaluated_get(dg)
+        
+        # FINAL ATOMIC PARENTING: Satisfy the 4.5 'give_parvert' solver
+        # 1. First Pass: Lock in global position
+        dg = context.evaluated_depsgraph_get()
+        dg.update()
+        root.matrix_world = old_mat.copy()
         context.view_layer.update()
         
-        root.matrix_world.translation = p1
-        old_mat = root.matrix_world.copy()
-        
+        # 2. Assign Parent
         root.parent = obj_a
-        if type_a == 'VERTEX':
-             root.parent_type = 'VERTEX'
-             root.parent_vertices[0] = index_a
-             
-        # AI Editor Note: Restore world transform after parenting to maintain exact center offset
-        root.matrix_parent_inverse = obj_a.matrix_world.inverted()
-        root.matrix_world = old_mat
         
+        # Verify World Matrix after parenting assignment
         context.view_layer.update()
+        
+        if type_a == 'VERTEX':
+             # 3. Mode Selection
+             root.parent_type = 'VERTEX'
+             # 4. Mandatory Sync between Type set and Indices set
+             dg.update()
+             context.view_layer.update()
+             
+             root.parent_vertices[0] = index_a
+             root.parent_vertices[1] = index_a
+             root.parent_vertices[2] = index_a
+             
+        # Restore precise world transformation
+        # matrix_parent_inverse SHOULD be calculated against the evaluated armature/mesh matrix
+        root.matrix_parent_inverse = obj_a.matrix_world.inverted()
+        root.matrix_world = old_mat.copy()
+        
+        # Pass 4: Final verification update
+        context.view_layer.update()
+        dg.update()
             
-    # Parent the second object to the EndHook if provided.
-    # This allows the 'Length' property to actually MOVE the second part 
-    # without visual arrow scaling affecting it.
+    # Parent the second object/element to the EndHook.
     if parent_b:
         obj_b, type_b, index_b = parent_b
         if obj_b:
-            # Preserve world transform during parenting
-            old_matrix = obj_b.matrix_world.copy()
-            obj_b.parent = hook
-            if type_b == 'VERTEX':
-                 # Custom vertex parenting logic for Hook
-                 pass
-            obj_b.matrix_world = old_matrix
+             # Ensure depsgraph is current
+             dg = context.evaluated_depsgraph_get()
+             dg.update()
+             
+             old_matrix = obj_b.matrix_world.copy()
+             obj_b.parent = hook
+             
+             if type_b == 'VERTEX':
+                  # AI Editor Note: When measuring parts of a single mesh in Edit Mode,
+                  # we cannot parent the mesh object to its own Hook (circular dependency).
+                  # For single-object Edit Mode, we leave the Hook as a visual guide.
+                  pass
+             else:
+                  # Mechatronic behavior: Second object moves with the arrow head
+                  obj_b.matrix_parent_inverse = hook.matrix_world.inverted()
+             
+             obj_b.matrix_world = old_matrix
+             context.view_layer.update()
+             context.view_layer.update()
             
     # Finalize setup visual settings
     if hasattr(core, 'update_arrow_settings'):

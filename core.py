@@ -991,8 +991,8 @@ def update_arrow_settings(obj):
                     base_rot.rotate_axis('X', math.pi)
                 
                 base_mat = base_rot.to_matrix()
+                # Multiply rotation correctly: Base * User
                 user_mat = mathutils.Euler(dim_props.text_rotation).to_matrix()
-                
                 child.rotation_euler = (base_mat @ user_mat).to_euler()
                 
         root.update_tag()
@@ -5285,9 +5285,14 @@ def local_cursor_depsgraph_handler(scene: bpy.types.Scene, depsgraph: bpy.types.
     obj = context.active_object
     cursor_local_vec = obj.matrix_world.inverted() @ scene.cursor.location
 
+    # AI Editor Note: Attributes may be missing during add-on registration/unregistration.
+    if not hasattr(scene, "fcd_cursor_local_pos"):
+        return
+        
     global _local_cursor_update_guard
     # Convert property array to mathutils.Vector before subtraction
-    if (mathutils.Vector(scene.fcd_cursor_local_pos) - cursor_local_vec).length > 0.0001:
+    actual_pos = mathutils.Vector(getattr(scene, "fcd_cursor_local_pos", (0,0,0)))
+    if (actual_pos - cursor_local_vec).length > 0.0001:
         _local_cursor_update_guard = True
         try:
             scene.fcd_cursor_local_pos = cursor_local_vec
@@ -5387,7 +5392,7 @@ def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
         target_bone = context.active_pose_bone
     elif context.mode == 'OBJECT' and context.active_object:
         obj = context.active_object
-        rig = scene.fcd_active_rig
+        rig = getattr(scene, "fcd_active_rig", None)
         # Check if the object is a child of the active rig's bone
         if rig and obj.parent == rig and obj.parent_type == 'BONE':
             target_bone = rig.pose.bones.get(obj.parent_bone)

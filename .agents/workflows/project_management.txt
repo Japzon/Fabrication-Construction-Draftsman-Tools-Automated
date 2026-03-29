@@ -128,3 +128,6 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 - Renamed removal tool to 'Remove Selected Hook/Marker' with a 'Purge selected Hook/Marker' tooltip for better user guidance.
 - Fixed a 'Evaluated mesh is needed' parenting error during Edit Mode dimension generation by implementing a ViewLayer update prior to assembly creation.
 - Finalized UI layout for 'Dimensions & Precision Transforms', ensuring Display Properties and Dimension removal tools appear above the Accurate Scaling sub-panel.
+- Consolidated the Dimension Generator and Display Properties into a single unified sub-panel for a more streamlined workflow.
+- Refined Edit Mode dimension generation to strictly use selected vertices/elements as the static and dynamic points, preventing the assembly from defaulting to the entire object center.
+- Reinforced Edit Mode stability by forcing dependency graph updates before BMesh access, resolving 'Evaluated mesh is needed' errors.

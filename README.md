@@ -2,62 +2,52 @@
 
 ![Header Image](https://raw.githubusercontent.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon/main/header.png)
 
-A high-performance drafting and robotics integration suite for Blender. FCD transforms Blender into a precision engineering workstation designed for rapid fabrication, architectural drafting, and native URDF rigging for ROS/Gazebo simulations.
+An integrated toolkit for Blender designed to assist in architectural drafting, mechanical modeling, and robotics rigging. FCD provides a collection of scripted utilities that automate repetitive tasks like dimensioning, joint configuration, and part generation.
 
 ---
 
 # ⚖️ LEGAL PROTECTION & LICENSE (GPL COMPLIANT)
 Copyright (c) 2026 Greenlex Systems Services Incorporated. All rights reserved.
 
-This toolkit is licensed under the **GNU General Public License (GPL)**. The original architecture and design logic remain the intellectual property of **Greenlex Systems Services Incorporated**. 
-
-No person or entity is authorized to claim this work as their own. Proper attribution is mandatory for all redistributed or derivative versions of this toolkit.
-
-### 🛡️ Ownership & Enforcement
-*   **Copyright (c) 2026 Greenlex Systems Services Incorporated.**
-*   **FOOLPROOF PROTECTION**: This work is NOT licensed for public redistribution, sub-licensing, or commercial resale by any third party without express consent.
-*   **AUTHORSHIP**: Any attempt to claim this work as your own or to license it under a different name is a violation of international copyright law.
-*   **ENFORCEMENT**: Unauthorized use or distribution will be met with immediate legal action. We monitor repository forks and clones to ensure intellectual property integrity.
+This toolkit is licensed under the **GNU General Public License (GPL)**. The hardware design logic and original architecture remain the intellectual property of **Greenlex Systems Services Incorporated**. 
 
 ---
 
-## 🚀 Core Features & Intelligence
+## 🚀 Core Features & Usage
 
-### 🤖 Kinematics & URDF Rigging Suite
-*   **Joint Editor Tool**: A specialized interface for defining robot joints (Revolute, Prismatic, Fixed, Continuous) directly on Blender armatures. Features interactive 3D gizmos for real-time visualization of joint limits and axes.
-*   **Automated Rigging**: One-click armature generation with parent-child relationship management. Automatically handles local axis alignment and bone-to-mesh parenting.
-*   **Advanced Drivers**: Built-in gear ratio and mimic driver tools to synchronize complex mechanical movements without manual keyframing.
-*   **Native URDF Export**: Seamlessly export your rigged models to URDF format for immediate use in ROS, Gazebo, and other robotics simulators.
+### 🤖 Robotics Joint Editor (Kinematics)
+*   **How it works**: FCD utilizes Blender's native **Armature system**. By tagging bones in Pose Mode, the add-on attaches custom mechatronic properties and interactive 3D gizmos to the rig.
+*   **Joint Configuration**: Easily define joints as Revolute, Prismatic, or Fixed. The editor provides real-time visual feedback for joint axes and motion limits.
+*   **Physics Helpers**: Includes utilities to estimate **Center of Mass** and **Inertia Tensors** based on the volume and distribution of mesh objects parented to the bones.
+*   **Rigging Tools**: Streamlined operators for aligning bone axes to geometry and managing parent-child bone relationships for multi-link robots.
 
-### 📐 Procedural Dimension System
-*   **Smart Labels**: Generate real-time, non-destructive dimension lines that update as you scale or move your objects.
-*   **Precision Anchors**: Attach "Parametric Anchors" and hooks to specific vertices. These anchors serve as dynamic parenting points for complex assemblies, ensuring sub-components stay perfectly aligned.
-*   **Accurate Scale Tool**: Transform objects based on exact metric dimensions rather than simple percentages, allowing for architectural-grade precision.
-*   **Technical Overlays**: Customizable holographic labels with adjustable colors, font sizes, and unit displays (meters, millimeters, etc.).
+### 📐 Procedural Drafting Dimensions
+*   **How it works**: Dimension lines are generated as **parametric Empty rigs**. Each rig consists of a line, arrowheads, and a text label that measures the distance between two points.
+*   **Interactive Adjustments**: Once generated, you can adjust the offset from the target, arrow scale, and font size directly from the N-panel.
+*   **Vertex Snapping**: Place "Parametric Anchors" on mesh vertices to act as precise hooks for dimension lines, ensuring they follow the geometry if the underlying mesh is modified.
 
-### 🏭 Intelligent Spawning Hub (AI Factory)
-*   **AI-Driven Generation**: Use natural language prompts to describe the parts you need. The FCD AI Factory translates your instructions into structured procedural meshes.
-*   **Global Size Cage**: A logic-driven scaling system that ensures all generated or imported assets fit within a predefined bounding volume (Length, Width, Height) automatically.
-*   **Unified Interface**: A central hub for all creation tools, preventing the need to hunt through menus.
+### ⚙️ Scripted Procedural Parts
+*   **How it works**: FCD uses **BMesh scripting** to generate geometry on the fly. When you change a property (like gear teeth or wall height), the add-on recalculates and rebuilds the mesh data.
+*   **Mechanical Presets**: Generate gears, racks, pulleys, and NEMA motors with accurate proportions. These parts can be "baked" into standard static meshes once the design is finalized.
+*   **Architectural Presets**: Rapidly create walls, pillars, windows, and stairs using metric inputs. Features like door frames and window glass are generated as part of the modular mesh logic.
+*   **Size Cage**: A global bounding-box system (Size Cage) helps ensure that generated parts fit within the maximum dimensional constraints of your project.
 
-### 🏗️ Metric-Accurate Presets
-*   **Architectural Toolkit**: Procedural walls, framed windows, structural doors, and complex stairs with parametric control over treads, risers, and materials.
-*   **Mechanical & Electronic Library**: Industrial-grade components including NEMA motors, planetary gears, gear racks, timing belts, Mecanum wheels, and IMU sensors.
-*   **Vehicle Bases**: Standardized templates for drones, tanks, forklifts, and industrial robots, pre-configured for kinematic setup.
+### 📦 Streamlined Asset Management
+*   **Asset Browser Integration**: A simplified interface for Blender's native Asset Browser. It automates common tasks like marking objects as assets, assigning UUID-based catalogs, and organizing files into project directories.
+*   **Import/Export**: Batch-import external models and automatically catalog them into your local or global libraries.
 
-### 🎨 Advanced Visualization & Simulation
-*   **Industrial Materials**: A curated library of PBR materials tailored for engineering applications (steel, aluminum, ABS plastic, glass).
-*   **Physics Configuration**: Integrated management for Inertial properties (Center of Mass, Tensors) and collision hulls for realistic simulation behavior.
+### 🧪 Generation Hub (Early Access)
+*   **Template Hub**: A central panel to spawn complex assemblies using keyword-based templates. 
+*   **Note**: The AI-driven prompt system is currently in early development and functions primarily through local keyword matching (e.g., "Rover", "Arm") to trigger pre-defined assembly scripts.
 
 ---
 
-## 🛠 Installation
-1.  **Download**: Get the latest release zip from the repository.
-2.  **Install**: In Blender, navigate to `Edit > Preferences > Add-ons > Install`.
-3.  **Activate**: Select the zip file and enable `Fabrication & Construction Draftsman Tools`.
-4.  **Access**: Find the toolkit in the **View3D Sidebar (N-Panel)** under the **Draftsman Tools** tab.
+## 🛠 Installation & Access
+1.  **Install**: In Blender, go to `Edit > Preferences > Add-ons > Install` and select the fcd_addon.zip.
+2.  **Activate**: Enable `Fabrication & Construction Draftsman Tools` in the list.
+3.  **Usage**: All tools are located in the **3D Viewport Sidebar (N-Panel)** under the tab **Draftsman Tools**.
 
 ---
 
 **Author**: Greenlex Systems Services Incorporated  
-**Support**: Please open an issue in the [GitHub Issue Tracker](https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon/issues) for technical assistance.
+**Support**: Documentation and issue tracking are handled via the [GitHub Repository](https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon).

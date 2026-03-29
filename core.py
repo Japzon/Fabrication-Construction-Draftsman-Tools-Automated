@@ -917,73 +917,68 @@ def update_arrow_settings(obj):
     # Root of the assembly
     root = obj.parent
     if root:
-        # Retrieve the original measurement direction
-        if "fcd_dist_vec" in root:
-             orig_z = mathutils.Vector(root["fcd_dist_vec"])
-        else:
-             orig_z = mathutils.Vector((0, 0, 1))
-
-        if target_vec.length > 0.001:
-            target_vec.normalize()
-            # AI Editor Note: Snap the UP Vector (offset axis, Local Y) to the target_vec
-            # while keeping the Measurement Vector (Local Z) pointing exactly at the target.
-            x_axis = target_vec.cross(orig_z)
-            if x_axis.length > 0.001:
-                 x_axis.normalize()
-                 # Recompute strictly orthogonal Y axis derived from X and Z
-                 y_axis = orig_z.cross(x_axis).normalized()
-                 rot_mat = mathutils.Matrix((tuple(x_axis), tuple(y_axis), tuple(orig_z))).transposed()
-                 rot_euler = rot_mat.to_euler()
-            else:
-                 rot_euler = orig_z.to_track_quat('Z', 'Y').to_euler()
-        else:
-            # Default fallback simply tracks Z, leaving Y loosely oriented
-            target_vec = direction_map.get(dir_enum, mathutils.Vector((0, 0, 1)))
-            rot_euler = orig_z.to_track_quat('Z', 'Y').to_euler()
-            
-        # 1. Update Root orientation (only if not manually aligned)
-        if not obj.get("fcd_is_aligned"):
-             if root.rotation_mode == 'QUATERNION':
-                  root.rotation_quaternion = rot_euler.to_quaternion()
-             else:
-                  root.rotation_euler = rot_euler
-        
-        # 2. Update Siblings scales/locations
         offset = dim_props.offset
         ext_beyond = dim_props.extension_line
+        
+        # Calculate drafting parallelogram offset vectors
+        mat_inv = root.matrix_world.to_3x3().inverted_safe()
+        
+        if target_vec.length > 0.001:
+             offset_world_vec = target_vec.normalized()
+        else:
+             # Default fallback: simply use the assembly's local Y axis
+             offset_world_vec = root.matrix_world.to_3x3() @ mathutils.Vector((0, 1, 0))
+             
+        # Map target vector into the Root's local space to shear the components purely
+        offset_local_dir = (mat_inv @ offset_world_vec).normalized()
+        move_vec = offset_local_dir * offset
+        
+        # Calculate extension line sheer angle
+        ext_rot_euler = offset_local_dir.to_track_quat('Z', 'Y').to_euler()
         
         for child in root.children:
             if child.get("fcd_is_dimension_anchor"):
                 child.scale = (arrow_s, arrow_s, arrow_s)
-                child.location.y = offset
+                child.location = move_vec.copy()
+                if not child.name.endswith("A"):
+                     child.location.z += length
             
             elif child.get("fcd_is_dimension_line"):
-                # 1:1 Scaling with properties (Base mesh radius is 1.0)
-                # AI Editor Note: Precision Offset - Start the line at the butt of the arrow
-                # to prevent the line from poking through the arrowhead tips.
                 arrow_l = 0.15 * arrow_s
                 child.scale.x = line_t
                 child.scale.y = line_t
                 child.scale.z = max(0.001, length - (arrow_l * 2))
-                child.location.y = offset
-                child.location.z = arrow_l
+                child.location = move_vec.copy()
+                child.location.z += arrow_l
                 
             elif child.get("fcd_is_extension_line"):
-                # Extension lines start at arrowhead (offset) and bridge the gap
                 child.scale.x = line_t * 0.8 
                 child.scale.y = line_t * 0.8
-                child.scale.z = offset + ext_beyond
-                child.location.y = offset
                 
-            elif child.get("fcd_is_dimension"): # The Label itself
+                # 'Fixed Bracket' Style: extension line originates from dimension offset,
+                # stretching slightly inward towards the origin instead of spider-legging the center.
+                inward_len = min(offset * 0.85, 0.4)
+                start_loc = move_vec.copy() - (offset_local_dir * inward_len)
+                
+                child.location = start_loc
+                if not child.name.endswith("A"):
+                    child.location.z += length
+                    
+                child.scale.z = inward_len + ext_beyond
+                
+                # Shear vector tracking
+                child.rotation_euler = ext_rot_euler
+                
+            elif child.get("fcd_is_dimension"): # The Label
                 child.scale = (text_s, text_s, text_s)
-                child.location.y = offset + (arrow_s * 0.5) # Dynamic label clearance
-                child.location.z = length / 2
+                # Expand outward slightly for label padding
+                text_clearance = offset_local_dir * (arrow_s * 0.5)
+                child.location = move_vec + text_clearance
+                child.location.z += length / 2
                 
                 # Apply Text Alignment (With Mirroring)
                 align_choice = dim_props.text_alignment
                 if dim_props.flip_text:
-                     # 'Mirror' the alignment physically
                      align_map = {'LEFT': 'RIGHT', 'RIGHT': 'LEFT', 'CENTER': 'CENTER'}
                      align_choice = align_map.get(align_choice, 'CENTER')
                      
@@ -991,10 +986,8 @@ def update_arrow_settings(obj):
                     child.data.align_x = align_choice
                     
                 if dim_props.flip_text:
-                    # Yaw to 0 degrees if flip text is triggered
                     child.rotation_euler = (math.radians(90), 0, 0)
                 else:
-                    # Default: Yaw 180 degrees so it is readable face-up initially
                     child.rotation_euler = (math.radians(90), 0, math.radians(180))
                 
         root.update_tag()

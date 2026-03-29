@@ -2699,7 +2699,7 @@ class FCD_OT_Remove_Dimension(bpy.types.Operator):
 
 
 class FCD_OT_Add_Dimension(bpy.types.Operator):
-    """Generate a smart dimension measurement between selected elements or based on bounding box"""
+    """First selected is the anchor position, second selected is the variable position"""
     bl_idname = "fcd.add_dimension"
     bl_label = "Generate Dimensions for Selected"
     bl_options = {'REGISTER', 'UNDO'}
@@ -2752,6 +2752,13 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
                        p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
                        parent_a = (obj, 'VERTEX', v1.index)
                        parent_b = (obj, 'VERTEX', v2.index)
+                  else:
+                       v_sel = [v for v in bm.verts if v.select]
+                       if len(v_sel) >= 2:
+                            v1, v2 = v_sel[0], v_sel[-1]
+                            p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
+                            parent_a = (obj, 'VERTEX', v1.index)
+                            parent_b = (obj, 'VERTEX', v2.index)
         
         # Prevent Single-Object Edit Mode from spawning Bounding Boxes if history is invalid
         if is_edit and (p1 is None or p2 is None):

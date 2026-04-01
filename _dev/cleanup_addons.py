@@ -5,6 +5,8 @@ old_names = [
     "fabrication_construction_draftsman_tools_automated",
     "Fabrication_Construction_Draftsman_Tools_Blender_Addon",
     "Fabrication-Construction-Draftsman-Tools-Blender-Addon",
+    "Fabrication-Construction-Draftsman-Tools-Blender-Addon-main",
+    "Fabrication-Construction-Draftsman-Tools-Blender-Addon-master",
     "auto_robot_cnc_dev_kit"
 ]
 
@@ -25,13 +27,17 @@ for name in old_names:
     except Exception as e:
         pass # Silently fail
 
-# The new one is expected to be enabled automatically by Blender 4.2+ extensions
-if new_extension_name in bpy.context.preferences.addons:
-    print(f"[INFO] New Extension active: {new_extension_name}")
-elif new_name in bpy.context.preferences.addons:
-     print(f"[INFO] New extension active (legacy-style): {new_name}")
-else:
-     print(f"[WARNING] Draftsman extension not yet enabled in this Blender instance.")
+# Enable the current version unconditionally for development
+try:
+    print(f"[INFO] Ensuring addon is enabled: {new_name}")
+    # Force activation using addon_utils
+    addon_utils.enable(new_name, default_set=True, persistent=True)
+    if new_name in bpy.context.preferences.addons:
+         print(f"[SUCCESS] Draftsman extension is now ACTIVE in this Blender instance.")
+    else:
+         print(f"[WARNING] Failed to enable {new_name}. Manual activation may be required.")
+except Exception as e:
+    print(f"[ERROR] Registry activation failure: {e}")
 
 # Save preferences only if we disabled old ones
 if any(name in bpy.context.preferences.addons for name in old_names):

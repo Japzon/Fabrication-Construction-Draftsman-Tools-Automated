@@ -26,6 +26,8 @@ ADDON_NAME = "fabrication_construction_draftsman_tools"
 OLD_ADDON_NAMES = [
     "Fabrication_Construction_Draftsman_Tools_Blender_Addon",
     "Fabrication-Construction-Draftsman-Tools-Blender-Addon",
+    "Fabrication-Construction-Draftsman-Tools-Blender-Addon-main",
+    "Fabrication-Construction-Draftsman-Tools-Blender-Addon-master",
     "fabrication_construction_draftsman_tools_automated", 
     "auto_robot_cnc_dev_kit"
 ]
@@ -83,16 +85,10 @@ def setup_dev():
         print("\n[ERROR] APPDATA environment variable not found!")
         return False
         
-    # Blender 4.2+ uses 'extensions/blender_org' for localized extensions, but 'scripts/addons' still works for legacy.
-    # To resolve 'Sync required' and loading errors, we'll target the extensions directory if available.
-    if version_float >= 4.2:
-        # AI Editor Note: Using 'user_default' instead of 'blender_org' for local dev.
-        # This prevents the "Sync required" errors from the official repository manager.
-        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "extensions", "user_default")
-        legacy_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
-    else:
-        addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
-        legacy_dir = None
+    # AI Editor Note: This project is a LEGACY ADDON (no blender_manifest.toml).
+    # We must install it in 'scripts/addons' even on Blender 4.2+, otherwise it won't be seen.
+    addons_dir = os.path.join(appdata, "Blender Foundation", "Blender", version, "scripts", "addons")
+    legacy_dir = None
 
     target_dir = os.path.join(addons_dir, ADDON_NAME)
     

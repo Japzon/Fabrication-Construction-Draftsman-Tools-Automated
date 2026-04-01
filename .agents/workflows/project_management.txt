@@ -1,4 +1,5 @@
 Fabrication & Construction Draftsman Tools Blender Addon - AI Agent Update Workflow
+Last Update Verification: April 01, 2026 - 12:31 PM
 
 This workflow is the absolute source of truth for AI agents interacting with this repository: https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon.git
 Follow these exact, descriptive steps meticulously to robustly update or create new features, preserving the addon's unique framework and preventing major structural or memory errors across future Blender 4.5.6 LTS updates.
@@ -14,7 +15,7 @@ Category Index: {
 5.  Procedural Safety Limitations
 6.  Code Skeleton Standards (generators.py)
 7.  Naming Transition & Extension Compliance
-8.  Current Session Tasks Log (Mandatory)
+8.  Current Session Tasks Log
 }
 
 1. Strict Operational Protocols
@@ -22,6 +23,8 @@ Category Index: {
 * Prioritize High-Density Information: Substantially bypass conversational filler and pleasantries. Prioritize comprehensive checklists, provide compact summaries of modifications, and output code with clear inline documentation to ensure rapid comprehension.
 * Interpret Task Syntax Accurately: Respect the user's specific punctuation-based task syntax. A period followed by a comma (.,) indicates a completely new, isolated task. A single period (.) indicates a direct continuation or sub-step of the previously stated objective.
 * Ensure 4.5.6 LTS Compliance: All Python code must strictly adhere to the Blender 4.5.6 LTS API. You must utilize modern type hinting (e.g., bpy.types.Object), explicitly manage BMesh memory, and ensure proper bpy.context passing, as implicit context evaluation is deprecated and unstable.
+* Delete One-Time Execution Files After Successful Completion (Mandatory): Any temporary helper scripts created solely to execute a patch, migration, or one-time data transformation (e.g., patch_*.py, fix_*.py, migrate_*.py placed in _dev/) must be deleted immediately after the task they were created for has been verified as successfully completed. Leaving these files in the repository constitutes permanent clutter and must never be done.
+* Preserve User Context (Mandatory): Operators launched from Edit Mode must return the user to Edit Mode upon completion (unless the feature's core logic explicitly dictates otherwise). Capture and restore the initial mode (e.g., `initial_mode = context.mode`) to prevent disruptive mode switches during modeling workflows.
 
 2. Literal Naming Constraints and Structure Enforcement
 * Avoid Generic Variable Reuse: The codebase strictly prohibits generic variable reuse (e.g., using radius for gears, wheels, and springs) to prevent cross-contamination of parametric data. Use uncompromising, literal naming.
@@ -106,4 +109,7 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * Mandatory Folder Name (in AppData/Extensions): fabrication_construction_draftsman_tools
 * All internal references must be updated to the new module name to prevent "Inconsistent name mismatch" errors during registration.
 
-8. Current Session Tasks Log (Mandatory)
+8. Current Session Tasks Log
+* [VERIFIED - FINAL] Parametric Anchor Mode Stability: Implemented absolute mode restoration checking for "EDIT" substring in the `finally` block of `operators.py`.
+* [VERIFIED] Added mandatory `[FCD v1.0.4]` status bar prefix to operators.
+* [VERIFIED] Suppression of 'Missing Add-ons' Alert: Updated `dev_tool.py` and `_dev/cleanup_addons.py` to recursively purge the GitHub-appended `-main` and `-master` variations of the addon from the registry.

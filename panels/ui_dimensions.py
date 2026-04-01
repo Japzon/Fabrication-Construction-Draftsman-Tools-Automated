@@ -14,8 +14,11 @@ from . import ui_common
 class FCD_PT_Dimensions_And_Precision_Transforms:
     """
     Dimensions & Precision Transforms panel.
-    Generates parametric mesh-based dimension displays from selected object bounding boxes,
-    and provides accurate scaling/transform tools for drafting precision.
+    Generates parametric mesh-based dimension displays. In Object Mode, measures between
+    selected object bounding box centers. In Edit Mode, automatically attaches Parametric
+    Anchor hooks at each selection group's center, then generates the dimension between
+    those hooks — no vertex-parenting required.
+    Provides accurate scaling/transform tools for drafting precision.
     """
 
     @classmethod
@@ -67,7 +70,7 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
             dim_toolkit_box = box.box()
             dim_toolkit_box.label(text="Dimension Generator & Properties", icon='DRIVER_DISTANCE')
             col = dim_toolkit_box.column(align=True)
-            col.operator("fcd.add_dimension", text="Generate Dimension (Object Mode)", icon='ADD')
+            col.operator("fcd.add_dimension", text="Generate Dimension", icon='ADD')
             
             # --- Remove Selected Dimension ---
             active_obj = context.active_object

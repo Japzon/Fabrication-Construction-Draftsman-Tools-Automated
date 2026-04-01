@@ -2004,6 +2004,48 @@ class FCD_OT_AddBoolean(bpy.types.Operator):
         self.report({'INFO'}, f"Added {len(selected)} boolean modifier(s) to '{active.name}'.")
         return {'FINISHED'}
 
+def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='SPHERE'):
+    """
+    Creates a Parametric Hook anchor at the world-space center of the provided vertex indices.
+    Uses hook_reset to ensure the mesh does not warp when the modifier is bound.
+    Expects context to be in OBJECT mode.
+    """
+    import mathutils
+    
+    mw = mesh_obj.matrix_world
+    coords = [mw @ mesh_obj.data.vertices[i].co.copy() for i in vert_indices]
+    if not coords:
+        return None
+    
+    world_center = sum(coords, mathutils.Vector()) / len(coords)
+    
+    # 1. Create Empty
+    empty = bpy.data.objects.new(f"{name_prefix}_{mesh_obj.name}", None)
+    empty.location = world_center
+    empty.empty_display_type = display_type
+    empty.empty_display_size = display_size
+    empty["fcd_anchor"] = True
+    context.scene.collection.objects.link(empty)
+    
+    # 2. Setup Vertex Group
+    vg_name = f"VG_{empty.name}"
+    vg = mesh_obj.vertex_groups.new(name=vg_name)
+    vg.add(vert_indices, 1.0, 'REPLACE')
+    
+    # 3. Setup Modifier
+    mod = mesh_obj.modifiers.new(name="HookAnchor", type='HOOK')
+    mod.object = empty
+    mod.vertex_group = vg_name
+    
+    # Ensure matrix data is fresh after location set
+    context.view_layer.update()
+    
+    # 4. Neutralize Binding (Prevent Warping)
+    # The correct inverse matrix for a hook is the relative transform from mesh to empty.
+    mod.matrix_inverse = empty.matrix_world.inverted() @ mesh_obj.matrix_world
+    
+    return empty
+
 class FCD_OT_AddParametricAnchor(bpy.types.Operator):
     """Creates an Empty object and adds a Hook modifier to the selected mesh elements"""
     bl_idname = "fcd.add_parametric_anchor"
@@ -2015,74 +2057,93 @@ class FCD_OT_AddParametricAnchor(bpy.types.Operator):
         return context.active_object and context.active_object.type == 'MESH'
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        obj = context.active_object
+        initial_mode = context.mode
+        initial_active = context.view_layer.objects.active
+        scene = context.scene
+        obj = initial_active
         if not obj or obj.type != 'MESH':
+            self.report({'WARNING'}, "Requires an active Mesh object.")
             return {'CANCELLED'}
-        
-        unit_scale = context.scene.unit_settings.scale_length
-        s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-        
-        # Get selection center
-        if context.mode == 'EDIT_MESH':
-            bm = bmesh.from_edit_mesh(obj.data)
-            selected_verts = [v for v in bm.verts if v.select]
-            if not selected_verts:
-                self.report({'WARNING'}, "No vertices/edges/faces selected.")
-                return {'CANCELLED'}
-        else:
-            # Object Mode: use bounding box center of active object
-            selected_verts = obj.data.vertices
-            center = sum((v.co for v in selected_verts), mathutils.Vector()) / len(selected_verts)
-            world_center = obj.matrix_world @ center
+        active_name = obj.name
             
-        if context.mode == 'EDIT_MESH':
-            center = sum((v.co for v in selected_verts), mathutils.Vector()) / len(selected_verts)
-            # Transform to world space
-            world_center = obj.matrix_world @ center
-            # Switch to Object Mode to create Empty and VG
-            bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Create Empty (Hook visualization)
-        empty = bpy.data.objects.new(f"Hook_{obj.name}", None)
-        empty.location = world_center
-        empty.empty_display_type = 'CUBE'
-        empty.empty_display_size = 0.05 * s
-        context.collection.objects.link(empty)
-        
-        # Create Vertex Group for the selection
-        # This is crucial for the "Apply Transforms" placement logic to work later
-        vg_name = f"Hook_Group_{empty.name}"
-        vg = obj.vertex_groups.new(name=vg_name)
-        
-        # Assign selected vertices to the group
-        selected_indices = [v.index for v in obj.data.vertices if v.select]
-        if selected_indices:
-            vg.add(selected_indices, 1.0, 'REPLACE')
-        
-        # Add Hook Modifier manually to ensure VG usage
-        mod = obj.modifiers.new(name="Hook", type='HOOK')
-        mod.object = empty
-        mod.vertex_group = vg_name
-        
-        # Reset Hook to bind correctly to the current relative positions
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='DESELECT')
-        
-        # Select vertices via VG to ensure correct reset context
-        obj.vertex_groups.active_index = vg.index
-        bpy.ops.object.vertex_group_select()
-        
-        bpy.ops.object.hook_reset(modifier=mod.name)
-        
-        # Return to Object Mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Select the Empty for immediate manipulation
-        bpy.ops.object.select_all(action='DESELECT')
-        empty.select_set(True)
-        context.view_layer.objects.active = empty
-        
-        self.report({'INFO'}, f"Attached Hook '{empty.name}' to selection")
+        try:
+            # Scale normalization
+            unit_scale = scene.unit_settings.scale_length
+            s = 1.0 / unit_scale if unit_scale > 0 else 1.0
+            
+            targets = [o for o in context.selected_objects if o.type == 'MESH']
+            if not targets:
+                if obj and obj.type == 'MESH': targets = [obj]
+                else:
+                    self.report({'WARNING'}, "Action requires selected Mesh object(s).")
+                    return {'CANCELLED'}
+
+            all_indices = {} # Mapping obj -> list of indices
+            
+            # --- Collection Phase ---
+            for target in targets:
+                if initial_mode.startswith('EDIT'):
+                    bm = bmesh.from_edit_mesh(target.data)
+                    bm.verts.ensure_lookup_table()
+                    sel = [v for v in bm.verts if v.select]
+                    if sel:
+                        all_indices[target] = [v.index for v in sel]
+                    bmesh.update_edit_mesh(target.data)
+                else:
+                    all_indices[target] = [v.index for v in target.data.vertices]
+            
+            if not all_indices:
+                self.report({'WARNING'}, "No selection found on objects.")
+                return {'CANCELLED'}
+
+            # --- Transient Context Transition (USER ESCAPE) ---
+            if initial_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            # --- Generation & Assignment Phase ---
+            # Using the helper function for consolidated, non-warping logic
+            empty = None
+            for target, indices in all_indices.items():
+                res = create_hook_anchor(context, target, indices, display_size=0.05*s)
+                if not empty: empty = res # Track the first for status reporting
+            
+            if not empty:
+                self.report({'ERROR'}, "Failed to generate anchors.")
+                return {'CANCELLED'}
+                
+            self.report({'INFO'}, f"[FCD v1.0.8] Hook Attached. Workspace Restored: {context.mode}")
+            
+        except Exception as e:
+            self.report({'ERROR'}, f"Hook System Failure: {str(e)}")
+            return {'CANCELLED'}
+            
+        finally:
+            # --- Categorical Mode Restoration (USER PRIORITY) ---
+            if active_name in bpy.data.objects:
+                target_obj = bpy.data.objects[active_name]
+                
+                # 2. State Prep for Mode Set
+                if context.view_layer.objects.active != target_obj:
+                    context.view_layer.objects.active = target_obj
+                target_obj.select_set(True)
+                
+                # 3. Aggressive Restoration
+                # Check for any 'EDIT' flavor (EDIT_MESH, EDIT_CURVE, etc.)
+                if initial_mode and "EDIT" in initial_mode:
+                    if context.mode != initial_mode:
+                        try:
+                            bpy.ops.object.mode_set(mode='EDIT')
+                        except:
+                            pass
+                elif initial_mode == 'OBJECT':
+                    if context.mode != 'OBJECT':
+                        try:
+                            bpy.ops.object.mode_set(mode='OBJECT')
+                        except:
+                            pass
+            
+            self.report({'INFO'}, f"[FCD v1.0.8] Hook Attached. Workspace Restored: {context.mode}")
+            
         return {'FINISHED'}
 
 class FCD_OT_AddMarker(bpy.types.Operator):
@@ -2096,65 +2157,97 @@ class FCD_OT_AddMarker(bpy.types.Operator):
         return context.active_object and context.active_object.type == 'MESH'
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            return {'CANCELLED'}
+        # --- Context Store ---
+        initial_mode = context.mode
+        initial_active = context.view_layer.objects.active
+        obj = initial_active
         
-        if context.mode == 'EDIT_MESH':
-            # --- AI Editor Note: Ensure Vertex Mode ---
-            bpy.ops.mesh.select_mode(type='VERT')
-            bm = bmesh.from_edit_mesh(obj.data)
-            bm.verts.ensure_lookup_table()
-            selected_indices = [v.index for v in bm.verts if v.select]
-            if not selected_indices:
+        if not obj or obj.type != 'MESH':
+            self.report({'WARNING'}, "Requires an active Mesh object.")
+            return {'CANCELLED'}
+        active_name = obj.name
+        
+        try:
+            targets = [o for o in context.selected_objects if o.type == 'MESH']
+            if not targets:
+                if obj and obj.type == 'MESH': targets = [obj]
+                else: return {'CANCELLED'}
+
+            created_count = 0
+            created_empties = []
+            
+            # --- Transient Context Transition (USER ESCAPE) ---
+            # Vertex parenting via API is more stable when the host mesh is in Object Mode.
+            if initial_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            for target in targets:
+                if initial_mode.startswith('EDIT'):
+                    bm = bmesh.from_edit_mesh(target.data)
+                    bm.verts.ensure_lookup_table()
+                    indices = [v.index for v in bm.verts if v.select]
+                    mw = target.matrix_world
+                    
+                    for idx in indices:
+                        v_co = mw @ bm.verts[idx].co
+                        empty = bpy.data.objects.new(f"Marker_{target.name}_{idx}", None)
+                        empty.empty_display_type = 'PLAIN_AXES'
+                        empty.empty_display_size = 0.1
+                        
+                        empty.parent = target
+                        empty.parent_type = 'VERTEX'
+                        empty.parent_vertices = (idx, 0, 0)
+                        empty.location = (0, 0, 0)
+                        empty["fcd_anchor"] = True
+                        
+                        created_empties.append(empty)
+                        created_count += 1
+                    
+                    bmesh.update_edit_mesh(target.data)
+                else:
+                    for idx in range(len(target.data.vertices)):
+                        empty = bpy.data.objects.new(f"Marker_{target.name}_{idx}", None)
+                        empty.empty_display_type = 'PLAIN_AXES'
+                        empty.empty_display_size = 0.1
+                        empty.parent = target
+                        empty.parent_type = 'VERTEX'
+                        empty.parent_vertices = (idx, 0, 0)
+                        empty.location = (0, 0, 0)
+                        empty["fcd_anchor"] = True
+                        created_empties.append(empty)
+                        created_count += 1
+            
+            if not created_empties:
                 self.report({'WARNING'}, "No vertices selected.")
                 return {'CANCELLED'}
-            bpy.ops.object.mode_set(mode='OBJECT')
-        else:
-            # Object Mode: use all vertices (marker per vertex) or just the origin?
-            # User expectation for "marker at vertex" in object mode usually implies ALL vertices
-            # but that might be explosive. Let's stick to the active object's vertices.
-            selected_indices = [v.index for v in obj.data.vertices]
-            if not selected_indices:
-                self.report({'WARNING'}, "Object has no vertices.")
-                return {'CANCELLED'}
-        
-        created_count = 0
-        created_empties = []
-        
-        for idx in selected_indices:
-            # Create Empty
-            empty = bpy.data.objects.new(f"Marker_{obj.name}_{idx}", None)
-            empty.empty_display_type = 'PLAIN_AXES' # AI Editor Note: Changed to PLAIN_AXES per request
-            empty.empty_display_size = 0.1
-            context.collection.objects.link(empty)
             
-            # Parent to specific vertex using native API
-            empty.parent = obj
-            empty.parent_type = 'VERTEX'
-            empty.parent_vertices = (idx, 0, 0)
+        except Exception as e:
+            self.report({'ERROR'}, f"Marker failure: {e}")
+            return {'CANCELLED'}
+        finally:
+            # --- Categorical Mode Restoration (USER PRIORITY) ---
+            if active_name in bpy.data.objects:
+                target_obj = bpy.data.objects[active_name]
+                
+                if context.view_layer.objects.active != target_obj:
+                    context.view_layer.objects.active = target_obj
+                target_obj.select_set(True)
+                
+                if initial_mode and "EDIT" in initial_mode:
+                    if context.mode != initial_mode:
+                        try:
+                            bpy.ops.object.mode_set(mode='EDIT')
+                        except:
+                            pass
+                elif initial_mode == 'OBJECT':
+                    if context.mode != 'OBJECT':
+                        try:
+                            bpy.ops.object.mode_set(mode='OBJECT')
+                        except:
+                            pass
             
-            # AI Editor Note: Reset location to (0,0,0) to snap exactly to the parent vertex.
-            # When parented to a vertex, local (0,0,0) is the vertex position.
-            empty.location = (0, 0, 0)
-            
-            created_empties.append(empty)
-            created_count += 1
-        
-        # Finalize selection
-        bpy.ops.object.select_all(action='DESELECT')
-        
-        # Select all created markers for convenience
-        for e in created_empties:
-            e.select_set(True)
-            
-        if created_empties:
-            context.view_layer.objects.active = created_empties[-1]
-        else:
-            obj.select_set(True)
-            context.view_layer.objects.active = obj
-        
-        self.report({'INFO'}, f"Attached {created_count} Markers to vertices")
+            self.report({'INFO'}, f"[FCD v1.0.8] Markers Attached. Workspace Restored: {context.mode}")
+                            
         return {'FINISHED'}
 
 class FCD_OT_ToggleHookPlacement(bpy.types.Operator):
@@ -2286,47 +2379,70 @@ class FCD_OT_CleanupAnchor(bpy.types.Operator):
         return context.selected_objects
 
     def execute(self, context: bpy.types.Context) -> Set[str]:
-        # Collect all Empties from selection (Hooks/Markers)
-        empties = [o for o in context.selected_objects if o.type == 'EMPTY']
+        # Implementation Note: Recursive cleanup ensures that selecting a MESH
+        # will purge all of its associated FCD parametric anchors and markers.
+        # Selecting an anchor Empty directly will purge it universally.
         
-        # Fallback to active object if no empties selected but active is empty
-        if not empties and context.active_object and context.active_object.type == 'EMPTY':
-            empties = [context.active_object]
+        targets = context.selected_objects
+        if not targets:
+            targets = [context.active_object] if context.active_object else []
             
-        if not empties:
-            self.report({'WARNING'}, "No hooks/markers (Empties) selected.")
+        all_anchors = set()
+        
+        # Robust Identification: Matches our creation pattern
+        def is_fcd_anchor(o):
+            return o.get("fcd_anchor") or o.name.startswith(("Hook_", "Marker_"))
+
+        # Phase 1: Harvesting hooks/markers from selection
+        for o in targets:
+            if o.type == 'EMPTY' and is_fcd_anchor(o):
+                all_anchors.add(o)
+            elif o.type == 'MESH':
+                # Deep scan for attached Hooks
+                for mod in o.modifiers:
+                    if mod.type == 'HOOK' and mod.object:
+                        if is_fcd_anchor(mod.object):
+                            all_anchors.add(mod.object)
+                # Deep scan for attached Markers (children)
+                for child in o.children:
+                    if child.type == 'EMPTY' and is_fcd_anchor(child):
+                        # Vertex parenting is the primary indicator for FCD markers
+                        if child.parent_type == 'VERTEX' or child.name.startswith("Marker_"):
+                            all_anchors.add(child)
+
+        if not all_anchors:
+            self.report({'WARNING'}, "No FCD hooks or markers found in selection.")
             return {'CANCELLED'}
 
         cleaned_count = 0
         
-        for empty in empties:
-            # 1. Find meshes affected by this anchor (Hook Modifier)
-            meshes_to_clean = []
-            for obj in context.scene.objects:
-                if obj.type == 'MESH':
-                    for mod in obj.modifiers:
-                        if mod.type == 'HOOK' and mod.object == empty:
-                            meshes_to_clean.append((obj, mod))
-            
-            # 2. Clean up meshes
-            for obj, mod in meshes_to_clean:
-                vg_name = mod.vertex_group
-                try:
-                    obj.modifiers.remove(mod)
-                except:
-                    pass
-                
-                # Remove Vertex Group if it exists
-                if vg_name:
-                    vg = obj.vertex_groups.get(vg_name)
-                    if vg:
-                        obj.vertex_groups.remove(vg)
-            
-            # 3. Delete the Empty
-            bpy.data.objects.remove(empty, do_unlink=True)
-            cleaned_count += 1
+        # Phase 2: Systematic Purge
+        # Pre-collection of MESH objects to optimize universal cleanup
+        scene_meshes = [obj for obj in context.scene.objects if obj.type == 'MESH']
         
-        self.report({'INFO'}, f"Removed {cleaned_count} hooks/markers.")
+        for empty in all_anchors:
+            for obj in scene_meshes:
+                # 1. Clean up Hook Modifiers
+                mods_to_remove = [m for m in obj.modifiers if m.type == 'HOOK' and m.object == empty]
+                for mod in mods_to_remove:
+                    vg_name = mod.vertex_group
+                    try:
+                        obj.modifiers.remove(mod)
+                        # 2. Cleanup associated Vertex Group
+                        if vg_name and vg_name in obj.vertex_groups:
+                            vg = obj.vertex_groups.get(vg_name)
+                            if vg: obj.vertex_groups.remove(vg)
+                    except Exception as e:
+                        print(f"Cleanup non-critical error: {e}")
+            
+            # 3. Terminate the Empty
+            try:
+                bpy.data.objects.remove(empty, do_unlink=True)
+                cleaned_count += 1
+            except:
+                pass
+        
+        self.report({'INFO'}, f"Purged {cleaned_count} FCD parametric hooks/markers.")
         return {'FINISHED'}
 
 class FCD_OT_BakeAnchor(bpy.types.Operator):
@@ -2700,9 +2816,14 @@ class FCD_OT_Remove_Dimension(bpy.types.Operator):
 
 
 class FCD_OT_Add_Dimension(bpy.types.Operator):
-    """First selected is the static point, second selected is the variable point."""
+    """
+    Generate a parametric dimension between two points.
+    In Object Mode: measures between bounding-box centers of selected objects.
+    In Edit Mode: attaches a Parametric Anchor hook to each selection group's center,
+    then generates the dimension between those hooks in Object Mode.
+    """
     bl_idname = "fcd.add_dimension"
-    bl_label = "Generate Dimension (Object Mode)"
+    bl_label = "Generate Dimension"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -2711,168 +2832,181 @@ class FCD_OT_Add_Dimension(bpy.types.Operator):
 
     def execute(self, context):
         from . import generators
-        is_edit = context.mode == 'EDIT_MESH'
+        initial_mode = context.mode
+        initial_active = context.active_object
         scene = context.scene
-        
-        p1, p2 = None, None
-        parent_a, parent_b = (None, 'OBJECT', 0), (None, 'OBJECT', 0)
-        
-        # --- 1. DATA CAPTURE (Iterating through all objects in the edit session) ---
-        if is_edit:
-             import bmesh
-             per_obj_data = [] # (obj, selection_center, parent_vert_index)
-             
-             # AI Editor Note: Mandatory sync before accessing Edit Mesh data
-             context.view_layer.update()
-             context.evaluated_depsgraph_get().update()
 
-             for obj in context.objects_in_mode:
-                  if obj.type == 'MESH':
-                       # FORCE SYNC: Briefly toggling mode is a known fix for stale vertex positions
-                       bpy.ops.object.mode_set(mode='OBJECT')
-                       obj.update_from_editmode()
-                       bpy.ops.object.mode_set(mode='EDIT')
-                       
-                       bm = bmesh.from_edit_mesh(obj.data)
-                       bm.verts.ensure_lookup_table()
-                       sel_verts = [v for v in bm.verts if v.select]
-                       
-                       if sel_verts:
-                            # AI Editor Note: Centering Fix - Average of ALL selected points on this specific part
-                            pts = [obj.matrix_world @ v.co.copy() for v in sel_verts]
-                            center = sum(pts, mathutils.Vector()) / len(pts)
-                            
-                            # Standard drafting: Parent to first selected member in history if possible
-                            # otherwise fall back to first in selection list.
-                            pvid = sel_verts[0].index
-                            hist_verts = [e for e in bm.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
-                            if hist_verts:
-                                pvid = hist_verts[0].index
+        try:
+            # ======================================================================
+            # EDIT MODE PATH — Hook-first, then dimension
+            # ======================================================================
+            if initial_mode == 'EDIT_MESH':
+                import bmesh
+                # --- Step 1: Capture selection in Edit Mode ---
+                per_obj_data = [] # (mesh_obj, world_center, [vert_indices])
+                for obj in context.objects_in_mode:
+                    if obj.type != 'MESH': continue
+                    bm = bmesh.from_edit_mesh(obj.data)
+                    bm.verts.ensure_lookup_table()
+                    sel_verts = [v for v in bm.verts if v.select]
+                    if not sel_verts: continue
+                    pts = [obj.matrix_world @ v.co.copy() for v in sel_verts]
+                    center = sum(pts, mathutils.Vector()) / len(pts)
+                    indices = [v.index for v in sel_verts]
+                    per_obj_data.append((obj, center.copy(), indices))
 
-                            per_obj_data.append((obj, center, pvid))
-             
-             if len(per_obj_data) >= 2:
-                  # Case A: Two separate objects have selections
-                  # Measure from center-to-center
-                  o2_candidate = context.active_object
-                  d2 = next((d for d in per_obj_data if d[0] == o2_candidate), per_obj_data[-1])
-                  d1 = next((d for d in per_obj_data if d != d2), per_obj_data[0])
-                  p1, p2 = d1[1], d2[1]
-                  parent_a = (d1[0], 'VERTEX', d1[2])
-                  parent_b = (d2[0], 'VERTEX', d2[2])
-             elif len(per_obj_data) == 1:
-                  # Case B: Only one object has selection (must use vertex-to-vertex order)
-                  obj, center, _ = per_obj_data[0]
-                  bm = bmesh.from_edit_mesh(obj.data)
-                  bm.verts.ensure_lookup_table()
-                  hist = [e for e in bm.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
-                  
-                  if len(hist) >= 2:
-                       # STRICT: Use specific selected parts (vertices)
-                       v1, v2 = hist[-2], hist[-1]
-                       p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
-                       parent_a = (obj, 'VERTEX', v1.index)
-                       parent_b = (obj, 'VERTEX', v2.index)
-                  else:
-                       v_sel = [v for v in bm.verts if v.select]
-                       if len(v_sel) >= 2:
-                            # Fallback to selection list if history is unclear
-                            v1, v2 = v_sel[0], v_sel[-1]
-                            p1, p2 = obj.matrix_world @ v1.co.copy(), obj.matrix_world @ v2.co.copy()
-                            parent_a = (obj, 'VERTEX', v1.index)
-                            parent_b = (obj, 'VERTEX', v2.index)
-        
-        # Prevent Single-Object Edit Mode from spawning Bounding Boxes if history is invalid
-        if is_edit and (p1 is None or p2 is None):
-             self.report({'WARNING'}, "Please select at least two points sequentially in Edit Mode.")
-             return {'CANCELLED'}
-        
-        # AI Editor Note: BLENDER 4.5+ ULTIMATE PARENTING SYNC
-        # Pre-evaluating world coordinates from BMesh before mode switch.
-        if is_edit:
-             # Push all current Edit Mode changes to the Mesh data
-             for o in context.objects_in_mode:
-                  if o.type == 'MESH':
-                       o.update_from_editmode()
-             context.view_layer.update()
-             context.evaluated_depsgraph_get().update()
-             
-        elif not is_edit:
-             sel = context.selected_objects
-             # Ignore existing dimension parts
-             valid_sel = [o for o in sel if not o.get("fcd_is_dimension_anchor") and not o.get("fcd_is_dimension")]
-             if len(valid_sel) >= 2:
-                  def get_obj_center(o):
-                      pts = [o.matrix_world @ mathutils.Vector(b) for b in o.bound_box]
-                      return sum(pts, mathutils.Vector()) / 8
-                  
-                  o2 = context.active_object if context.active_object in valid_sel else valid_sel[-1]
-                  o1 = next((o for o in valid_sel if o != o2), valid_sel[0])
-                  
-                  # AI Editor Note: Explicitly evaluate centers in World Space
-                  context.view_layer.update()
-                  p1 = get_obj_center(o1).copy()
-                  p2 = get_obj_center(o2).copy()
-                  parent_a, parent_b = (o1, 'OBJECT', 0), (o2, 'OBJECT', 0)
-        
-        # --- 2. GENERATION (Deselect all to prevent bleeding) ---
-        if p1 is not None and p2 is not None:
-             # Ensure depsgraph evaluation before mode switch if we're coming from edit mode
-             if context.mode != 'OBJECT':
-                  # Pass 1: Flush Edit Mode data to the mesh
-                  context.view_layer.update()
-                  bpy.ops.object.mode_set(mode='OBJECT')
-                  
-                  # Pass 2: Forced scene-wide refresh
-                  for o in context.scene.objects:
-                       if o.type == 'MESH':
-                            o.update_tag()
-                  
-                  # Hard Global Sync
-                  context.view_layer.update()
-                  context.evaluated_depsgraph_get().update()
-                  context.view_layer.update()
-                  
-                  # Final verification update
-                  context.view_layer.update()
-             
-             bpy.ops.object.select_all(action='DESELECT')
-             generators.generate_smart_dimension_parametric(context, p1, p2, parent_a=parent_a, parent_b=parent_b)
-             return {'FINISHED'}
+                if not per_obj_data:
+                    self.report({'WARNING'}, "No vertices selected.")
+                    return {'CANCELLED'}
 
-        # --- 2. FALLBACK: Bounding Box (Single Selection) ---
-        obj = context.active_object
-        if obj.type != 'MESH':
-            self.report({'WARNING'}, "Single object selection requires a Mesh for bounding box measurement.")
+                anchor_spec = [] # (mesh_obj, [vert_indices], world_point)
+                if len(per_obj_data) >= 2:
+                    # Multiple objects: pick two for the dimension
+                    o2c = initial_active
+                    d2 = next((d for d in per_obj_data if d[0] == o2c), per_obj_data[-1])
+                    d1 = next((d for d in per_obj_data if d != d2), per_obj_data[0])
+                    anchor_spec.append((d1[0], d1[2], d1[1]))
+                    anchor_spec.append((d2[0], d2[2], d2[1]))
+                else:
+                    # Single object: pick two vertices
+                    obj0, center0, indices0 = per_obj_data[0]
+                    bm0 = bmesh.from_edit_mesh(obj0.data)
+                    bm0.verts.ensure_lookup_table()
+                    # Try select history first
+                    hist = [e for e in bm0.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
+                    v1, v2 = (hist[-2], hist[-1]) if len(hist) >= 2 else (None, None)
+                    if not v1 or not v2:
+                        v_sel = [v for v in bm0.verts if v.select]
+                        if len(v_sel) >= 2: v1, v2 = v_sel[0], v_sel[-1]
+                    
+                    if not v1 or not v2:
+                        self.report({'WARNING'}, "Select at least 2 vertices.")
+                        return {'CANCELLED'}
+                    anchor_spec.append((obj0, [v1.index], obj0.matrix_world @ v1.co.copy()))
+                    anchor_spec.append((obj0, [v2.index], obj0.matrix_world @ v2.co.copy()))
+
+                # --- STEP 1.5: Workspace Transition (MANDATORY for creation) ---
+                # Vertex group assignment and Hook reset require Object Mode.
+                if context.mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+
+                # --- Step 2: Process anchors (Consolidated Workflow) ---
+                # We use the same helper as the standard Attach Hook feature
+                # to guarantee consistency and non-warping behavior.
+                hook_empties = []
+                for mesh_obj, vert_indices, world_point in anchor_spec:
+                    empty = create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook_Dim", display_type='CUBE')
+                    if empty:
+                        hook_empties.append((empty, world_point))
+
+                if len(hook_empties) < 2:
+                    self.report({'ERROR'}, "Failed to create anchor hooks.")
+                    return {'CANCELLED'}
+
+                # --- Step 3: Generate Dimension ---
+                hook_a_obj, p1 = hook_empties[0]
+                hook_b_obj, p2 = hook_empties[1]
+                
+                # Dim creation must happen in Object Mode
+                if context.mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.select_all(action='DESELECT')
+                
+                generators.generate_smart_dimension_parametric(
+                    context, p1, p2, 
+                    parent_a=(hook_a_obj, 'OBJECT', 0), 
+                    parent_b=(hook_b_obj, 'OBJECT', 0))
+                
+                return {'FINISHED'}
+
+            # ======================================================================
+            # OBJECT MODE PATH — measure between centers of two objects
+            # ======================================================================
+            p1, p2 = None, None
+            parent_a, parent_b = (None, 'OBJECT', 0), (None, 'OBJECT', 0)
+
+            sel = context.selected_objects
+            valid_sel = [o for o in sel if not o.get("fcd_is_dimension_anchor") and not o.get("fcd_is_dimension")]
+
+            if len(valid_sel) >= 2:
+                o2 = context.view_layer.objects.active if context.view_layer.objects.active in valid_sel else valid_sel[-1]
+                o1 = next((o for o in valid_sel if o != o2), valid_sel[-2])
+                
+                # --- Attachment Phase (Sequential Anchor Generation) ---
+                # We create non-warping hooks for each object to serve as stable dimension points.
+                h1 = create_hook_anchor(context, o1, [v.index for v in o1.data.vertices], name_prefix="Hook_Dim_Obj")
+                h2 = create_hook_anchor(context, o2, [v.index for v in o2.data.vertices], name_prefix="Hook_Dim_Obj")
+                
+                if h1 and h2:
+                    p1 = h1.location.copy()
+                    p2 = h2.location.copy()
+                    parent_a = (h1, 'OBJECT', 0)
+                    parent_b = (h2, 'OBJECT', 0)
+
+            if p1 is not None and p2 is not None:
+                bpy.ops.object.select_all(action='DESELECT')
+                generators.generate_smart_dimension_parametric(context, p1, p2, parent_a=parent_a, parent_b=parent_b)
+                return {'FINISHED'}
+
+            # --- FALLBACK: Bounding Box on single active mesh ---
+            obj = initial_active
+            if not obj or obj.type != 'MESH':
+                self.report({'WARNING'}, "Select two objects or a mesh for BBox measurement.")
+                return {'CANCELLED'}
+
+            axis_pref = getattr(scene, 'fcd_dim_axis', 'ALL')
+            axes_to_gen = ['X', 'Y', 'Z'] if axis_pref == 'ALL' else [axis_pref]
+            offset_val = getattr(scene, 'fcd_dim_offset', 0.1)
+
+            bb_verts = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
+            xs = [v.x for v in bb_verts]; ys = [v.y for v in bb_verts]; zs = [v.z for v in bb_verts]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            min_z, max_z = min(zs), max(zs)
+            mid_x, mid_y = (min_x + max_x) / 2, (min_y + max_y) / 2
+
+            for ax in axes_to_gen:
+                if ax == 'X':
+                    p1 = mathutils.Vector((min_x, mid_y, max_z + offset_val))
+                    p2 = mathutils.Vector((max_x, mid_y, max_z + offset_val))
+                elif ax == 'Y':
+                    p1 = mathutils.Vector((mid_x, min_y, max_z + offset_val))
+                    p2 = mathutils.Vector((mid_x, max_y, max_z + offset_val))
+                else:
+                    p1 = mathutils.Vector((max_x + offset_val, mid_y, min_z))
+                    p2 = mathutils.Vector((max_x + offset_val, mid_y, max_z))
+                generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
+
+            return {'FINISHED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"Dimension failure: {e}")
             return {'CANCELLED'}
+        finally:
+            # --- Categorical Workspace Enforcement (FCD v1.0.6) ---
+            try:
+                if initial_active and initial_active.name in bpy.data.objects:
+                    target_obj = bpy.data.objects[initial_active.name]
+                    if context.view_layer.objects.active != target_obj:
+                        context.view_layer.objects.active = target_obj
+                    target_obj.select_set(True)
 
-        axis_pref = getattr(scene, 'fcd_dim_axis', 'ALL')
-        axes_to_gen = ['X', 'Y', 'Z'] if axis_pref == 'ALL' else [axis_pref]
-        offset = getattr(scene, 'fcd_dim_offset', 0.1)
-
-        # Get world-space bounding box
-        bb_verts = [obj.matrix_world @ mathutils.Vector(c) for c in obj.bound_box]
-        xs, ys, zs = [v.x for v in bb_verts], [v.y for v in bb_verts], [v.z for v in bb_verts]
-        min_x, max_x = min(xs), max(xs)
-        min_y, max_y = min(ys), max(ys)
-        min_z, max_z = min(zs), max(zs)
-        mid_x, mid_y, mid_z = (min_x + max_x)/2, (min_y + max_y)/2, (min_z + max_z)/2
-
-        for ax in axes_to_gen:
-            if ax == 'X':
-                p1 = mathutils.Vector((min_x, mid_y, max_z + offset))
-                p2 = mathutils.Vector((max_x, mid_y, max_z + offset))
-            elif ax == 'Y':
-                p1 = mathutils.Vector((mid_x, min_y, max_z + offset))
-                p2 = mathutils.Vector((mid_x, max_y, max_z + offset)) 
-            else: # Z
-                p1 = mathutils.Vector((max_x + offset, mid_y, min_z))
-                p2 = mathutils.Vector((max_x + offset, mid_y, max_z))
+                    if initial_mode and "EDIT" in initial_mode:
+                        if context.mode != initial_mode:
+                            try:
+                                bpy.ops.object.mode_set(mode='EDIT')
+                            except:
+                                pass
+                    elif initial_mode == 'OBJECT':
+                        if context.mode != 'OBJECT':
+                            try:
+                                bpy.ops.object.mode_set(mode='OBJECT')
+                            except:
+                                pass
+            except:
+                pass
             
-            generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
-
-        return {'FINISHED'}
-
+            self.report({'INFO'}, f"[FCD v1.0.8] Dimension Process Complete. Workspace Sync: {context.mode}")
 
 class FCD_OT_AddModifier(bpy.types.Operator):
     bl_idname = "fcd.add_parametric_mod"

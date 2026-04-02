@@ -104,7 +104,6 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
                 
                 # 'Length' allows for precise input of dimensions.
                 col.prop(dim_props, "length", text="Line Length")
-                col.operator("fcd.dimension_auto_scale", text="Auto Size Components", icon='AUTO')
                 
                 row2 = col.row(align=True)
                 row2.prop(dim_props, "arrow_scale", text="Arrow")
@@ -112,6 +111,8 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
                 
                 col.prop(dim_props, "line_thickness", text="Line Thickness")
                 col.prop(dim_props, "offset", text="Offset from Target")
+                col.operator("fcd.dimension_auto_scale", text="Auto Size Components", icon='AUTO')
+                
                 col.prop(dim_props, "is_flipped", text="Flip Target Roles")
                 col.prop(dim_props, "use_extension_lines", text="Use Extension Lines")
                 col.prop(dim_props, "text_color", text="Label Color")

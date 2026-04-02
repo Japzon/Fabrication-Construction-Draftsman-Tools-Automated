@@ -1066,7 +1066,16 @@ def update_arrow_settings(obj):
     else:
          offset_world_vec = offset_world_vec.normalized()
          
+    offset_local_dir = (mat_inv @ offset_world_vec)
+    
     offset_local_dir = (mat_inv @ offset_world_vec).normalized()
+    
+    # AI Editor Note: Logic Update (Parallelogram Drafting).
+    # Per user feedback, we no longer enforce Zero-Z. If the user aligns with 
+    # a world-axis that is not perpendicular to the line, we allow the 
+    # assembly to "slant" or "slide" as long as it aligns with the set axis.
+    # To prevent "pushing" or "overlap" artifacts, we must ensure END anchors 
+    # add the Z-offset to the length properly.
     
     # Compensation for Parent Scale:
     # If the root is parented to a scaled object, we must divide our children's 
@@ -1081,9 +1090,11 @@ def update_arrow_settings(obj):
         safe_divide(offset_local_dir.z * offset, rw_scale.z)
     ))
     
-    # Extension Leg Rotation: points from the line BACK to the points
-    ext_rot_offset_dir = offset_local_dir.copy()
-    ext_rot_euler = (-ext_rot_offset_dir).to_track_quat('Z', 'Y').to_euler()
+    # Extension Leg Rotation: points from the dimension line back to the target points.
+    # This vector is (-move_vec) in the assembly's local drafting space.
+    ext_rot_vec = (-move_vec)
+    ext_leg_length = ext_rot_vec.length
+    ext_rot_euler = (ext_rot_vec.normalized()).to_track_quat('Z', 'Y').to_euler()
     
     # Compensation for Parent Scale:
     # If the root is parented to a scaled object, we must divide our children's 
@@ -1108,14 +1119,10 @@ def update_arrow_settings(obj):
              child.scale = (safe_divide(arrow_s, rw_scale.x), safe_divide(arrow_s, rw_scale.y), safe_divide(arrow_s, rw_scale.z))
              child.location = move_vec.copy()
              if child.get("fcd_anchor_type") == "END":
-                  child.location.z = length
+                  child.location.z += length
             
         elif child.get("fcd_is_dimension_line"): # The Main Line
-            # AI Editor Note: User Request - Line should stay full length. 
-            # We remove the scaling clearance to ensure exact point-to-point spanning.
-            child.location.x = move_vec.x
-            child.location.y = move_vec.y
-            child.location.z = 0
+            child.location = move_vec.copy()
             child.scale = (safe_divide(line_t, rw_scale.x), safe_divide(line_t, rw_scale.y), safe_divide(length, rw_scale.z))
             child.rotation_euler = (0, 0, 0)
             
@@ -1128,21 +1135,17 @@ def update_arrow_settings(obj):
             child.scale.y = safe_divide(line_t * 0.9, rw_scale.y)
             child.location = move_vec.copy()
             if child.get("fcd_extension_type") == "END":
-                 child.location.z = length
+                 child.location.z += length
             
             child.rotation_euler = ext_rot_euler
-            child.scale.z = safe_divide(abs(offset), rw_scale.z)
+            child.scale.z = safe_divide(ext_leg_length, rw_scale.z)
             if child.scale.z < 0.001: child.scale.z = 0.001
-            
         elif child.get("fcd_is_dimension"): # The Label
             child.scale = (safe_divide(text_s, rw_scale.x), safe_divide(text_s, rw_scale.y), safe_divide(text_s, rw_scale.z))
-            text_clearance = offset_local_dir * (arrow_s * 0.2)
+            # The label should also move with the slanted offsets while staying centered
+            text_clearance = move_vec.normalized() * (arrow_s * 0.2)
             child.location = move_vec + text_clearance
-            
-            # --- Text Alignment Logic ---
-            # Standardized: Label stays at the center of the line.
-            # Alignment (Left/Center/Right) is applied to the Font Curve's align_x property.
-            child.location.z = length / 2
+            child.location.z += length / 2
             
             if hasattr(child.data, "align_x"):
                  child.data.align_x = dim_props.text_alignment

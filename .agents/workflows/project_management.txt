@@ -115,8 +115,8 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * [VERIFIED] Atomic Flip Protocol: Implemented multi-stage swap (Disable -> Reparent -> Bake -> Rebind) to guarantee 100% world-space placement isolation.
 * [VERIFIED] Dimension Root Matrix + Upside-Down + Mini-Form Triple Fix (generators.py): Standardized orientation basis and corrected arrow/label rotations. Added p1->p2 matrix tracking.
 * [VERIFIED] Properties & Preferences Sync: Resolved spawning and sidebar update bugs.
-* [VERIFIED] Text Alignment: Implemented native font alignment (Left/Center/Right) with centered label positioning.
-* [VERIFIED] Auto Size components: Replaced real-time toggle with a one-click operator and an 'Auto-Scale on Spawn' global preference to prevent processing overhead and crashes.
-* [VERIFIED] Absolute Drafting Units: Ensured full-length lines and scale-compensated offsets for parented assemblies.
-* [VERIFIED] Role Swap Stability: Fixed the `is_flipped` state-reset bug in the reconstructive flip protocol.
+* [VERIFIED] Text Alignment: Implemented native font alignment (Left/Center/Right).
+* [VERIFIED] Auto Size components: One-click operator and 'Auto-Scale on Spawn' preference.
+* [VERIFIED] Drafting Orthogonality: Enforced zero-Z offset vectors and orthogonal scaling to ensure legs remain strictly academic/technical in all offset directions, preventing 'push/overlap' artifacts.
+* [VERIFIED] Role Swap Stability: Fixed the state-reset bug in reconstructive flips.
 

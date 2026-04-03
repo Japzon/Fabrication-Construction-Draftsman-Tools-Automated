@@ -42,8 +42,7 @@ from .ui_dimensions import FCD_PT_Dimensions_And_Precision_Transforms
 from .ui_parametric import FCD_PT_Procedural_Toolkit
 from .ui_architectural import FCD_PT_Architectural_Presets
 from .ui_vehicle import FCD_PT_Vehicle_Presets
-from .ui_inertial import FCD_PT_Physics_Inertial
-from .ui_collision import FCD_PT_Physics_Collision
+from .ui_physics import FCD_PT_Physics
 from .ui_transmission import FCD_PT_Transmission
 from .ui_kinematics import FCD_PT_Kinematics_Setup
 from .ui_assets import FCD_PT_Asset_Library_System
@@ -77,8 +76,7 @@ class FCD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
             (FCD_PT_Lighting_And_Atmosphere, "fcd_order_lighting"),
             (FCD_PT_Kinematics_Setup, "fcd_order_kinematics"),
             (FCD_PT_Camera_Cinematography, "fcd_order_camera"),
-            (FCD_PT_Physics_Inertial, "fcd_order_inertial"),
-            (FCD_PT_Physics_Collision, "fcd_order_collision"),
+            (FCD_PT_Physics, "fcd_order_physics"),
             (FCD_PT_Transmission, "fcd_order_transmission"),
             (FCD_PT_Asset_Library_System, "fcd_order_assets"),
             (FCD_PT_Import_Export_System, "fcd_order_export"),

@@ -103,6 +103,83 @@ class FCD_OT_Add_Asset_Library(bpy.types.Operator):
         self.report({'INFO'}, f"Added and selected library: {name}")
         return {'FINISHED'}
 
+class FCD_OT_Generate_Collision_Mesh(bpy.types.Operator):
+    """
+    Duplicates selected mesh objects, renames them with 'COLL_', and hides them.
+    These objects are used as simplified collision geometry for physics simulations.
+    """
+    bl_idname = "fcd.generate_collision_mesh"
+    bl_label = "Generate Collision Mesh (Selected)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        # AI Editor Note: Only operate if there are mesh objects selected
+        return context.selected_objects and any(obj.type == 'MESH' for obj in context.selected_objects)
+
+    def execute(self, context):
+        # 1. Standard mode capture/restore
+        initial_mode = context.mode
+        if context.mode != 'OBJECT':
+             bpy.ops.object.mode_set(mode='OBJECT')
+
+        # 2. Ensure Collision Collection exists
+        col_name = COLLISION_COLLECTION_NAME
+        coll = bpy.data.collections.get(col_name)
+        if not coll:
+            coll = bpy.data.collections.new(col_name)
+            context.scene.collection.children.link(coll)
+        
+        selected = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        count = 0
+
+        for obj in selected:
+            # 3. Duplicate individual mesh or Reuse existing
+            coll_name = f"COLL_{obj.name}"
+            new_obj = bpy.data.objects.get(coll_name)
+            
+            # Verify if it is OUR collision mesh (parented to source)
+            if not new_obj or new_obj.parent != obj:
+                new_mesh = obj.data.copy()
+                new_obj = bpy.data.objects.new(coll_name, new_mesh)
+                # Copy world-space transform from original
+                new_obj.matrix_world = obj.matrix_world.copy()
+                # Link & Parent
+                coll.objects.link(new_obj)
+                new_obj.parent = obj
+                new_obj.matrix_parent_inverse = obj.matrix_world.inverted()
+                # Hide and Configure
+                new_obj.hide_set(True)
+                new_obj.hide_render = True
+                new_obj.display_type = 'WIRE'
+            else:
+                # If it already exists, just update its data if it's different 
+                # (Optional: for simplicity we just update modifiers here)
+                pass
+
+            # 4. Add/Update Simplification (Decimate)
+            mod_name = "FCD_Collision_Simplify"
+            dec_mod = new_obj.modifiers.get(mod_name)
+            if not dec_mod:
+                dec_mod = new_obj.modifiers.new(name=mod_name, type='DECIMATE')
+            
+            # Note: We determine the ratio from the original object's properties if available
+            ratio = 0.5
+            if hasattr(obj, "fcd_pg_mech_props"):
+                ratio = obj.fcd_pg_mech_props.collision.decimate_ratio
+            
+            dec_mod.ratio = ratio
+            
+            count += 1
+
+        # 7. Finalize Selection (keep original selected for further work)
+        # 8. Restore Mode
+        if context.mode != initial_mode:
+            bpy.ops.object.mode_set(mode=initial_mode)
+
+        self.report({'INFO'}, f"Generated {count} collision mesh(es) in '{col_name}'.")
+        return {'FINISHED'}
+
 class FCD_OT_Register_Asset_Catalog(bpy.types.Operator):
     """Creates a new catalog ID and folder in the selected library."""
     bl_idname = "fcd.register_asset_catalog"
@@ -2004,7 +2081,7 @@ class FCD_OT_AddBoolean(bpy.types.Operator):
         self.report({'INFO'}, f"Added {len(selected)} boolean modifier(s) to '{active.name}'.")
         return {'FINISHED'}
 
-def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='SPHERE'):
+def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='SINGLE_ARROW'):
     """
     Creates a Parametric Hook anchor at the world-space center of the provided vertex indices.
     Uses hook_reset to ensure the mesh does not warp when the modifier is bound.
@@ -2176,50 +2253,54 @@ class FCD_OT_AddMarker(bpy.types.Operator):
             created_count = 0
             created_empties = []
             
-            # --- Transient Context Transition (USER ESCAPE) ---
-            # Vertex parenting via API is more stable when the host mesh is in Object Mode.
-            if initial_mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
+            all_indices = {} # Mapping target_name -> list of indices
             
+            # --- Collection Phase (EDIT MODE EXCLUSIVE) ---
+            # Capture while in Edit mode before switching for parent assignment
             for target in targets:
                 if initial_mode.startswith('EDIT'):
                     bm = bmesh.from_edit_mesh(target.data)
                     bm.verts.ensure_lookup_table()
                     indices = [v.index for v in bm.verts if v.select]
-                    mw = target.matrix_world
-                    
-                    for idx in indices:
-                        v_co = mw @ bm.verts[idx].co
-                        empty = bpy.data.objects.new(f"Marker_{target.name}_{idx}", None)
-                        empty.empty_display_type = 'PLAIN_AXES'
-                        empty.empty_display_size = 0.1
-                        
-                        empty.parent = target
-                        empty.parent_type = 'VERTEX'
-                        empty.parent_vertices = (idx, 0, 0)
-                        empty.location = (0, 0, 0)
-                        empty["fcd_anchor"] = True
-                        
-                        created_empties.append(empty)
-                        created_count += 1
-                    
+                    if indices:
+                        all_indices[target.name] = indices
                     bmesh.update_edit_mesh(target.data)
                 else:
-                    for idx in range(len(target.data.vertices)):
-                        empty = bpy.data.objects.new(f"Marker_{target.name}_{idx}", None)
-                        empty.empty_display_type = 'PLAIN_AXES'
-                        empty.empty_display_size = 0.1
-                        empty.parent = target
-                        empty.parent_type = 'VERTEX'
-                        empty.parent_vertices = (idx, 0, 0)
-                        empty.location = (0, 0, 0)
-                        empty["fcd_anchor"] = True
-                        created_empties.append(empty)
-                        created_count += 1
+                    # In Object mode, collect all vertices
+                    all_indices[target.name] = [v.index for v in target.data.vertices]
             
-            if not created_empties:
-                self.report({'WARNING'}, "No vertices selected.")
+            if not all_indices:
+                self.report({'WARNING'}, "No vertices available/selected.")
                 return {'CANCELLED'}
+                
+            # --- Transient Context Transition (USER ESCAPE) ---
+            # Vertex parenting via API is more stable when the host mesh is in Object Mode.
+            if initial_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            for target_name, indices in all_indices.items():
+                target = bpy.data.objects.get(target_name)
+                if not target: continue
+                mw = target.matrix_world
+                
+                for idx in indices:
+                    # Safety check for index out of bounds
+                    if idx >= len(target.data.vertices): continue
+                    
+                    empty = bpy.data.objects.new(f"Marker_{target.name}_{idx}", None)
+                    empty.empty_display_type = 'PLAIN_AXES'
+                    empty.empty_display_size = 0.1
+                    
+                    # Core Binding Logic
+                    context.scene.collection.objects.link(empty)
+                    empty.parent = target
+                    empty.parent_type = 'VERTEX'
+                    empty.parent_vertices = (idx, 0, 0)
+                    empty.location = (0, 0, 0)
+                    empty["fcd_anchor"] = True
+                    
+                    created_empties.append(empty)
+                    created_count += 1
             
         except Exception as e:
             self.report({'ERROR'}, f"Marker failure: {e}")
@@ -6370,7 +6451,7 @@ class FCD_OT_Dimension_AutoScale(bpy.types.Operator):
 def register():
     CLASSES = [
         FCD_OT_Browse_Library, FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
-        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
+        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library, FCD_OT_Generate_Collision_Mesh,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
         FCD_OT_CalculateInertia, FCD_OT_BakeMesh, FCD_OT_ReadJointSettings, FCD_OT_ApplyJointSettings, 
@@ -6401,7 +6482,7 @@ def register():
 def unregister():
     CLASSES = [
         FCD_OT_Browse_Library, FCD_OT_CreateCamera, FCD_OT_Camera_Setup, FCD_OT_Camera_Look_Through,
-        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library,
+        FCD_OT_Open_Asset_Browser, FCD_OT_Register_Asset_Catalog, FCD_OT_Mark_And_Upload_Asset, FCD_OT_ImportToAssetCatalog, FCD_OT_Add_Asset_Library, FCD_OT_Generate_Collision_Mesh,
         FCD_OT_LightTarget, FCD_OT_ApplyToonShader, FCD_OT_GlobalToonSharpness, FCD_OT_ToonifySelectedLights, 
         FCD_OT_Execute_AI_Prompt, FCD_OT_SetJointType, FCD_OT_CalculateCenterOfMass, 
         FCD_OT_CalculateInertia, FCD_OT_BakeMesh, FCD_OT_ReadJointSettings, FCD_OT_ApplyJointSettings, 

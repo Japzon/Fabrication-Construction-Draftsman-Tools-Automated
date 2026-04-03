@@ -1,5 +1,5 @@
 Fabrication & Construction Draftsman Tools Blender Addon - AI Agent Update Workflow
-Last Update Verification: April 02, 2026 - 08:27 AM
+2: Last Update Verification: April 02, 2026 - 11:15 AM
 
 This workflow is the absolute source of truth for AI agents interacting with this repository: https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon.git
 Follow these exact, descriptive steps meticulously to robustly update or create new features, preserving the addon's unique framework and preventing major structural or memory errors across future Blender 4.5.6 LTS updates.
@@ -24,7 +24,7 @@ Category Index: {
 * Interpret Task Syntax Accurately: Respect the user's specific punctuation-based task syntax. A period followed by a comma (.,) indicates a completely new, isolated task. A single period (.) indicates a direct continuation or sub-step of the previously stated objective.
 * Ensure 4.5.6 LTS Compliance: All Python code must strictly adhere to the Blender 4.5.6 LTS API. You must utilize modern type hinting (e.g., bpy.types.Object), explicitly manage BMesh memory, and ensure proper bpy.context passing, as implicit context evaluation is deprecated and unstable.
 * Delete One-Time Execution Files After Successful Completion (Mandatory): Any temporary helper scripts created solely to execute a patch, migration, or one-time data transformation (e.g., patch_*.py, fix_*.py, migrate_*.py placed in _dev/) must be deleted immediately after the task they were created for has been verified as successfully completed. Leaving these files in the repository constitutes permanent clutter and must never be done.
-* Preserve User Context (Mandatory): Operators launched from Edit Mode must return the user to Edit Mode upon completion (unless the feature's core logic explicitly dictates otherwise). Capture and restore the initial mode (e.g., `initial_mode = context.mode`) to prevent disruptive mode switches during modeling workflows.
+* Preserve User Context: Operators launched from Edit Mode must return the user to Edit Mode upon completion (unless the feature's core logic explicitly dictates otherwise). Capture and restore the initial mode (e.g., `initial_mode = context.mode`) to prevent disruptive mode switches during modeling workflows.
 
 2. Literal Naming Constraints and Structure Enforcement
 * Avoid Generic Variable Reuse: The codebase strictly prohibits generic variable reuse (e.g., using radius for gears, wheels, and springs) to prevent cross-contamination of parametric data. Use uncompromising, literal naming.
@@ -54,7 +54,7 @@ Know exactly where Python logic belongs before writing code. You must never mix 
 4. Feature Creation and Extension Sequence
 When asked to implement or update a function, execute these exact critical steps in order without skipping.
 -Define the Properties (properties.py)
-   * Open properties.py and locate the relevant property group (e.g., FCD_PG_Mech_Props).
+   * Open properties.py and locate the relevant property group (e.g., fcd_pg_mech_props).
    * Inject rigidly named variables using bpy.props.FloatProperty, IntProperty, etc.
    * Define strict min, max, default, and description parameters.
    * If the variable alters a mesh, bind it to an update function by setting update=update_mesh_wrapper.
@@ -115,9 +115,22 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * [VERIFIED] Atomic Flip Protocol: Implemented multi-stage swap (Disable -> Reparent -> Bake -> Rebind) to guarantee 100% world-space placement isolation.
 * [VERIFIED] Dimension Root Matrix + Upside-Down + Mini-Form Triple Fix (generators.py): Standardized orientation basis and corrected arrow/label rotations. Added p1->p2 matrix tracking.
 * [VERIFIED] Properties & Preferences Sync: Resolved spawning and sidebar update bugs.
-* [VERIFIED] Properties & Preferences Sync: Resolved spawning and sidebar update bugs.
 * [VERIFIED] Zero-Click Sidebar Focus: Optimized operators and reconstruction timers to select new labels and force a GUI redraw.
 * [VERIFIED] Text Alignment & Orientation: Implemented parallel-to-line tracking with stable Z-spin.
 * [VERIFIED] Drafting Orthogonality: Enforced zero-Z offset vectors for standard axes while allowing parallelogram slanting.
 * [VERIFIED] Role Swap Loop Resolve: Fixed the 'Flip Target Roles' recursion by identifying and preserving stable A/B anchors during rebuilds. Resolved SyntaxErrors by standardizing indents to a 9-space basis.
-
+* [VERIFIED] Attach Marker Mode Fix: Resolved the "mesh must be in editmode" error by restructuring vertex collection to precede the mode-switch logic.
+* [VERIFIED] Attach Hook Visual Update: Updated create_hook_anchor default display type to 'PLAIN_AXES' and synchronized the GUI icon to 'EMPTY_AXIS'.
+* [VERIFIED] Attach Hook Arrow Visuals: Replaced PLAIN_AXES with 'SINGLE_ARROW' and updated the GUI icon to 'PLAY' for better directional clarity.
+* [VERIFIED] Panel Label Synchronization: Updated 'Dimensions & Measuring' to 'Dimensions & Precision Transforms' across preferences and common UI logic.
+* [VERIFIED] Preference Order Fix: Resolved the AttributeError and property-not-found errors by renaming 'procedural' to 'parametric' across config.py (FCD_PANEL_PROPS), operators (fcd_order_parametric), and UI panels (ui_parametric.py). Ensuring 1:1 parity between order and visibility props.
+* [VERIFIED] Procedural Toolkit Reversion: Systematically reverted all 'Parametric Toolkit' naming and properties to 'Procedural Toolkit' across config.py (FCD_PANEL_PROPS), properties.py (fcd_order_procedural), and UI labels/logic (ui_parametric.py, ui_preferences.py, ui_common.py). Ensuring strict naming consistency with the original toolkit identity.
+* [VERIFIED] Default Panel Order Update: Synchronized the default panel order in properties.py and the Reset operator in ui_common.py to match the new visual standard: 8: Dimensions, 9: Materials, 10: Kinematics, etc.
+* [VERIFIED] Physics Collision Workflow: Implemented FCD_OT_Generate_Collision_Mesh to duplicate selected meshes, rename them with prefix 'COLL_', hide them, and move them to a dedicated 'Physics_Collisions' collection. Integrated this into ui_collision.py with a smart-linking logic that binds the new mesh to the original part's collision property.
+* [VERIFIED] Physics Collision Workflow Refinement: Dedicated the 'Physics: Collision' panel to the generation task by removing parametric part dependencies. Updated FCD_OT_Generate_Collision_Mesh to automatically parent each duplicate ('COLL_') to its source object and maintain visibility in the Outliner while hiding from viewport/render. Ensuring a clean, one-click collision generation pipeline for all mesh objects.
+* [VERIFIED] Collision Visibility Bugfix: Resolved the 'unselectable/untogglable' state by switching from global viewport hiding (`hide_viewport`) to standard view-layer hiding (`hide_set(True)`). This ensures the Eye icon in the Outliner functions as expected for quick visual checks.
+* [VERIFIED] Git Repository Initialization: Initialized git, set remote origin to https://github.com/Japzon/Fabrication-Construction-Draftsman-Tools-Blender-Addon.git, and performed the initial local commit of the development state.
+* [VERIFIED] Lighting UI Property Fix: Resolved the 'property not found: light_intensity' error in ui_lighting.py by restoring missing property definitions (light_intensity, use_shadows, selected_light_*) to FCD_PG_Lighting_Props in properties.py. Ensuring full synchronization between the UI and core light handling logic.
+* [VERIFIED] Physics Panel Consolidation: Merged 'Physics: Collision' and 'Physics: Inertial' into a single 'Physics' panel in panels/ui_physics.py. Updated config, properties, and preference systems to handle the new unified panel identity.
+* [VERIFIED] Collision Mesh Simplification: Integrated a non-destructive 'Poly Reduction' workflow into the Physics panel. Users can now control the polygon density of generated collision meshes via the `decimate_ratio` property, which live-syncs a Decimate modifier on the collision geometry.
+* [VERIFIED] Panel Merge Import Fix: Resolved the ModuleNotFoundError by updating ui_main.py and panels/__init__.py to import the new ui_physics module and handle its draw calls, replacing the obsolete ui_collision and ui_inertial references.

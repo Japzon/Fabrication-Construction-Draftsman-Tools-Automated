@@ -26,6 +26,7 @@ NATIVE_SLINKY_MOD_NAME: str = f"{MOD_PREFIX}NativeSlinky"
 IK_CONSTRAINT_NAME: str = f"{MOD_PREFIX}IK"
 WIDGETS_COLLECTION_NAME: str = f"{MOD_PREFIX}Widgets"
 MECHANICAL_PARTS_COLLECTION_NAME: str = "Mechanical_Presets"
+COLLISION_COLLECTION_NAME: str = "Physics_Collisions"
 
 # --- Numerical Constants ---
 GEAR_BEVEL_TAPER_FACTOR: float = math.cos(math.radians(20))
@@ -45,8 +46,7 @@ FCD_PANEL_PROPS: List[str] = [
     "fcd_panel_enabled_dimensions", "fcd_show_panel_dimensions",
     "fcd_panel_enabled_ai_factory", "fcd_show_panel_ai_factory",
     "fcd_panel_enabled_kinematics", "fcd_show_panel_kinematics",
-    "fcd_panel_enabled_inertial", "fcd_show_panel_inertial",
-    "fcd_panel_enabled_collision", "fcd_show_panel_collision",
+    "fcd_panel_enabled_physics", "fcd_show_panel_physics",
     "fcd_panel_enabled_transmission", "fcd_show_panel_transmission",
     "fcd_panel_enabled_export", "fcd_show_panel_export",
     "fcd_panel_enabled_assets", "fcd_show_panel_assets",

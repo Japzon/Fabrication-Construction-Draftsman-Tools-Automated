@@ -47,7 +47,7 @@ class FCD_PT_Dimensions_And_Precision_Transforms:
             
             # AI Editor Note: Enabled for both Edit and Object modes to support per-vertex and per-object hooks.
             row_anchor = anchor_box.row(align=True)
-            row_anchor.operator("fcd.add_parametric_anchor", text="Attach Hook", icon='SPHERE')
+            row_anchor.operator("fcd.add_parametric_anchor", text="Attach Hook", icon='PLAY')
             row_anchor.operator("fcd.add_marker", text="Attach Marker", icon='EMPTY_AXIS')
 
             # Persistent Control for Anchor Transforms (regardless of initial selection)

@@ -21,8 +21,7 @@ from . import ui_dimensions
 from . import ui_architectural
 from . import ui_vehicle
 from . import ui_parametric
-from . import ui_inertial
-from . import ui_collision
+from . import ui_physics
 from . import ui_transmission
 from . import ui_kinematics
 from . import ui_assets
@@ -42,8 +41,7 @@ modules = [
     ui_architectural,
     ui_vehicle,
     ui_parametric,
-    ui_inertial,
-    ui_collision,
+    ui_physics,
     ui_transmission,
     ui_kinematics,
     ui_assets,

@@ -189,14 +189,13 @@ class FCD_OT_MovePanel(bpy.types.Operator):
             "fcd_order_architectural": scene.fcd_order_architectural,
             "fcd_order_vehicle": scene.fcd_order_vehicle,
             "fcd_order_electronics": scene.fcd_order_electronics,
-            "fcd_order_parametric": scene.fcd_order_parametric,
+            "fcd_order_procedural": scene.fcd_order_procedural,
             "fcd_order_dimensions": scene.fcd_order_dimensions,
             "fcd_order_materials": scene.fcd_order_materials,
             "fcd_order_lighting": scene.fcd_order_lighting,
             "fcd_order_camera": scene.fcd_order_camera,
             "fcd_order_kinematics": scene.fcd_order_kinematics,
-            "fcd_order_inertial": scene.fcd_order_inertial,
-            "fcd_order_collision": scene.fcd_order_collision,
+            "fcd_order_physics": scene.fcd_order_physics,
             "fcd_order_transmission": scene.fcd_order_transmission,
             "fcd_order_assets": scene.fcd_order_assets,
             "fcd_order_export": scene.fcd_order_export,
@@ -241,20 +240,22 @@ class FCD_OT_ResetPanelOrder(bpy.types.Operator):
         scene.fcd_order_ai_factory = 0     # 1: Generate
         scene.fcd_order_assets = 1         # 2: Asset Library
         scene.fcd_order_parts = 2          # 3: Mechanical Presets
-        scene.fcd_order_electronics = 3    # 4: Electronic Presets
-        scene.fcd_order_architectural = 4  # 5: Architectural Presets
-        scene.fcd_order_vehicle = 5        # 6: Vehicle Presets
-        scene.fcd_order_parametric = 6     # 7: Parametric Toolkit
-        scene.fcd_order_dimensions = 7     # 8: Dimensions & Measuring
-        scene.fcd_order_kinematics = 8     # 9: Kinematics Setup
-        scene.fcd_order_inertial = 9
-        scene.fcd_order_collision = 10
+        scene.fcd_order_ai_factory = 0
+        scene.fcd_order_assets = 1
+        scene.fcd_order_parts = 2
+        scene.fcd_order_electronics = 3
+        scene.fcd_order_architectural = 4
+        scene.fcd_order_vehicle = 5
+        scene.fcd_order_procedural = 6
+        scene.fcd_order_dimensions = 7
+        scene.fcd_order_materials = 8
+        scene.fcd_order_kinematics = 9
+        scene.fcd_order_physics = 10
         scene.fcd_order_transmission = 11
-        scene.fcd_order_materials = 12
-        scene.fcd_order_lighting = 13
-        scene.fcd_order_camera = 14
-        scene.fcd_order_export = 15
-        scene.fcd_order_preferences = 16
+        scene.fcd_order_lighting = 12
+        scene.fcd_order_camera = 13
+        scene.fcd_order_export = 14
+        scene.fcd_order_preferences = 15
         
         # Trigger the update to apply changes immediately
         bpy.ops.fcd.update_panel_order()

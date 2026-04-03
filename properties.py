@@ -145,6 +145,12 @@ class FCD_PG_Wrap_Item(bpy.types.PropertyGroup):
 class FCD_PG_Collision_Properties(bpy.types.PropertyGroup):
     shape: bpy.props.EnumProperty(name="Shape", items=[('BOX', "Box", ""), ('CYLINDER', "Cylinder", ""), ('SPHERE', "Sphere", ""), ('MESH', "Mesh", "")], default='MESH')
     collision_object: bpy.props.PointerProperty(name="Collision Object", type=bpy.types.Object)
+    decimate_ratio: bpy.props.FloatProperty(
+        name="Simplification Ratio", 
+        description="Ratio of triangles to keep (1.0 = original, 0.1 = 10% polygons)", 
+        default=0.5, min=0.0, max=1.0, 
+        update=lambda self, context: bpy.ops.fcd.generate_collision_mesh() if context.active_object else None
+    )
 
 class FCD_PG_Inertial_Properties(bpy.types.PropertyGroup):
     mass: bpy.props.FloatProperty(name="Mass", default=1.0, min=0.0)
@@ -456,6 +462,15 @@ class FCD_PG_Lighting_Props(bpy.types.PropertyGroup):
     light_preset: bpy.props.EnumProperty(name="Preset", items=[('STUDIO', "Studio", ""), ('OUTDOOR', "Outdoor", ""), ('EMPTY', "Ambient", "")], default='STUDIO')
     background_color: bpy.props.FloatVectorProperty(name="Background", subtype='COLOR', size=4, default=(0.04, 0.04, 0.04, 1.0))
     base_color: bpy.props.FloatVectorProperty(name="Tint", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0))
+    light_intensity: bpy.props.FloatProperty(name="Intensity", default=1.0, min=0.0)
+    use_shadows: bpy.props.BoolProperty(name="Use Shadows", default=True)
+    
+    # Selected Light Editor State (AI Added)
+    selected_light_type: bpy.props.EnumProperty(name="Type", items=[('POINT', "Point", ""), ('SUN', "Sun", ""), ('SPOT', "Spot", ""), ('AREA', "Area", "")], default='POINT')
+    selected_light_shading: bpy.props.EnumProperty(name="Shading", items=[('FLAT', "Flat", ""), ('GRADIENT', "Gradient", "")], default='GRADIENT')
+    selected_light_energy: bpy.props.FloatProperty(name="Power", default=100.0, min=0.0)
+    selected_light_color: bpy.props.FloatVectorProperty(name="Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0))
+    selected_light_target: bpy.props.PointerProperty(name="Target", type=bpy.types.Object)
 
 class FCD_PG_Asset_Props(bpy.types.PropertyGroup):
     target_library: bpy.props.StringProperty(name="Library Path", description="Library folder used for marking and importing assets.")
@@ -653,16 +668,15 @@ def register():
         "fcd_order_architectural", # 5: Architectural Presets
         "fcd_order_vehicle",       # 6: Vehicle Presets
         "fcd_order_procedural",    # 7: Procedural Toolkit
-        "fcd_order_dimensions",    # 8: Dimensions & Measuring
-        "fcd_order_kinematics",    # 9: Kinematics Setup
-        "fcd_order_inertial",      # 10: Inertial
-        "fcd_order_collision",     # 11: Collision
+        "fcd_order_dimensions",    # 8: Dimensions & Precision Transforms
+        "fcd_order_materials",     # 9: Materials & Textures
+        "fcd_order_kinematics",    # 10: Kinematics Setup
+        "fcd_order_physics",       # 11: Physics
         "fcd_order_transmission",  # 12: Transmission
-        "fcd_order_materials",     # 13: Materials & Textures
-        "fcd_order_lighting",      # 14: Environment & Lighting
-        "fcd_order_camera",        # 15: Camera Studio & Pathing
-        "fcd_order_export",        # 16: Export System
-        "fcd_order_preferences"    # 17: Preferences
+        "fcd_order_lighting",      # 13: Environment & Lighting
+        "fcd_order_camera",        # 14: Camera Studio & Pathing
+        "fcd_order_export",        # 15: Export System
+        "fcd_order_preferences"    # 16: Preferences
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))
@@ -704,7 +718,7 @@ def unregister():
         prop_names = [
             "fcd_order_ai_factory", "fcd_order_parts", "fcd_order_architectural", "fcd_order_vehicle",
             "fcd_order_electronics", "fcd_order_procedural", "fcd_order_dimensions", "fcd_order_materials",
-            "fcd_order_lighting", "fcd_order_kinematics", "fcd_order_inertial", "fcd_order_collision",
+            "fcd_order_lighting", "fcd_order_kinematics", "fcd_order_physics",
             "fcd_order_transmission", "fcd_order_assets", "fcd_order_export", "fcd_order_preferences"
         ]
         all_scene_props += prop_names

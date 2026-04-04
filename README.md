@@ -50,4 +50,4 @@ This toolkit is licensed under the **GNU General Public License (GPL)**. The har
 ---
 
 **Author**: Greenlex Systems Services Incorporated  
-**Support**: Documentation and issue tracking are handled via the [GitHub Repository](https://github.com/Japzon/Layouts-Systems-Draftsman-Toolkit-Addon).
+**Support**: Documentation and issue tracking are handled via the [GitHub Repository](https://github.com/Japzon/Layouts-Systems-Draftsman-Toolkit-Addon.git).

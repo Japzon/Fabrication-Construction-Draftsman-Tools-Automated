@@ -1,0 +1,67 @@
+OPS_OT_Execute_AI_Prompt | urdf.execute_ai_prompt | Generate Robot with AI
+URDF_OT_Generate_Preset | urdf.generate_preset | Generate Template
+URDF_OT_SetJointType | urdf.set_joint_type | Set Joint Type
+OPS_OT_CalculateCenterOfMass | urdf.calculate_center_of_mass | Calculate from Visuals
+OPS_OT_CalculateInertia | urdf.calculate_inertia | Calculate Inertia from Shape
+OPS_OT_BakeMesh | urdf.bake_mesh | Bake to Static Mesh
+URDF_OT_ReadJointSettings | urdf.read_joint_settings | Read From Active
+URDF_OT_ApplyJointSettings | urdf.apply_joint_settings | Apply to Selected
+OPS_OT_SetupIK | urdf.setup_ik | Setup IK Chain
+OPS_OT_SetOriginToCursor | urdf.set_origin_to_cursor | Set Origin to Cursor
+URDF_OT_Material_AddSmart | urdf.material_add_smart | Add Smart Material
+URDF_OT_Material_LoadTexture | urdf.material_load_texture | Load Texture
+URDF_OT_Material_FromImage | urdf.material_from_image | New Material from Image
+URDF_OT_AddMappingNodes | urdf.add_mapping_nodes | Add Transform Controls
+URDF_OT_UV_SmartUnwrap | urdf.uv_smart_unwrap | Smart UV Unwrap
+URDF_OT_Material_Merge | urdf.material_merge | Composite All Layers
+URDF_OT_Material_Add | urdf.material_add | Add Material
+URDF_OT_Paint_SetupBrush | urdf.paint_setup_brush | Setup Smart Brush
+OPS_OT_ExportGazeboWorld | urdf.export_gazebo_world | Export Gazebo World
+OPS_OT_LinkChainDriver | urdf.link_chain_driver | Link Driver
+OPS_OT_AddBoolean | urdf.add_boolean | Add Boolean
+URDF_OT_AddParametricAnchor | urdf.add_parametric_anchor | Attach Hook to Selected
+URDF_OT_AddMarker | urdf.add_marker | Attach Marker to Vertex
+URDF_OT_ToggleHookPlacement | urdf.toggle_hook_placement | Start/Stop Hook Placement Mode
+URDF_OT_CleanupAnchor | urdf.cleanup_anchor | Remove Selected Hook/Marker
+URDF_OT_BakeAnchor | urdf.bake_anchor | Bake Anchor (Apply)
+URDF_OT_AddTextDescription | urdf.add_text_description | Add Text Description
+URDF_OT_RemoveDimension | urdf.remove_dimension | Remove Dimension
+URDF_OT_AddDimension | urdf.add_dimension | Add Dimension (Vertex to Vertex)
+OPS_OT_AddModifier | urdf.add_parametric_mod | Add Parametric Feature
+OPS_OT_AddSimplify | urdf.add_simplify | Simplify
+OPS_OT_SetupLinearArray | urdf.setup_linear_array | Linear Pattern
+OPS_OT_SetupRadialArray | urdf.setup_radial_array | Radial Pattern
+OPS_OT_CreateCurveForPath | urdf.create_curve_for_path | Create Path Curve
+OPS_OT_SetupCurveArray | urdf.setup_curve_array | Follow Curve
+OPS_OT_SmartSmooth | urdf.smart_smooth | Smart Smooth
+OPS_OT_CreatePart | urdf.create_part | Generate
+OPS_OT_ChainAddWrapObject | urdf.chain_add_wrap_object | Add Wrap Object
+URDF_OT_SlinkyAddHook | urdf.slinky_add_hook | Add Middle Hook
+URDF_OT_SlinkyRemoveHook | urdf.slinky_remove_hook | Remove Active Hook
+OPS_OT_CreateElectronicPart | urdf.create_electronic_part | Generate Electronic Part
+OPS_OT_ChainAddPickedWrapObject | urdf.chain_add_picked_wrap_object | Add Picked Object
+OPS_OT_ChainRemoveWrapObject | urdf.chain_remove_wrap_object | Remove Wrap Object
+OPS_OT_CalculateRatio | urdf.calculate_ratio | Calculate Ratio
+OPS_OT_AddMimic | urdf.add_mimic | Add / Update Driver
+OPS_OT_RemoveMimic | urdf.remove_mimic | Remove Gear
+OPS_OT_ClearConfig | urdf.clear_config | Clear Config
+OPS_OT_ApplyBoneConstraints | urdf.bone_constraints | Apply Config
+OPS_OT_PickBone | urdf.pick_bone | Pick Bone
+URDF_OT_GenerateROS2Workspace | urdf.generate_ros2_workspace | Generate ROS 2 Workspace
+URDF_OT_ExportList_Add | urdf.export_list_add | Add Selected
+URDF_OT_ExportList_Remove | urdf.export_list_remove | Remove
+OPS_OT_Export | urdf.export_general | Export Robot Package
+URDF_OT_ExportSelected | urdf.export_selected | Export Selected Mesh
+OPS_OT_TogglePlacement | urdf.toggle_placement | Toggle Joint Placement Mode
+OPS_OT_CreateRig | urdf.create_rig | Create New Robot
+URDF_OT_MergeArmatures | urdf.merge_armatures | Merge Armatures
+URDF_OT_PurgeBones | urdf.purge_bones | Purge Selected Bones
+OPS_OT_ParentToActive | urdf.parent_to_active | Parent Selected to Active
+OPS_OT_EnterPoseMode | urdf.enter_pose_mode | Pose Mode to Set Gizmos
+OPS_OT_EnterObjectMode | urdf.enter_object_mode | Object Mode
+OPS_OT_AddBone | urdf.add_bone | Set / Align Bones
+URDF_OT_ApplyRestPose | urdf.apply_rest_pose | Apply as Rest Pose
+URDF_OT_LightTarget | urdf.light_target | Target Active Object
+URDF_OT_ApplyToonShader | urdf.apply_toon_shader | Apply Toon Shader
+URDF_OT_GlobalToonSharpness | urdf.global_toon_sharpness | Set Global Sharpness
+URDF_OT_ToonifySelectedLights | urdf.toonify_selected_lights | Toonify Selected Lights

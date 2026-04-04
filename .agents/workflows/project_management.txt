@@ -18,7 +18,7 @@ Category Index: {
 8.  Current Session Tasks Log Here
 }
 
-1. Strict Operational Protocols
+1. Strict Operational Protocols (Mandatory)
 * Enforce Strict Scope Adherence: Never add, alter, refactor, or remove features unless explicitly instructed by the user. Unprompted optimizations often break delicate procedural workflows. Focus exclusively on the execution of the given task.
 * Prioritize High-Density Information: Substantially bypass conversational filler and pleasantries. Prioritize comprehensive checklists, provide compact summaries of modifications, and output code with clear inline documentation to ensure rapid comprehension.
 * Interpret Task Syntax Accurately: Respect the user's specific punctuation-based task syntax. A period followed by a comma (.,) indicates a completely new, isolated task. A single period (.) indicates a direct continuation or sub-step of the previously stated objective.
@@ -26,6 +26,7 @@ Category Index: {
 * Delete One-Time Execution Files After Successful Completion (Mandatory): Any temporary helper scripts created solely to execute a patch, migration, or one-time data transformation (e.g., patch_*.py, fix_*.py, migrate_*.py placed in _dev/) must be deleted immediately after the task they were created for has been verified as successfully completed. Leaving these files in the repository constitutes permanent clutter and must never be done.
 * Preserve User Context: Operators launched from Edit Mode must return the user to Edit Mode upon completion (unless the feature's core logic explicitly dictates otherwise). Capture and restore the initial mode (e.g., `initial_mode = context.mode`) to prevent disruptive mode switches during modeling workflows.
 * No Automatic Commits (Strict): Do NOT perform `git commit` or `git push` operations automatically. Only execute these commands when explicitly requested by the user to finalize a specific, verified task.
+* Avoid Terminal and Executable Code Edits: Avoid using terminals and executable files to edit the addon code to avoid untraceable changes and lessen corruption frequency when reverting a prompt.
 
 2. Literal Naming Constraints and Structure Enforcement
 * Avoid Generic Variable Reuse: The codebase strictly prohibits generic variable reuse (e.g., using radius for gears, wheels, and springs) to prevent cross-contamination of parametric data. Use uncompromising, literal naming.
@@ -121,3 +122,9 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * [VERIFIED] Git Synchronization & Bug Fix: Resolved "unrelated histories" error by merging local state with remote GitHub repository. Fixed an `IndentationError` in `ui_kinematics.py` at line 445 (redundant conditional with incorrect indent).
 * [VERIFIED] Scaling Inaccuracy & Crash Fix: Renamed 'Gizmo Scale Multiplier' to 'Visual Gizmo Scale' in properties.py, ui_kinematics.py, and core.py. Fixed AttributeErrors in operators.py by updating stale 'gizmo_radius' references. Successfully eliminated 1000x scaling distortion and Diameter/Radius errors. Lowered MIN_GIZMO_SCALE for sub-millimeter precision.
 * [VERIFIED] Repository & Folder Standardization: Verified the primary repository identifier as 'Layouts-Systems-Draftsman-Toolkit-Addon', updated the GitHub link to 'https://github.com/Japzon/Layouts-Systems-Draftsman-Toolkit-Addon.git' across all metadata (README.md, __init__.py, etc.), and synchronized the local Git environment with the remote history from GitHub (origin/main) to ensure full history continuity and version control integrity.
+* [VERIFIED] Operational Protocol Update: Added a new rule to the Strict Operational Protocols in project_management.txt to avoid using terminals and executable files for code edits to prevent untraceable changes and lessen corruption frequency during history reverts.
+* [ACTIVE] Session Initialization: Acknowledged mandatory reading of project_management.txt and adherence to all Strict Operational Protocols, Naming Conventions, and Update Disciplines for the current session.
+* [VERIFIED] Procedural Toolkit Refinement: Implemented 'Grid Pattern' feature and modernized 'Linear' and 'Radial' patterns to support multi-object selection. Updated operator tooltips to "Make Linear/Radial/Grid Pattern for Selected Objects" for improved UX clarity.
+* [VERIFIED] Workspace Maintenance & Purge: Cleaned all __pycache__ and deleted one-time execution remnants (patch scripts, backups, and sync logs) to enforce Category 1 protocols and prevent agent hallucinations.
+* [VERIFIED] Codebase Spacing Normalization: Compacted all source files by removing extreme line-break bloat (triple/quadruple newlines) across 26 files to fix file-size limits and prevent agent hallucinations.
+* [VERIFIED] Dimension Font Style & Offset Finalization: Resolved the 'shrinking text' and 'non-applying styles' issues by fully synchronizing the 'Text Size' and 'Font' sockets within the Geometry Nodes system. Implemented a 'Deep Search' fallback for automated font discovery and set the default text_offset to 0.05 (250% of the baseline) across all systems.

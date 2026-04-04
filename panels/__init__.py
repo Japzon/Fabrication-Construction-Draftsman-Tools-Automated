@@ -8,9 +8,6 @@
 # original authorship for themselves. Proper attribution is mandatory.
 # --------------------------------------------------------------------------------
 
-
-
-
 from . import ui_common
 from . import ui_ai_factory
 from . import ui_parts

@@ -50,7 +50,6 @@ def sync_part_to_bone_gizmo(obj: bpy.types.Object, context: bpy.types.Context):
         elif props.category == 'WHEEL': r = props.wheel_radius
         elif props.category == 'PULLEY': r = props.pulley_radius
         elif props.category == 'BASIC_JOINT': r = props.joint_radius
-        
         # AI Editor Note: CRITICAL FIX FOR KINEMATIC SCALING
         # Both 'joint_radius' properties carry 'unit=LENGTH' and are stored in METERS.
         # We must NOT apply the scene scale factor (s) when syncing values between 
@@ -58,7 +57,6 @@ def sync_part_to_bone_gizmo(obj: bpy.types.Object, context: bpy.types.Context):
         # conversion factor (e.g. 1000 for mm), resulting in massive distortions.
         # The scale factor 's' should only be used when generating MESH geometry 
         # in Blender Units (BU) or calculating GIZMO visual scales.
-        
         pbone = obj.parent.pose.bones.get(obj.parent_bone)
         if pbone and hasattr(pbone, "lsd_pg_kinematic_props"):
             pbone.lsd_pg_kinematic_props.joint_radius = r
@@ -72,7 +70,6 @@ def regenerate_mech_mesh(obj: bpy.types.Object, context: bpy.types.Context):
         return
     
     props = obj.lsd_pg_mech_props
-
     # 1. Non-BMesh Categories (Geometry Nodes or Curve based)
     if props.category == 'SPRING':
         update_native_spring_properties(obj, props, context)
@@ -90,7 +87,6 @@ def regenerate_mech_mesh(obj: bpy.types.Object, context: bpy.types.Context):
 
     # 2. Standard BMesh Bounding Box/Generation Categories
     update_mesh_data(obj, context, lambda bm: dispatch_generation(bm, props, obj, context))
-    
     # --- AI Editor Note: Sub-Component Regeneration ---
     # We must also regenerate all stationary or auxiliary objects (stator, screw, etc.)
     for attr in ["joint_stator_obj", "joint_screw_obj", "joint_pin_obj"]:
@@ -139,14 +135,12 @@ def generate_gear_mesh(bm: bmesh.types.BMesh, props, obj):
     """Procedural circular gear construction."""
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-    
     teeth = max(1, props.gear_teeth_count)
     segs = teeth * 2
     rad = props.gear_radius * s
     width = props.gear_width * s
     depth = props.gear_tooth_depth * s
     taper = props.gear_tooth_taper
-
     if props.type_gear == 'INTERNAL':
         outer_rad = max(props.gear_outer_radius * s, rad + depth + 0.05*s)
         mat = mathutils.Matrix.Translation((0,0,-width/2))
@@ -163,7 +157,6 @@ def generate_gear_mesh(bm: bmesh.types.BMesh, props, obj):
     
     faces.sort(key=lambda f: math.atan2(f.calc_center_median().y, f.calc_center_median().x))
     faces_to_extrude = faces[::2]
-    
     for f in faces_to_extrude:
         ex = bmesh.ops.extrude_face_region(bm, geom=[f])
         new_f = [g for g in ex['geom'] if isinstance(g, bmesh.types.BMFace)][0]
@@ -176,18 +169,15 @@ def generate_rack_mesh(bm: bmesh.types.BMesh, props, obj):
     """Procedural rack segment construction with array setup."""
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-    
     teeth = max(1, props.rack_teeth_count)
     total_l = props.rack_length * s
     seg_l = total_l / teeth
     w = props.rack_width * s
     h = props.rack_height * s
     d = props.rack_tooth_depth * s
-    
     bmesh.ops.create_cube(bm, size=1.0)
     bmesh.ops.scale(bm, verts=bm.verts, vec=(seg_l, w, h))
     bmesh.ops.translate(bm, verts=bm.verts, vec=(seg_l/2, 0, -h/2))
-    
     top = max((f for f in bm.faces if f.normal.z > 0.5), key=lambda f: f.calc_center_median().z, default=None)
     if top:
         ex = bmesh.ops.extrude_face_region(bm, geom=[top])
@@ -243,7 +233,6 @@ def generate_stator_mesh(bm: bmesh.types.BMesh, props, obj, context):
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
     r = props.joint_radius * s; w = props.joint_width * s
-
     if props.type_basic_joint == 'JOINT_REVOLUTE':
         # Frame (Stator)
         fw = props.joint_frame_width * s; fl = props.joint_frame_length * s
@@ -270,14 +259,12 @@ def generate_basic_joint_mesh(bm: bmesh.types.BMesh, props, obj, context):
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
     r = props.joint_radius * s; w = props.joint_width * s
     sub_s = props.joint_sub_size * s; sub_t = props.joint_sub_thickness * s
-
     if props.type_basic_joint == 'JOINT_REVOLUTE':
         # Eye (Cylinder)
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=w, segments=32)
         # Pin
         pr = props.joint_pin_radius * s
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=pr, radius2=pr, depth=w*1.5, segments=16)
-        
         # --- Rotor Arm Implementation ---
         al = props.rotor_arm_length * s; aw = props.rotor_arm_width * s; ah = props.rotor_arm_height * s
         # Arm extends outward from the eye (Y axis in current frame logic)
@@ -288,7 +275,6 @@ def generate_basic_joint_mesh(bm: bmesh.types.BMesh, props, obj, context):
         sr = props.joint_motor_shaft_radius * s; sl = props.joint_motor_shaft_length * s
         bl = props.joint_base_length * s
         bmesh.ops.create_cone(bm, cap_ends=True, radius1=sr, radius2=sr, depth=sl, segments=12, matrix=mathutils.Matrix.Translation((0,0,bl/2+sl/2)))
-        
         # --- Rotor Arm (Optional for motors) ---
         al = props.rotor_arm_length * s; aw = props.rotor_arm_width * s; ah = props.rotor_arm_height * s
         if al > 0:
@@ -309,10 +295,8 @@ def generate_basic_joint_mesh(bm: bmesh.types.BMesh, props, obj, context):
         # Carriage & Wheels (Rotor)
         cw = props.joint_carriage_width * s; cl = props.joint_sub_size * s; ct = props.joint_carriage_thickness * s
         wt = props.wheel_thickness * s; wr = props.joint_radius * s
-        
         # Carriage Plate (Vertical in XZ, moves on Z)
         bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(cw, 4, (1,0,0)) @ mathutils.Matrix.Scale(ct, 4, (0,1,0)) @ mathutils.Matrix.Scale(cl, 4, (0,0,1)))
-        
         # Wheels
         for side in [-1, 1]:
             for end in [-1, 1]:
@@ -325,7 +309,6 @@ def generate_basic_joint_mesh(bm: bmesh.types.BMesh, props, obj, context):
 def generate_basic_shape_mesh(bm: bmesh.types.BMesh, props, obj):
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-    
     t = props.type_basic_shape
     if t == 'SHAPE_PLANE':
         sz = props.shape_size * s
@@ -354,7 +337,6 @@ def generate_architectural_mesh(bm: bmesh.types.BMesh, props, obj):
     raw_type = str(props.type_architectural)
     l = props.length * s; h = props.height * s
     th = props.wall_thickness * s
-    
     if raw_type == 'BEAM':
         rad = props.radius * s
         bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(l, 4, (1,0,0)) @ mathutils.Matrix.Scale(rad, 4, (0,1,0)) @ mathutils.Matrix.Scale(rad, 4, (0,0,1)))
@@ -422,14 +404,12 @@ def setup_bore_hole(obj, props, context):
     cutter.parent = obj; cutter.hide_set(True)
     cutter.matrix_local = mathutils.Matrix.Identity(4)
     cutter.data.clear_geometry()
-    
     u = context.scene.unit_settings.scale_length
     s = 1.0 / u if u > 0 else 1.0
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, radius1=props.gear_bore_radius*s, radius2=props.gear_bore_radius*s, depth=props.gear_width*4*s, segments=32)
     bm.to_mesh(cutter.data); bm.free(); cutter.data.update()
     for p in cutter.data.polygons: p.use_smooth = True
-    
     mod = obj.modifiers.get(f"{MOD_PREFIX}Bore") or obj.modifiers.new(name=f"{MOD_PREFIX}Bore", type='BOOLEAN')
     mod.operation = 'DIFFERENCE'; mod.solver = 'EXACT'; mod.object = cutter
 
@@ -462,7 +442,6 @@ def get_dimensions_collection(context):
     """Ensures the LSD_Dimensions collection exists and is visible in the current view layer."""
     coll_name = "LSD_Dimensions"
     scene_coll = context.scene.collection
-    
     coll = bpy.data.collections.get(coll_name)
     if not coll:
         coll = bpy.data.collections.new(coll_name)
@@ -491,19 +470,16 @@ def create_triangle_anchor_mesh(name_prefix: str) -> bpy.types.Mesh:
     """
     mesh = bpy.data.meshes.new(f"{name_prefix}_Triangle_Anchor")
     bm = bmesh.new()
-    
     # Vertices for a triangle pointing at its own origin
     # Tip at (0,0,0), base at +Z
     v1 = bm.verts.new((0, 0.08, 0.15))
     v2 = bm.verts.new((0.069, -0.04, 0.15))
     v3 = bm.verts.new((-0.069, -0.04, 0.15))
     v_tip = bm.verts.new((0, 0, 0))
-    
     bm.faces.new((v1, v2, v3))
     bm.faces.new((v1, v2, v_tip))
     bm.faces.new((v2, v3, v_tip))
     bm.faces.new((v3, v1, v_tip))
-    
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(mesh)
     bm.free()
@@ -513,10 +489,8 @@ def create_dimension_line_mesh(name_prefix: str) -> bpy.types.Mesh:
     """Procedurally creates a basic line segment mesh for the dimension body."""
     mesh = bpy.data.meshes.new(f"{name_prefix}_Line")
     bm = bmesh.new()
-    
     # Simple thin cylinder as the line (default 1m long along Z, 1m radius for 1:1 scaling)
     bmesh.ops.create_cone(bm, cap_ends=True, radius1=1.0, radius2=1.0, depth=1.0, segments=12, matrix=mathutils.Matrix.Translation((0,0,0.5)))
-    
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(mesh)
     bm.free()
@@ -539,18 +513,15 @@ def setup_dimension_gn(obj: bpy.types.Object):
     mod = obj.modifiers.get("Dynamic_Dimension") or obj.modifiers.new("Dynamic_Dimension", 'NODES')
     group_name = "LSD_Dynamic_Dimension"
     group = bpy.data.node_groups.get(group_name)
-    
     if not group:
         group = bpy.data.node_groups.new(group_name, 'GeometryNodeTree')
         group.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
         group.interface.new_socket("Length", in_out='INPUT', socket_type='NodeSocketFloat')
         group.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
-        
         input_node = group.nodes.new('NodeGroupInput')
         output_node = group.nodes.new('NodeGroupOutput')
         transform_node = group.nodes.new('GeometryNodeTransform')
         join_node = group.nodes.new('GeometryNodeJoinGeometry')
-        
         # Logic: Instance an arrow at 0 and at Length.
         # For simplicity in this procedural generator, we just pass the original mesh 
         # and transform a duplicate.
@@ -571,7 +542,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     context.view_layer.update()
     context.evaluated_depsgraph_get().update()
     context.view_layer.update() 
-    
     # Sync loop to make sure evaluated mesh is stable
     # This specifically addresses the 'give_parvert' timing issue
     def force_sync():
@@ -581,17 +551,14 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     force_sync()
     scene = context.scene
     coll = context.collection
-    
     # Ensure p1 and p2 are valid world vectors
     if p1 is None or p2 is None: return None
     p1_v = mathutils.Vector((p1[0], p1[1], p1[2]))
     p2_v = mathutils.Vector((p2[0], p2[1], p2[2]))
-    
     # AI Editor Note: Initial orientation logic MUST happen before Root creation
     direction = p2_v - p1_v
     initial_length = direction.length
     if initial_length < 0.0001: return None
-    
     # AI Editor Note: Design Strategy - The 'Root' is an Empty that handles 
     # the coordinate system and orientation. Components are siblings.
     # Generate base structure Empty
@@ -604,7 +571,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     root.hide_viewport = True
     root.hide_render = True
     root.empty_display_size = 0.05
-    
     # FINAL COORDINATE RESOLVE: Use Blender's built-in to_track_quat for a
     # guaranteed right-handed, valid rotation matrix.
     # Root's +Z axis points from p1 toward p2. All child components that live
@@ -613,13 +579,11 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     rot_quat = z_axis.to_track_quat('Z', 'Y')
     rot_mat = rot_quat.to_matrix().to_4x4()
     rot_mat.translation = p1_v
-
     # AI Editor Note: DUAL LOCK - Set both matrix and properties to ensure stability 
     # across Blender 4.5's asynchronous evaluation frames.
     root.matrix_world = rot_mat
     root.location = p1_v
     root.rotation_euler = rot_mat.to_euler()
-    
     # AI Editor Note: Mandatory View Layer Sync to finalize world coordinates 
     # before we start parenting visual children.
     context.view_layer.update() 
@@ -636,7 +600,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     root["lsd_is_dimension_root"] = True
     # AI Editor Note: Cache world transformation for parenting restoration
     old_mat = root.matrix_world.copy()
-    
     # 3. Create Physical Master Anchors (For Hook Linking)
     # These are hidden/small empties that NEVER drift with the offset.
     aa_master = bpy.data.objects.new(f"{name}_Anchor_START_MASTER", None)
@@ -649,7 +612,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     ab_master.location = (0, 0, initial_length)
     aa_master["lsd_anchor_type"] = "START"
     ab_master["lsd_anchor_type"] = "END"
-    
     # 4. Create Visual Components (Offset-able)
     def create_arrowhead(suffix, rot_x):
         mesh = core.get_or_create_arrow_mesh()
@@ -668,7 +630,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     # END=180┬░ ΓåÆ tip at +Z at z=initial_length ΓåÆ outward from centre at p2 end.
     arrow_a = create_arrowhead("START", 0.0)
     arrow_b = create_arrowhead("END", 180.0)
-    
     # AI Editor Note: Design Strategy - Dedicated Hook Empty.
     # We parent mechatronic parts to this hook which NEVER scales, 
     # ensuring that visual arrow size doesn't distort the attached parts.
@@ -679,7 +640,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     hook.empty_display_type = 'CIRCLE'
     hook.empty_display_size = 0.02
     hook.location = (0, 0, initial_length)
-    
     # 4. Extension Lines (Drafting legs from arrowheads to objects)
     def create_ext_line(name_suffix, loc_z, offset_y, ext_type):
         mesh = create_dimension_line_mesh(f"{name}_{name_suffix}")
@@ -695,7 +655,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
 
     ext_a = create_ext_line("ExtA", 0.0, scene.lsd_dim_offset, "START")
     ext_b = create_ext_line("ExtB", initial_length, scene.lsd_dim_offset, "END")
-    
     # 5. Procedural Dimension Line (Body, Child of Root)
     line_mesh = create_dimension_line_mesh(name)
     dim_line = bpy.data.objects.new(f"{name}_Line", line_mesh)
@@ -705,7 +664,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     dim_line.location = (0, 0, 0)
     # Line is 1m long, so s.z = length
     dim_line.scale = (1.0, 1.0, initial_length) 
-    
     # 5. Label Object (FONT Curve for visibility)
     txt_curve = bpy.data.curves.new(f"{name}_Label_Curve", 'FONT')
     txt_curve.align_x = 'CENTER'
@@ -715,7 +673,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     txt_obj.parent = root
     txt_obj["lsd_is_dimension"] = True
     txt_obj.rotation_euler = (math.radians(90), 0, 0)
-    
     # Initial Properties
     # AI Editor Note: CRITICAL - update_arrow_settings and update_dimension_length
     # both resolve dim_props from ROOT (obj.parent), NOT from txt_obj itself.
@@ -725,13 +682,14 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     v_text = scene.lsd_dim_text_scale
     v_thick = scene.lsd_dim_line_thickness
     v_offset = scene.lsd_dim_offset
-    
+    v_text_offset = scene.lsd_dim_text_offset
     # Auto-Scaling logic on spawn
     if scene.lsd_dim_auto_scale_on_spawn:
         v_arrow = initial_length * 0.2
         v_text = initial_length * 0.1
-        v_thick = initial_length * 0.002
-        v_offset = initial_length * 0.1
+        v_thick = initial_length * 0.004
+        v_text_offset = initial_length * 0.06
+        v_offset = initial_length * 0.15
         # Guards
         if v_arrow < 0.001: v_arrow = 0.001
         if v_text < 0.001: v_text = 0.001
@@ -740,16 +698,22 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     dim_props.length = initial_length
     dim_props.arrow_scale = v_arrow
     dim_props.text_scale = v_text
+    dim_props.text_offset = v_text_offset
     dim_props.offset = v_offset
     dim_props.line_thickness = v_thick
-
+    dim_props.font_name = getattr(scene, 'lsd_dim_font_name', 'DEFAULT')
+    dim_props.font_bold = getattr(scene, 'lsd_dim_font_bold', False)
+    dim_props.font_italic = getattr(scene, 'lsd_dim_font_italic', False)
     root_dim_props = root.lsd_pg_dim_props
     root_dim_props.length = initial_length
     root_dim_props.arrow_scale = v_arrow
     root_dim_props.text_scale = v_text
+    root_dim_props.text_offset = dim_props.text_offset
     root_dim_props.offset = v_offset
     root_dim_props.line_thickness = v_thick
-    
+    root_dim_props.font_name = dim_props.font_name
+    root_dim_props.font_bold = dim_props.font_bold
+    root_dim_props.font_italic = dim_props.font_italic
     # REAL-TIME SYNC: Establish a master-slave hierarchy.
     # The dimension is the MASTER. Both hooks (meshes) are pulled/pushed 
     # as the dimension moves or changes length by constraining them to our anchors.
@@ -779,7 +743,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     dim_line.active_material = mat
     if ext_a: ext_a.active_material = mat
     if ext_b: ext_b.active_material = mat
-    
     # 6. Visibility Enhancements (Drafting Style)
     # AI Editor Note: Set 'In Front' to ensure visibility even inside targets
     for o in [root, arrow_a, arrow_b, dim_line, txt_obj, hook, ext_a, ext_b]:
@@ -792,7 +755,6 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     # back to any of the hooks it is constraining. The dimension is now independent.
     root.matrix_world = old_mat.copy()
     context.view_layer.update() 
-            
     # Parent the second object/element to the EndHook (Conditional)
     if parent_b:
         obj_b, type_b, index_b = parent_b
@@ -813,5 +775,4 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
         o.select_set(False)
     txt_obj.select_set(True)
     context.view_layer.objects.active = txt_obj
-    
     return txt_obj

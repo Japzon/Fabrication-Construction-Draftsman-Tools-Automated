@@ -735,13 +735,27 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
          core.update_arrow_settings(txt_obj)
     
     # Assign Material
+    # AI Editor Note: For objects that share a primitive mesh (like arrowheads), 
+    # we must link the material to the OBJECT rather than the DATA. 
+    # This ensures that local color changes on one dimension don't leak 
+    # to all other dimensions using the same shared arrowhead mesh.
     mat = core.get_or_create_text_material(txt_obj)
+    
+    # 1. Label (Unique Curve) - DATA link is fine
     txt_obj.active_material = mat
-    arrow_a.active_material = mat
-    arrow_b.active_material = mat
+    
+    # 2. Arrowheads (Shared Mesh) - Force OBJECT link
+    for arrow in [arrow_a, arrow_b]:
+         if arrow:
+             arrow.active_material = mat
+             if arrow.material_slots:
+                  arrow.material_slots[0].link = 'OBJECT'
+    
+    # 3. Lines & Extensions (Unique Meshes) - DATA link is fine
     dim_line.active_material = mat
     if ext_a: ext_a.active_material = mat
     if ext_b: ext_b.active_material = mat
+
     # 6. Visibility Enhancements (Drafting Style)
     # AI Editor Note: Set 'In Front' to ensure visibility even inside targets
     for o in [root, arrow_a, arrow_b, dim_line, txt_obj, hook, ext_a, ext_b]:

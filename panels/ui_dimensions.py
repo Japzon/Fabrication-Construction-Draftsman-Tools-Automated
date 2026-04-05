@@ -155,11 +155,6 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             # Row 3: Default Offset
             pref_col.prop(scene, "lsd_dim_offset", text="Default Offset")
 
-            # Row 4: Measurement Mode
-            row_meas = pref_col.row(align=True)
-            row_meas.label(text="Measurement ...")
-            row_meas.prop(scene, "lsd_dim_axis", text="")
-
             
 
             dim_toolkit_box.separator()
@@ -304,22 +299,26 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             scale_box.label(text="Accurate Scaling", icon='CON_FOLLOWPATH')
 
             col_scale = scale_box.column(align=True)
+            col_scale.prop(scene, "lsd_scale_mode", text="Scaling Mode")
+            col_scale.prop(scene, "lsd_scale_pivot", text="Pivot Point")
 
-            
+            col_scale.separator()
 
             row_axes = col_scale.row(align=True)
-
             row_axes.prop(scene, "lsd_scale_axes", index=0, text="X", toggle=True)
-
             row_axes.prop(scene, "lsd_scale_axes", index=1, text="Y", toggle=True)
-
             row_axes.prop(scene, "lsd_scale_axes", index=2, text="Z", toggle=True)
-
-            
 
             col_scale.prop(scene, "lsd_scale_value", text="Target Dimension")
 
-            col_scale.operator("lsd.accurate_scale", text="Apply Accurate Scale", icon='CHECKMARK')
+            col_scale.separator()
+
+            # Live Execution Controls (rearranged)
+            col_scale.prop(scene, "lsd_scale_realtime", text="Live Calibration", icon='TIME')
+            if not scene.lsd_scale_realtime:
+                 col_scale.operator("lsd.accurate_scale", text="Commit Scale", icon='CHECKMARK')
+
+            
 
 def register():
 

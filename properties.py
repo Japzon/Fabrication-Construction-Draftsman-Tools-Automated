@@ -145,30 +145,32 @@ def update_text_color(self, context):
         self.id_data.update_tag()
 
 def update_arrow_settings_timer(self, context):
-
     """Dispatches arrow setting update via timer with a single-queue guard."""
     from . import core
     if getattr(core, "_dim_timer_queued", False): return
     core._dim_timer_queued = True
 
-    
-
     # AI Editor Note: Specifically trigger the heavy role swap logic 
     # IF this is the property being changed. self is the PropertyGroup.
     obj = self.id_data
     if obj:
-
          # Note: sync_dimension_flipping internally handles the check if role swap is needed
          core.sync_dimension_flipping(obj)
 
     def dispatch():
-
         core._dim_timer_queued = False
         obj = self.id_data
         if obj: core.update_arrow_settings(obj)
         return None
 
     bpy.app.timers.register(dispatch, first_interval=0.03)
+
+def update_dim_is_flipped(self, context):
+    """Callback for 'Flip Target Roles': Synchronizes the 'Flip Text' property."""
+    # Toggle the 'Flip Text' property to maintain visual orientation relative to the new direction.
+    self.flip_text = not self.flip_text
+    update_arrow_settings_timer(self, context)
+
 
 def update_collision_visibility(self, context):
 
@@ -416,7 +418,8 @@ class LSD_PG_Dimension_Props(bpy.types.PropertyGroup):
     unit_display: bpy.props.EnumProperty(name="Units", items=[('METERS', "Meters (m)", ""), ('MM', "Millimeters (mm)", "")], default='METERS', update=update_dimension_length_timer)
     length: bpy.props.FloatProperty(name="Line Length", default=1.0, unit='LENGTH', update=update_dimension_length_timer)
     direction: bpy.props.EnumProperty(name="Direction", items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""), ('-X', "-X", ""), ('-Y', "-Y", ""), ('-Z', "-Z", "")], default='Z', update=update_arrow_settings_timer)
-    is_flipped: bpy.props.BoolProperty(name="Flip Target Roles", default=False, update=update_arrow_settings_timer)
+    is_flipped: bpy.props.BoolProperty(name="Flip Target Roles", default=False, update=update_dim_is_flipped)
+
     use_extension_lines: bpy.props.BoolProperty(name="Use Extension Lines", default=True, update=update_arrow_settings_timer)
     is_manual: bpy.props.BoolProperty(name="Manual Mode", default=False)
     align_x: bpy.props.BoolProperty(name="+X", default=False, update=update_arrow_settings_timer)
@@ -804,9 +807,35 @@ def register():
 
     
 
-    # Precision Scale State
-    bpy.types.Scene.lsd_scale_axes = bpy.props.BoolVectorProperty(name="Scale Axes", size=3, default=(True, True, True))
-    bpy.types.Scene.lsd_scale_value = bpy.props.FloatProperty(name="Value", default=1.0, subtype='DISTANCE')
+    # Precision Scale State (Drafting)
+    def update_accurate_scale(self, context):
+        """Real-time drafting sync: Applying scale as parameters change."""
+        if getattr(context.scene, 'lsd_scale_realtime', True) and context.active_object:
+             # Calling the operator ensures BMesh and Object mode safety
+             bpy.ops.lsd.accurate_scale()
+
+    bpy.types.Scene.lsd_scale_realtime = bpy.props.BoolProperty(
+        name="Live Calibration",
+        description="Automatically apply scaling as parameters change",
+        default=True
+    )
+    bpy.types.Scene.lsd_scale_axes = bpy.props.BoolVectorProperty(
+        name="Scale Axes", size=3, default=(True, True, True),
+        update=update_accurate_scale
+    )
+    bpy.types.Scene.lsd_scale_value = bpy.props.FloatProperty(name="Value", default=1.0, min=0.0001, subtype='DISTANCE', update=update_accurate_scale)
+    bpy.types.Scene.lsd_scale_mode = bpy.props.EnumProperty(
+        name="Scaling Mode",
+        items=[('GROUP', "Group", "Scale selected objects as a single unit"), ('INDIVIDUAL', "Individual", "Scale each selected object separately")],
+        default='GROUP',
+        update=update_accurate_scale
+    )
+    bpy.types.Scene.lsd_scale_pivot = bpy.props.EnumProperty(
+        name="Pivot Point",
+        items=[('ORIGIN', "Origin / Center", "Scale around active object origin or selection center"), ('CURSOR', "3D Cursor", "Scale around the current cursor location")],
+        default='CURSOR',
+        update=update_accurate_scale
+    )
 
     
 
@@ -909,6 +938,11 @@ def register():
         # Force refresh of all dimension materials in the scene
         for obj in bpy.data.objects:
             if obj.get("lsd_is_dimension"):
+                # Color Persistence: If global sync is being disabled, bake the universal color to the local property.
+                if not self.lsd_dim_global_text_color_sync:
+                    dim_props = getattr(obj, "lsd_pg_dim_props", None)
+                    if dim_props:
+                        dim_props.text_color = self.lsd_dim_universal_text_color
                 core.get_or_create_text_material(obj)
 
     bpy.types.Scene.lsd_dim_global_text_color_sync = bpy.props.BoolProperty(
@@ -916,6 +950,7 @@ def register():
         default=True,
         update=update_dim_color_sync
     )
+
     bpy.types.Scene.lsd_dim_universal_text_color = bpy.props.FloatVectorProperty(
         name="Universal Label Color", 
         subtype='COLOR', 
@@ -1072,6 +1107,7 @@ def register():
         "lsd_order_export",        # 15: Export System
         "lsd_order_preferences"    # 16: Preferences
     ]
+
     for i, name in enumerate(prop_names):
 
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))
@@ -1118,7 +1154,7 @@ def unregister():
             "lsd_tex_pos", "lsd_tex_rot", "lsd_tex_scale",
             "lsd_hook_placement_mode", "lsd_camera_preset", "lsd_anchor_initial_size", "lsd_anchor_auto_size",
             "lsd_show_collisions", "lsd_dim_font_name", "lsd_dim_font_bold", "lsd_dim_font_italic",
-            "lsd_dim_text_offset"
+            "lsd_dim_text_offset", "lsd_scale_mode", "lsd_scale_pivot", "lsd_scale_realtime"
         ]
         # Add order props
         prop_names = [

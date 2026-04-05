@@ -3431,10 +3431,10 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
         return {'FINISHED'}
 
 class LSD_OT_AddMarker(bpy.types.Operator):
-
     """Creates an Empty marker at each selected vertex"""
     bl_idname = "lsd.add_marker"
-    bl_label = "Attach Marker to Vertex"
+    bl_label = "Attach Marker"
+    bl_description = "Attach a Marker empty follower to selected."
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
@@ -4463,7 +4463,6 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
         return {'FINISHED'}
 
 class LSD_OT_Add_Dimension(bpy.types.Operator):
-
     """
     Generate a parametric dimension between two points.
     In Object Mode: measures between bounding-box centers of selected objects.
@@ -4472,6 +4471,7 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
     """
     bl_idname = "lsd.add_dimension"
     bl_label = "Generate Dimension"
+    bl_description = "First Selected is Static Point, Second Selected is Dynamic Point"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
@@ -9048,49 +9048,117 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
     bl_idname = "lsd.accurate_scale"
     bl_label = "Apply Scale"
     bl_options = {'REGISTER', 'UNDO'}
+
     def execute(self, context):
-
-        obj = context.active_object
-        if not obj:
-
-            self.report({'ERROR'}, "No active object")
-            return {'CANCELLED'}
-
-        
-
+        import mathutils
         scene = context.scene
         axes = scene.lsd_scale_axes
-        target_dim = scene.lsd_scale_value # This is now treated as a dimension in meters
+        target_dim = scene.lsd_scale_value
+        scale_mode = getattr(scene, 'lsd_scale_mode', 'INDIVIDUAL')
+        pivot_mode = getattr(scene, 'lsd_scale_pivot', 'ORIGIN')
 
-        
+        # Determine Center Point in World Space
+        pivot_world = mathutils.Vector((0,0,0))
+        if pivot_mode == 'CURSOR':
+            pivot_world = scene.cursor.location
 
-        # Calculate scale factor for each axis to reach target dimension
-        # current_dim * multiplier = target_dim  => multiplier = target_dim / current_dim
-        # We use dimensions (bounding box size) for drafting precision.
+        if context.mode == 'EDIT_MESH':
+            # --- EDIT MODE DRAFTING ---
+            import bmesh
+            for obj in context.objects_in_mode:
+                if obj.type != 'MESH': continue
+                bm = bmesh.from_edit_mesh(obj.data)
+                verts = [v for v in bm.verts if v.select]
+                if not verts: continue
+                
+                # Calculate Bounding Box of selected vertices in World Space
+                min_v = mathutils.Vector((float('inf'),)*3)
+                max_v = mathutils.Vector((float('-inf'),)*3)
+                for v in verts:
+                    world_co = obj.matrix_world @ v.co
+                    for i in range(3):
+                        min_v[i] = min(min_v[i], world_co[i])
+                        max_v[i] = max(max_v[i], world_co[i])
+                
+                current_dims = max_v - min_v
+                center_world = (min_v + max_v) / 2.0
+                
+                # Define Scale Center based on Pivot Mode
+                active_pivot = center_world if pivot_mode == 'ORIGIN' else pivot_world
+                local_pivot = obj.matrix_world.inverted() @ active_pivot
+                
+                scale_vec = mathutils.Vector((1.0, 1.0, 1.0))
+                for i in range(3):
+                    if axes[i] and current_dims[i] > 1e-8:
+                        scale_vec[i] = target_dim / current_dims[i]
+                
+                # Apply transformation around the local pivot
+                bmesh.ops.scale(bm, verts=verts, vec=scale_vec, space=mathutils.Matrix.Translation(-local_pivot))
+                bmesh.update_edit_mesh(obj.data)
+            
+        else:
+            # --- OBJECT MODE DRAFTING ---
+            targets = context.selected_objects
+            if not targets:
+                return {'CANCELLED'}
 
-        
+            if scale_mode == 'GROUP' and len(targets) > 0:
+                # Scale entire selection as a single mechatronic unit
+                min_v = mathutils.Vector((float('inf'),)*3)
+                max_v = mathutils.Vector((float('-inf'),)*3)
+                for o in targets:
+                    for box_corner in o.bound_box:
+                        world_corner = o.matrix_world @ mathutils.Vector(box_corner)
+                        for i in range(3):
+                            min_v[i] = min(min_v[i], world_corner[i])
+                            max_v[i] = max(max_v[i], world_corner[i])
+                
+                total_dims = max_v - min_v
+                group_center = (min_v + max_v) / 2.0
+                active_pivot = group_center if pivot_mode == 'ORIGIN' else pivot_world
+                
+                scale_vec = mathutils.Vector((1.0, 1.0, 1.0))
+                for i in range(3):
+                    if axes[i] and total_dims[i] > 1e-8:
+                        scale_vec[i] = target_dim / total_dims[i]
+                
+                for o in targets:
+                    # Translation relative to the pivot
+                    rel_pos = o.matrix_world.translation - active_pivot
+                    rel_pos.x *= scale_vec.x
+                    rel_pos.y *= scale_vec.y
+                    rel_pos.z *= scale_vec.z
+                    o.matrix_world.translation = active_pivot + rel_pos
+                    
+                    # Scale
+                    o.scale.x *= scale_vec.x
+                    o.scale.y *= scale_vec.y
+                    o.scale.z *= scale_vec.z
+            else:
+                # Individual scaling
+                for obj in targets:
+                    # Individual scaling usually happens on own origin if pivot is ORIGIN
+                    # or on cursor if pivot is CURSOR.
+                    if pivot_mode == 'CURSOR':
+                        # Need to move origin too
+                        rel_pos = obj.matrix_world.translation - pivot_world
+                        sv = mathutils.Vector((1,1,1))
+                        if obj.dimensions.x > 0.00000001 and axes[0]: sv.x = target_dim / obj.dimensions.x
+                        if obj.dimensions.y > 0.00000001 and axes[1]: sv.y = target_dim / obj.dimensions.y
+                        if obj.dimensions.z > 0.00000001 and axes[2]: sv.z = target_dim / obj.dimensions.z
+                        
+                        rel_pos.x *= sv.x; rel_pos.y *= sv.y; rel_pos.z *= sv.z
+                        obj.matrix_world.translation = pivot_world + rel_pos
+                        
+                        obj.scale.x *= sv.x; obj.scale.y *= sv.y; obj.scale.z *= sv.z
+                    else:
+                        # Pure origin-based scaling
+                        if obj.dimensions.x > 0.00000001 and axes[0]: obj.scale.x *= (target_dim / obj.dimensions.x)
+                        if obj.dimensions.y > 0.00000001 and axes[1]: obj.scale.y *= (target_dim / obj.dimensions.y)
+                        if obj.dimensions.z > 0.00000001 and axes[2]: obj.scale.z *= (target_dim / obj.dimensions.z)
 
-        if obj.dimensions.x > 0 and axes[0]:
-
-            obj.scale.x *= (target_dim / obj.dimensions.x)
-
-        if obj.dimensions.y > 0 and axes[1]:
-
-            obj.scale.y *= (target_dim / obj.dimensions.y)
-
-        if obj.dimensions.z > 0 and axes[2]:
-
-            obj.scale.z *= (target_dim / obj.dimensions.z)
-
-        
-
-        # AI Editor Note: Automatically apply scale transformation to keep scale 1.0
-        # This makes the new dimensions permanent in the mesh data.
-        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-
-        
-
-        self.report({'INFO'}, f"Applied accurate scale: {target_dim}m on selected axes")
+            # Bake to 1.0 (Applied Scale)
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
         return {'FINISHED'}
 
 class LSD_OT_Dimension_AutoScale(bpy.types.Operator):
@@ -9098,7 +9166,6 @@ class LSD_OT_Dimension_AutoScale(bpy.types.Operator):
     """Automatically scale arrowheads, text, line thickness and offset based on dimension length."""
     bl_idname = "lsd.dimension_auto_scale"
     bl_label = "Auto Size Components"
-    bl_description = "Calculates optimal visual sizes based on length"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
@@ -9166,6 +9233,7 @@ class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
     """Calculates optimal drafting sizes based on selection distance (for new assemblies)."""
     bl_idname = "lsd.dimension_auto_calculate_global"
     bl_label = "Auto Calculate"
+    bl_description = "Inputs optimal dimension properties scale based on selection distance."
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):

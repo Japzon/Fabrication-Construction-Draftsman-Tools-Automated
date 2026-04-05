@@ -71,118 +71,59 @@ class LSD_PT_Procedural_Toolkit:
         return context.scene.lsd_panel_enabled_procedural
 
     @staticmethod
-
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
-
         scene = context.scene
 
         # --- Header ---
-
         box, is_expanded = ui_common.draw_panel_header(layout, context, "Procedural Toolkit", "lsd_show_panel_procedural", "lsd_panel_enabled_procedural")
 
         if is_expanded:
-
-            # --- Section: Hard Surface Modifiers ---
-
-            # These operators add standard Blender modifiers for common modeling tasks.
-
-            features_box = box.box()
-
-            features_box.label(text="Hard Surface Modifiers", icon='MODIFIER')
-
-            row = features_box.row(align=True)
-
-            row.operator("lsd.add_parametric_mod", text="Fillet/Chamfer").type = 'BEVEL'
-
-            row.operator("lsd.add_parametric_mod", text="Shell/Thicken").type = 'SOLIDIFY'
-
-            row = features_box.row(align=True)
-
-            row.operator("lsd.add_parametric_mod", text="Revolve").type = 'SCREW'
-
-            row.operator("lsd.add_parametric_mod", text="Mirror").type = 'MIRROR'
-
-            # --- Section: Boolean Operations ---
-
-            bool_box = box.box()
-
-            bool_box.label(text="Boolean Operations", icon='MOD_BOOLEAN')
-
-            row = bool_box.row(align=True)
-
-            row.operator("lsd.add_boolean", text="Cut").operation = 'DIFFERENCE'
-
-            row.operator("lsd.add_boolean", text="Join").operation = 'UNION'
-
-            row.operator("lsd.add_boolean", text="Intersect").operation = 'INTERSECT'
-
-            # --- Section: Patterns ---
-
-            pattern_box = box.box()
-
-            pattern_box.label(text="Patterns", icon='MOD_ARRAY')
-
-            row = pattern_box.row(align=True)
-
-            row.operator("lsd.setup_linear_array", text="Linear Pattern")
-
-            row.operator("lsd.setup_radial_array", text="Radial Pattern")
-
-            # New row for curve-based patterns, providing a clear workflow.
-
-            curve_row = pattern_box.row(align=True)
-
+            # --- Dedicated Sub-Panel: Path Tools ---
+            # This section consolidates core path manipulation and vertex-based instancing.
+            path_box = box.box()
+            path_box.label(text="Path Tools", icon='CURVE_PATH')
             
-
-            # 1. A dropdown menu to create a new curve of a specific type.
-
-            curve_row.operator_menu_enum("lsd.create_curve_for_path", "type", text="Create Curve", icon='CURVE_PATH')
-
+            row = path_box.row(align=True)
+            # 1. Spawn Vertex: Drafting tool for path and vertex generation
+            row.operator_menu_enum("lsd.create_curve_for_path", "type", text="Spawn Vertex", icon='ADD')
             
+            # 2. Follow Path: Path-based instancing (Rigid or Deform)
+            row.operator_menu_enum("lsd.setup_curve_array", "mode", text="Follow Path", icon='HOOK')
 
-            # 2. The 'Follow Curve' operator now assigns the selected object(s) to the active curve.
-
-            # Its icon signifies assignment, and it's disabled if the selection is invalid.
-
-            curve_row.operator_menu_enum("lsd.setup_curve_array", "mode", text="Follow Curve", icon='HOOK')
-
-            # --- Section: Geometry Cleanup ---
-
-            cleanup_box = box.box()
-
-            cleanup_box.label(text="Geometry Cleanup", icon='BRUSH_DATA')
-
-            row = cleanup_box.row(align=True)
-
-            row.operator("lsd.add_simplify", text="Weld (Merge)").mode = 'WELD'
-
-            row.operator("lsd.add_simplify", text="Decimate (Simplify)").mode = 'COLLAPSE'
-
-            row.operator("lsd.add_simplify", text="Quad-ify").mode = 'QUADIFY'
-
-            # --- Section: Shading ---
-
-            shading_box = box.box()
-
-            shading_box.label(text="Shading", icon='SHADING_RENDERED')
-
-            shading_box.operator("lsd.smart_smooth", text="Smart Smooth (Auto Weighted)")
-
-            # The modifier stack UI has been removed. Blender's native Properties Editor
-
-            # provides a complete and stable interface for managing modifiers, making a
-
-            # duplicate UI in this panel redundant and prone to errors.
-
+            # --- Vertex Axis Alignments (Precision Snap) ---
+            # These 6 buttons allow for batch-alignment of selected path vertices
+            # to the global bounding box boundaries (+/- XYZ).
+            align_box = path_box.box()
+            align_box.label(text="Vertex Axis Alignments", icon='CURSOR')
             
+            # 2x3 Grid of Alignment Targets (Manually implemented for compatibility)
+            grid_col = align_box.column(align=True)
+            row_pos = grid_col.row(align=True)
+            row_pos.prop(scene, "lsd_path_align_pos", index=0, text="+X", toggle=True)
+            row_pos.prop(scene, "lsd_path_align_pos", index=1, text="+Y", toggle=True)
+            row_pos.prop(scene, "lsd_path_align_pos", index=2, text="+Z", toggle=True)
+            
+            row_neg = grid_col.row(align=True)
+            row_neg.prop(scene, "lsd_path_align_neg", index=0, text="-X", toggle=True)
+            row_neg.prop(scene, "lsd_path_align_neg", index=1, text="-Y", toggle=True)
+            row_neg.prop(scene, "lsd_path_align_neg", index=2, text="-Z", toggle=True)
 
-            # --- AI Editor Note: Physics properties are not drawn in this panel ---
 
-            # This panel is for general solid modeling tools that apply to any active object.
+            # Live Calibration & Commit
+            cal_row = align_box.row(align=True)
+            cal_row.scale_y = 1.2
+            
+            # Calibration Toggle (Blue style as per reference)
+            cal_row.prop(scene, "lsd_path_live_align", text="Live Calibration", toggle=True, icon='TIME')
+            
+            # Commit Alignment (Only useful if Live is on, or to clear the mask)
+            if scene.lsd_path_live_align:
+                cal_row.operator("lsd.commit_path_alignment", text="Commit Alignment", icon='CHECKMARK')
 
-            # Physics properties are specific to kinematic links or generated parts and are
+            # Note: Over-simplistic modifiers and cleanup tools have been removed
 
-            # available in the 'Kinematics Setup' and 'Generate Mechanical Parts' panels respectively.
+
+
 
 def register():
 

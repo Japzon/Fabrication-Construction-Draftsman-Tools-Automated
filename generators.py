@@ -533,6 +533,74 @@ def setup_dimension_gn(obj: bpy.types.Object):
     
     mod.node_group = group
 
+def setup_gn_for_rigid_array(path_obj: bpy.types.Object):
+    """
+    Sets up a reusable Geometry Nodes group for rigid object instancing along a path.
+    Supported Paths: Curves (Bezier/NURBS) or Mesh Vertices.
+    """
+    group_name = "LSD_Rigid_Follow_Path"
+    group = bpy.data.node_groups.get(group_name)
+    if not group:
+        group = bpy.data.node_groups.new(group_name, 'GeometryNodeTree')
+        # Interface setup
+        group.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+        group.interface.new_socket("Instance Object", in_out='INPUT', socket_type='NodeSocketObject')
+        group.interface.new_socket("Spacing", in_out='INPUT', socket_type='NodeSocketFloat')
+        group.interface.new_socket("Is Mesh", in_out='INPUT', socket_type='NodeSocketBool')
+        group.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+        
+        # Node Creation
+        nodes = group.nodes
+        links = group.links
+        
+        input_node = nodes.new('NodeGroupInput')
+        output_node = nodes.new('NodeGroupOutput')
+        
+        # 0. Polymorphic Path Conversion
+        # If the input is a Mesh (Spawn Vertex), convert to curve first. 
+        # If it's already a Curve, pass-through.
+        m_to_c = nodes.new('GeometryNodeMeshToCurve')
+        path_switch = nodes.new('GeometryNodeSwitch')
+        path_switch.input_type = 'GEOMETRY'
+
+        links.new(input_node.outputs['Geometry'], m_to_c.inputs['Mesh'])
+        links.new(input_node.outputs['Is Mesh'], path_switch.inputs['Switch'])
+        links.new(input_node.outputs['Geometry'], path_switch.inputs[1]) # False = Curve
+        links.new(m_to_c.outputs['Curve'], path_switch.inputs[2]) # True = MeshToCurve
+        
+        # 1. Resample Path
+        resample = nodes.new('GeometryNodeResampleCurve')
+        resample.mode = 'LENGTH'
+        links.new(path_switch.outputs[0], resample.inputs['Curve'])
+        links.new(input_node.outputs['Spacing'], resample.inputs['Length'])
+        
+        # 2. Instance on Points
+        instance_node = nodes.new('GeometryNodeInstanceOnPoints')
+        links.new(resample.outputs['Curve'], instance_node.inputs['Points'])
+        
+        # 3. Handle Object Input
+        info_node = nodes.new('GeometryNodeObjectInfo')
+        info_node.transform_space = 'RELATIVE'
+        links.new(input_node.outputs['Instance Object'], info_node.inputs['Object'])
+        links.new(info_node.outputs['Geometry'], instance_node.inputs['Instance'])
+        
+        # 4. Rotation Alignment
+        # Standardize on 'GeometryNodeInputTangent' for 4.5+ path following
+        tangent_node = nodes.new('GeometryNodeInputTangent')
+
+        align_node = nodes.new('FunctionNodeAlignEulerToVector')
+        align_node.axis = 'X' # Assume +X is forward for the arrayed object
+        links.new(tangent_node.outputs['Tangent'], align_node.inputs['Vector'])
+        links.new(align_node.outputs['Rotation'], instance_node.inputs['Rotation'])
+        
+        links.new(instance_node.outputs['Instances'], output_node.inputs['Geometry'])
+        
+    return group
+
+
+
+
+
 def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", parent_a=None, parent_b=None):
     # AI Editor Note: BLENDER 4.5+ ULTIMATE SYNC PASS
     if context.mode != 'OBJECT':

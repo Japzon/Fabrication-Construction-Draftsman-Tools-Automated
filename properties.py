@@ -144,6 +144,31 @@ def update_text_color(self, context):
         core.get_or_create_text_material(self.id_data)
         self.id_data.update_tag()
 
+def update_curve_orientation_timer(self, context):
+    """Dispatches curve vertex rotation via timer."""
+    from . import core
+    if getattr(core, "_curve_update_guard", False): return
+    
+    def dispatch():
+        core.apply_curve_vertex_rotation(context)
+        return None
+        
+    bpy.app.timers.register(dispatch, first_interval=0.01)
+
+def update_path_align_timer(self, context):
+    """Dispatches path vertex alignment via timer."""
+    from . import core
+    if getattr(core, "_path_align_update_guard", False): return
+    if not getattr(self, "lsd_path_live_align", False): return
+    
+    def dispatch():
+        core.apply_path_vertex_alignment(context)
+        return None
+        
+    bpy.app.timers.register(dispatch, first_interval=0.01)
+
+
+
 def update_arrow_settings_timer(self, context):
     """Dispatches arrow setting update via timer with a single-queue guard."""
     from . import core
@@ -998,6 +1023,40 @@ def register():
     bpy.types.Scene.lsd_anchor_auto_size = bpy.props.BoolProperty(name="Auto-Size", default=True)
     # 2. Export List
     bpy.types.Scene.lsd_export_list = bpy.props.CollectionProperty(type=LSD_ExportItem)
+
+    # 3. Curve Tools Orientation (Drafting)
+    bpy.types.Scene.lsd_curve_vertex_rot = bpy.props.FloatVectorProperty(
+        name="Curve Align Rotation",
+        subtype='EULER',
+        size=3,
+        update=update_curve_orientation_timer
+    )
+    bpy.types.Scene.lsd_curve_vertex_rot_prev = bpy.props.FloatVectorProperty(
+        name="Prev Rotation State",
+        size=3,
+        options={'HIDDEN'}
+    )
+
+    # 4. Path Tools Alignment (Drafting)
+    bpy.types.Scene.lsd_path_align_pos = bpy.props.BoolVectorProperty(
+        name="Align Positives",
+        size=3,
+        description="Align to bounding box maximums (+X, +Y, +Z)",
+        update=update_path_align_timer
+    )
+    bpy.types.Scene.lsd_path_align_neg = bpy.props.BoolVectorProperty(
+        name="Align Negatives",
+        size=3,
+        description="Align to bounding box minimums (-X, -Y, -Z)",
+        update=update_path_align_timer
+    )
+    bpy.types.Scene.lsd_path_live_align = bpy.props.BoolProperty(
+        name="Live Calibration",
+        default=False,
+        update=update_path_align_timer
+    )
+
+
     bpy.types.Scene.lsd_export_list_index = bpy.props.IntProperty(default=0)
     bpy.types.Scene.lsd_export_check_meshes = bpy.props.BoolProperty(name="Meshes", default=True)
     bpy.types.Scene.lsd_export_check_textures = bpy.props.BoolProperty(name="Textures", default=True)

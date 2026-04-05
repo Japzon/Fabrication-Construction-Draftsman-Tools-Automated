@@ -5198,56 +5198,62 @@ class LSD_OT_SetupRadialArray(bpy.types.Operator):
         return {'FINISHED'}
 
 class LSD_OT_CreateCurveForPath(bpy.types.Operator):
-
-    """Creates a new curve object at the 3D cursor, ready for editing"""
+    """Spawns a single vertex or control point at the 3D cursor for path drafting."""
     bl_idname = "lsd.create_curve_for_path"
-    bl_label = "Create Path Curve"
+    bl_label = "Spawn Vertex"
     bl_options = {'REGISTER', 'UNDO'}
+
     type: bpy.props.EnumProperty(
-        name="Curve Type",
+        name="Path Type",
         items=[
-            ('BEZIER', "Bezier", "Create a Bezier curve"),
-            ('NURBS', "NURBS", "Create a NURBS curve"),
-            ('POLY', "Poly", "Create a Poly curve"),
+            ('BEZIER', "Bezier Path", "Draft a path using Bezier control points"),
+            ('NURBS', "NURBS Path", "Draft a path using NURBS control points"),
+            ('POLY', "Vertex Mesh", "Spawn a real mesh vertex object for precision vertex-instancing"),
         ],
         default='BEZIER'
-
     )
-    def execute(self, context: bpy.types.Context) -> Set[str]:
 
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         # Ensure we are in object mode before creating new objects
         if context.mode != 'OBJECT':
-
             bpy.ops.object.mode_set(mode='OBJECT')
 
-        
+        if self.type == 'POLY':
+            # Create a real MESH object with a single vertex
+            mesh_data = bpy.data.meshes.new("Path_Vertex_Data")
+            bm = bmesh.new()
+            bm.verts.new((0, 0, 0))
+            bm.to_mesh(mesh_data)
+            bm.free()
+            
+            path_obj = bpy.data.objects.new("Path_Vertex", mesh_data)
+            path_obj.location = context.scene.cursor.location
+            context.collection.objects.link(path_obj)
+            
+            # Select and enter edit mode
+            bpy.ops.object.select_all(action='DESELECT')
+            context.view_layer.objects.active = path_obj
+            path_obj.select_set(True)
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            self.report({'INFO'}, f"Spawned new vertex mesh '{path_obj.name}' at cursor.")
+            return {'FINISHED'}
 
         # Create curve data and object
-        curve_data = bpy.data.curves.new("Path_Curve_Data", type='CURVE')
+        curve_data = bpy.data.curves.new("Path_Data", type='CURVE')
         curve_data.dimensions = '3D'
-
         
-
         spline = curve_data.splines.new(self.type)
-
         
-
-        # --- MODIFICATION: Create single-vertex curves ---
-        # Per user request, all curve types now start with a single vertex at the origin.
-        # This provides a consistent starting point for extrusion.
         if self.type == 'BEZIER':
-
-            # Configure the single, default bezier point.
             spline.bezier_points[0].co = (0, 0, 0)
             spline.bezier_points[0].handle_left_type = 'AUTO'
             spline.bezier_points[0].handle_right_type = 'AUTO'
-
-        else: # POLY or NURBS
-
-            # Create a single point. The user can then extrude from it.
+        else: # NURBS
             spline.points[0].co = (0, 0, 0, 1)
 
-        path_obj = bpy.data.objects.new("Path_Curve", curve_data)
+        path_obj = bpy.data.objects.new("Path_Path", curve_data)
+
         path_obj.location = context.scene.cursor.location
         context.collection.objects.link(path_obj)
         # Make the new curve active and enter edit mode for immediate shaping
@@ -5278,29 +5284,28 @@ class LSD_OT_CreateCurveForPath(bpy.types.Operator):
         return {'FINISHED'}
 
 class LSD_OT_SetupCurveArray(bpy.types.Operator):
-
-    """Creates an array of the selected object(s) that follows the active curve"""
+    """Creates an array of the selected object(s) that follows the active path (Curve or Vertex Mesh)"""
     bl_idname = "lsd.setup_curve_array"
-    bl_label = "Follow Curve"
+    bl_label = "Follow Path"
+
     bl_options = {'REGISTER', 'UNDO'}
     mode: bpy.props.EnumProperty(
-        name="Array Type",
-        description="Choose how the array follows the curve",
+        name="Path Type",
+        description="Choose how the array follows the path",
         items=[
-            ('DEFORM', "Deform", "Stretches and bends the mesh to fit the curve. Good for flexible parts like hoses."),
-            ('RIGID', "Rigid Instances Array", "Creates rigid, non-deforming copies along the curve. Good for chains or treads."),
+            ('DEFORM', "Deform", "Stretches and bends the mesh to fit the path. (Curves only)"),
+            ('RIGID', "Rigid Instances Array", "Creates rigid, non-deforming copies along the path. (Curves or Mesh Vertices)"),
         ],
         default='DEFORM'
-
     )
+
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         active_obj = context.active_object
-        if not active_obj or active_obj.type != 'CURVE':
-
-            cls.poll_message_set("Active object must be a Curve.")
+        if not active_obj or active_obj.type not in {'CURVE', 'MESH'}:
+            cls.poll_message_set("Active object must be a Curve or a Mesh Path.")
             return False
+
 
         selected_meshes = [obj for obj in context.selected_objects if obj != active_obj and obj.type == 'MESH']
         if not selected_meshes:
@@ -5334,13 +5339,10 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
             
 
             # --- STEP 1: Clean up any previous setups from this tool ---
-            # This ensures that switching between modes or re-running the operator works cleanly.
-            # A. Remove modifiers created by this tool on the main object.
-            for mod_name in [f"{MOD_PREFIX}FollowCurve_Array", f"{MOD_PREFIX}FollowCurve_Deform"]:
-
+            for mod_name in [f"{MOD_PREFIX}FollowPath_Array", f"{MOD_PREFIX}FollowPath_Deform"]:
                 if mod_name in obj.modifiers:
-
                     obj.modifiers.remove(obj.modifiers[mod_name])
+
 
             # B. If the object was part of a 'Rigid' setup, dismantle it completely.
             # Use startswith for robustness in case of .001 suffixes.
@@ -5402,14 +5404,19 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
 
                 # This is the classic setup that bends and stretches the mesh itself.
                 # It requires the object to have enough geometry to deform smoothly.
-                array_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowCurve_Array", 'ARRAY')
+                if path_obj.type != 'CURVE':
+                    self.report({'WARNING'}, f"Object '{obj.name}' cannot use DEFORM on a non-curve path.")
+                    continue
+
+                array_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowPath_Array", 'ARRAY')
                 array_mod.fit_type = 'FIT_CURVE'
                 array_mod.curve = path_obj
                 array_mod.use_relative_offset = True
                 array_mod.relative_offset_displace = (1.0, 0.0, 0.0)
-                curve_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowCurve_Deform", 'CURVE')
+                curve_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowPath_Deform", 'CURVE')
                 curve_mod.object = path_obj
                 curve_mod.deform_axis = 'POS_X'
+
 
             
 
@@ -5424,44 +5431,61 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
                 
 
                 # Get or create the reusable node group for this tool.
-                gn_group = setup_gn_for_rigid_array(path_obj)
+                gn_group = generators.setup_gn_for_rigid_array(path_obj)
+
 
                 
 
                 # Add a dedicated GN modifier to the curve for this specific object.
                 mod_name = f"{MOD_PREFIX}RigidArray_{obj.name}"
                 if mod_name in path_obj.modifiers:
-
                     path_obj.modifiers.remove(path_obj.modifiers[mod_name])
-
-                
 
                 mod = path_obj.modifiers.new(name=mod_name, type='NODES')
                 mod.node_group = gn_group
-
-                
 
                 # --- Connect Modifier Inputs ---
                 iface = gn_group.interface
                 instance_obj_socket = iface.items_tree.get("Instance Object")
                 spacing_socket = iface.items_tree.get("Spacing")
-
-                
+                is_mesh_socket = iface.items_tree.get("Is Mesh")
 
                 if instance_obj_socket:
-
                     mod[instance_obj_socket.identifier] = obj
 
-                
-
                 if spacing_socket:
-
                     # Use the object's X-dimension as the default spacing.
                     spacing = obj.dimensions.x if obj.dimensions.x > 0.01 else 1.0
                     mod[spacing_socket.identifier] = spacing
+                
+                if is_mesh_socket:
+                    # Inform GN if we are using a Mesh Path (Spawn Vertex) or a Curve Path
+                    mod[is_mesh_socket.identifier] = (path_obj.type == 'MESH')
+
 
         self.report({'INFO'}, f"Set {len(objects_to_modify)} object(s) to follow '{path_obj.name}' using '{self.mode}' mode.")
         return {'FINISHED'}
+
+class LSD_OT_CommitPathAlignment(bpy.types.Operator):
+    """Bakes the current alignment offsets and clears the alignment mask."""
+    bl_idname = "lsd.commit_path_alignment"
+    bl_label = "Commit Path Alignment"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        scene = context.scene
+        # Final pass to ensure maximum precision before bake
+        from . import core
+        core.apply_path_vertex_alignment(context)
+        
+        # Reset and Clear
+        scene.lsd_path_live_align = False
+        scene.lsd_path_align_pos = (False, False, False)
+        scene.lsd_path_align_neg = (False, False, False)
+        
+        self.report({'INFO'}, "Path alignment committed and drafting masks reset.")
+        return {'FINISHED'}
+
 
 class LSD_OT_SmartSmooth(bpy.types.Operator):
 
@@ -9298,7 +9322,7 @@ def register():
         LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement, 
         LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive, 
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
-        LSD_OT_AccurateScale, LSD_OT_Dimension_AutoScale
+        LSD_OT_AccurateScale, LSD_OT_Dimension_AutoScale, LSD_OT_CommitPathAlignment
     ]
     for cls in CLASSES:
 
@@ -9335,7 +9359,7 @@ def unregister():
         LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement, 
         LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive, 
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
-        LSD_OT_AccurateScale, LSD_OT_Dimension_AutoScale
+        LSD_OT_AccurateScale, LSD_OT_Dimension_AutoScale, LSD_OT_CommitPathAlignment
     ]
     for cls in reversed(CLASSES):
 

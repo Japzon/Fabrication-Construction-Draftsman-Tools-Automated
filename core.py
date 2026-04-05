@@ -54,6 +54,12 @@ _dim_timer_queued = False
 
 _dim_update_guard = False
 
+_curve_update_guard = False
+
+_path_align_update_guard = False
+
+
+
 def update_panel_collapse(self, context):
 
     """Callback for all panel visibility properties to support Auto-Collapse"""
@@ -2101,6 +2107,90 @@ def sync_dimension_flipping(obj):
     finally:
 
         _dim_update_guard = False
+
+@staticmethod
+def apply_path_vertex_alignment(context):
+    """
+    Physically aligns all selected path vertices to the bounding box boundaries.
+    Enables Ortho-Snapping behavior for path drafting.
+    """
+    global _path_align_update_guard
+    if _path_align_update_guard: return
+    _path_align_update_guard = True
+    
+    try:
+        scene = context.scene
+        t_pos = scene.lsd_path_align_pos
+        t_neg = scene.lsd_path_align_neg
+        
+        selected_paths = [obj for obj in context.selected_objects if obj.type in {'CURVE', 'MESH'}]
+        if not selected_paths:
+            _path_align_update_guard = False
+            return
+            
+        # 1. Global Bounding Box Calculation
+        all_pts_w = []
+        for obj in selected_paths:
+            mw = obj.matrix_world
+            if obj.type == 'CURVE':
+                for sp in obj.data.splines:
+                    if sp.type == 'BEZIER':
+                        for bp in sp.bezier_points: all_pts_w.append(mw @ bp.co)
+                    else:
+                        for p in sp.points: all_pts_w.append(mw @ p.co.to_3d())
+            else: # MESH
+                for v in obj.data.vertices: all_pts_w.append(mw @ v.co)
+                
+        if not all_pts_w:
+            _path_align_update_guard = False
+            return
+            
+        mn = mathutils.Vector((min(p.x for p in all_pts_w), min(p.y for p in all_pts_w), min(p.z for p in all_pts_w)))
+        mx = mathutils.Vector((max(p.x for p in all_pts_w), max(p.y for p in all_pts_w), max(p.z for p in all_pts_w)))
+        
+        # 2. Apply Alignment Transformations
+        for obj in selected_paths:
+            im = obj.matrix_world.inverted()
+            if obj.type == 'CURVE':
+                for sp in obj.data.splines:
+                    if sp.type == 'BEZIER':
+                        for bp in sp.bezier_points:
+                            cw = obj.matrix_world @ bp.co
+                            if t_pos[0]: cw.x = mx.x
+                            if t_neg[0]: cw.x = mn.x
+                            if t_pos[1]: cw.y = mx.y
+                            if t_neg[1]: cw.y = mn.y
+                            if t_pos[2]: cw.z = mx.z
+                            if t_neg[2]: cw.z = mn.z
+                            bp.co = im @ cw
+                    else:
+                        for p in sp.points:
+                            cw = obj.matrix_world @ p.co.to_3d()
+                            if t_pos[0]: cw.x = mx.x
+                            if t_neg[0]: cw.x = mn.x
+                            if t_pos[1]: cw.y = mx.y
+                            if t_neg[1]: cw.y = mn.y
+                            if t_pos[2]: cw.z = mx.z
+                            if t_neg[2]: cw.z = mn.z
+                            p.co = (im @ cw).to_4d(); p.co.w = 1.0
+            else: # MESH
+                for v in obj.data.vertices:
+                    cw = obj.matrix_world @ v.co
+                    if t_pos[0]: cw.x = mx.x
+                    if t_neg[0]: cw.x = mn.x
+                    if t_pos[1]: cw.y = mx.y
+                    if t_neg[1]: cw.y = mn.y
+                    if t_pos[2]: cw.z = mx.z
+                    if t_neg[2]: cw.z = mn.z
+                    v.co = im @ cw
+            
+            obj.data.update()
+            
+    except Exception as e:
+        print(f"[LSD] Path alignment error: {e}")
+    finally:
+        _path_align_update_guard = False
+
 
 def build_example_arm(context: bpy.types.Context, scale_factor: float = 1.0):
 
@@ -7960,3 +8050,56 @@ def unregister():
         except Exception:
 
             pass
+# ------------------------------------------------------------------------
+#   CURVE DRAFTING TOOLS
+# ------------------------------------------------------------------------
+
+def apply_curve_vertex_rotation(context):
+    """
+    Applies an incremental rotation to all selected curve control points.
+    Calculates the delta between current and previous scene rotation states.
+    """
+    global _curve_update_guard
+    if _curve_update_guard: return
+    _curve_update_guard = True
+    
+    try:
+        scene = context.scene
+        # Calculate Delta Rotation
+        curr_rot = mathutils.Euler(scene.lsd_curve_vertex_rot, 'XYZ')
+        prev_rot = mathutils.Euler(scene.lsd_curve_vertex_rot_prev, 'XYZ')
+        
+        # Difference quaternion: New * Old_Inverted
+        diff_quat = curr_rot.to_quaternion() @ prev_rot.to_quaternion().inverted()
+        diff_mat = diff_quat.to_matrix().to_4x4()
+        
+        # Identity check to avoid redundant evaluation
+        if diff_quat.angle < 0.00001: 
+            _curve_update_guard = False
+            return
+
+        selected_curves = [obj for obj in context.selected_objects if obj.type == 'CURVE']
+        for obj in selected_curves:
+            # Transform each control point (and its handles if Bezier) in local space
+            for spline in obj.data.splines:
+                if spline.type == 'BEZIER':
+                    for p in spline.bezier_points:
+                        p.co = diff_mat @ p.co
+                        p.handle_left = diff_mat @ p.handle_left
+                        p.handle_right = diff_mat @ p.handle_right
+                else: # POLY or NURBS
+                    for p in spline.points:
+                        # p.co is a Vector4 (XYZW) for NURBS/Poly
+                        vec_3d = p.co.to_3d()
+                        baked_vec = diff_mat @ vec_3d
+                        p.co[0], p.co[1], p.co[2] = baked_vec.x, baked_vec.y, baked_vec.z
+            
+            obj.data.update()
+            
+        # Update state persistence
+        scene.lsd_curve_vertex_rot_prev = scene.lsd_curve_vertex_rot
+
+    except Exception as e:
+        print(f"[LSD] Curve alignment failed: {e}")
+    finally:
+        _curve_update_guard = False

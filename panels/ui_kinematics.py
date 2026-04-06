@@ -237,25 +237,23 @@ class LSD_PT_Kinematics_Setup:
                         op_t = row_t.operator("lsd.pick_bone", text="", icon='EYEDROPPER')
                         op_t.mode = 0
 
-                        row_ref = ratio_box.row(align=True)
+                        row_ref = relations_col.row(align=True)
                         row_ref.prop_search(props, "ratio_ref_bone", active_obj.pose, "bones", text="Ref Bone")
                         op_r = row_ref.operator("lsd.pick_bone", text="", icon='EYEDROPPER')
                         op_r.mode = 1
 
                     else:
 
-                        ratio_box.label(text="Select an ARM/Rig for relationships", icon='ERROR')
+                        relations_col.label(text="Select an ARM/Rig for relationships", icon='ERROR')
 
-                    row_r = ratio_box.row(align=True)
+                    row_r = relations_col.row(align=True)
                     row_r.prop(props, "ratio_value")
                     row_r.prop(props, "ratio_invert", text="Invert", toggle=True)
                     row_r.operator("lsd.calculate_ratio", text="", icon='DRIVER_DISTANCE')
-                    ratio_box.operator("lsd.add_mimic", icon='ADD', text="Add / Update Driver")
-
-                else:
+                    relations_col.operator("lsd.add_mimic", icon='ADD', text="Add / Update Driver")
 
                     # Show info if no active bone for relationships
-                    relations_box.label(text="Select a bone to manage relationships.", icon='INFO')
+                    relations_col.label(text="Select a bone to manage relationships.", icon='INFO')
 
 def register():
 

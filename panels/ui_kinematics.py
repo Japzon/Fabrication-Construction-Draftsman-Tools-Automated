@@ -46,7 +46,6 @@ class LSD_UL_Mimic_Driver_List(bpy.types.UIList):
 
             row = layout.row(align=True)
             row.label(text=item.target_bone, icon='BONE_DATA')
-            row.prop(item, "ratio", text="Ratio", emboss=False if index == getattr(active_data, active_propname) else True)
             # Removal uses the operator
             op = row.operator("lsd.remove_mimic", text="", icon='X', emboss=False)
             op.index = index
@@ -197,7 +196,13 @@ class LSD_PT_Kinematics_Setup:
                         row.prop(props, "joint_radius")
                         row.prop(props, "visual_gizmo_scale")
                         
-                        if props.joint_type in ['revolute', 'prismatic', 'spherical']:
+                        if props.joint_type == 'spherical':
+                            l_col = col.column(align=True)
+                            l_col.label(text="Rotation Limits (Global):")
+                            row_x = l_col.row(align=True); row_x.prop(props, "lower_limit", text="X Min"); row_x.prop(props, "upper_limit", text="X Max")
+                            row_y = l_col.row(align=True); row_y.prop(props, "lower_limit_y", text="Y Min"); row_y.prop(props, "upper_limit_y", text="Y Max")
+                            row_z = l_col.row(align=True); row_z.prop(props, "lower_limit_z", text="Z Min"); row_z.prop(props, "upper_limit_z", text="Z Max")
+                        elif props.joint_type in ['revolute', 'prismatic']:
                             row = col.row(align=True)
                             row.prop(props, "lower_limit")
                             row.prop(props, "upper_limit")
@@ -237,10 +242,17 @@ class LSD_PT_Kinematics_Setup:
                         driver_box.template_list("LSD_UL_Mimic_Driver_List", "", props, "mimic_drivers", props, "mimic_drivers_index", rows=3)
                         driver_box.separator()
 
-                    # FORM: "Add New" section
-                    driver_box.label(text="Establish New Coupling:", icon='ADD')
+                    # FORM: "Drivers Setup" section
+                    driver_box.label(text="Drivers Setup:", icon='ADD')
                     
                     if active_obj.pose:
+                        if props.joint_type == 'spherical':
+                             row_f = driver_box.row(align=True)
+                             row_f.label(text="Drive Axes:")
+                             row_f.prop(props, "ratio_drive_x", text="X", toggle=True)
+                             row_f.prop(props, "ratio_drive_y", text="Y", toggle=True)
+                             row_f.prop(props, "ratio_drive_z", text="Z", toggle=True)
+                             
                         row_t = driver_box.row(align=True)
                         row_t.prop_search(props, "ratio_target_bone", active_obj.pose, "bones", text="Target")
                         op_t = row_t.operator("lsd.pick_bone", text="", icon='EYEDROPPER')
@@ -254,11 +266,14 @@ class LSD_PT_Kinematics_Setup:
                     else:
                         driver_box.label(text="Select an ARM/Rig for relationships", icon='ERROR')
 
+                    driver_box.prop(props, "ratio_auto_calculate")
                     row_r = driver_box.row(align=True)
                     row_r.prop(props, "ratio_value")
                     row_r.prop(props, "ratio_invert", text="Invert", toggle=True)
                     row_r.operator("lsd.calculate_ratio", text="", icon='DRIVER_DISTANCE')
-                    driver_box.operator("lsd.add_mimic", icon='ADD', text="Add / Update Driver")
+                    
+                    # Manual addition feature
+                    driver_box.operator("lsd.add_mimic", icon='ADD', text="Add Driver")
 
                 else:
                     # Show info if no active bone for relationships

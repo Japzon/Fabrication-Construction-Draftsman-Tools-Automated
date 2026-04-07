@@ -1850,7 +1850,11 @@ class LSD_OT_ApplyJointSettings(bpy.types.Operator):
                 if self.apply_axis:
                     props.axis_alignment = tool_props.axis_alignment
                 if self.apply_radius:
-                    props.joint_radius = tool_props.joint_radius
+                    if tool_props.joint_radius == 0.0:
+                        # Performance: Independent per-bone calculation for 'Automatic' mode
+                        props.joint_radius = core.detect_bone_radius(scene, bone)
+                    else:
+                        props.joint_radius = tool_props.joint_radius
                 if self.apply_viz_scale:
                     props.visual_gizmo_scale = tool_props.visual_gizmo_scale
                 if self.apply_limits:
@@ -6314,21 +6318,27 @@ class LSD_OT_AddMimic(bpy.types.Operator):
 
                 
 
-            core.add_native_driver_relation(bone, driver_name, props.ratio_value, props.ratio_invert)
+            # 1. Update/Add to the persistent list first
             found = False
             for m in props.mimic_drivers: 
-
                 if m.target_bone == driver_name:
-
                     m.ratio = props.ratio_value
+                    m.invert = props.ratio_invert
+                    m.drive_x = props.ratio_drive_x
+                    m.drive_y = props.ratio_drive_y
+                    m.drive_z = props.ratio_drive_z
                     found = True
-
             if not found:
-
                 item = props.mimic_drivers.add()
                 item.target_bone = driver_name
                 item.ratio = props.ratio_value
+                item.invert = props.ratio_invert
+                item.drive_x = props.ratio_drive_x
+                item.drive_y = props.ratio_drive_y
+                item.drive_z = props.ratio_drive_z
 
+            # 2. Re-apply drivers based on the UPDATED list
+            core.reapply_mimic_drivers(bone)
             count += 1
 
             
@@ -6355,19 +6365,16 @@ class LSD_OT_RemoveMimic(bpy.types.Operator):
 
                 continue
 
-                
-
             item = bone.lsd_pg_kinematic_props.mimic_drivers[self.index]
             if bone.id_data.animation_data and bone.id_data.animation_data.drivers:
-
                 drivers = bone.id_data.animation_data.drivers
                 for i in range(len(drivers)-1, -1, -1):
-
                     d = drivers[i]
                     for v in d.driver.variables:
-
-                        if v.targets[0].bone_target == item.target_bone:
-
+                        # Check both standard bone-target and single-prop data paths (for rotation)
+                        target = v.targets[0]
+                        if target.bone_target == item.target_bone or \
+                           (target.data_path and f'["{item.target_bone}"]' in target.data_path):
                             drivers.remove(d)
                             break
 
@@ -7940,7 +7947,7 @@ class LSD_OT_PurgeBones(bpy.types.Operator):
 
     """Removes selected bones and unparents their associated meshes, cleaning up the rig."""
     bl_idname = "lsd.purge_bones"
-    bl_label = "Purge Selected Bones"
+    bl_label = "Purge Selected Bones / Joints"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
@@ -8005,28 +8012,16 @@ class LSD_OT_PurgeBones(bpy.types.Operator):
             self.report({'WARNING'}, "No bones linked to selection found.")
             return {'CANCELLED'}
 
-        # 2. Unparent objects to preserve transforms
-        for obj in objects_to_unparent:
-
-            mat = obj.matrix_world.copy()
-            obj.parent = None
-            obj.matrix_world = mat
-
-        # 3. Delete bones in Edit Mode
+        # 2. Deletion Process (Simplified: No smart preservation)
         previous_mode = context.mode
-
         
-
-        # AI Editor Note: Ensure we are in Object Mode before calling object selection operators.
-        # This prevents RuntimeError when running from Pose Mode.
+        # Switch to Object Mode to ensure clean selection handling
         if context.mode != 'OBJECT':
-
             bpy.ops.object.mode_set(mode='OBJECT')
-
-        
-
-        # Deselect everything first to avoid clutter
+            
         bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = rig
+        rig.select_set(True)
 
         
 

@@ -7127,12 +7127,27 @@ def apply_native_constraints(bone: bpy.types.PoseBone) -> None:
             
 
     elif props.joint_type == 'spherical':
-
         # Spherical joints are free to rotate on all axes
         fk_lock_rot = [False, False, False]
-        # For IK, unlock all rotation axes
-        ik_use_limit_rot = [False, False, False]
-        # No FK limits needed for a full spherical joint by default
+        # For IK, unlock all rotation axes and apply limits
+        ik_use_limit_rot = [True, True, True]
+        
+        # Radians conversion
+        lx, ux = math.radians(props.lower_limit), math.radians(props.upper_limit)
+        ly, uy = math.radians(props.lower_limit_y), math.radians(props.upper_limit_y)
+        lz, uz = math.radians(props.lower_limit_z), math.radians(props.upper_limit_z)
+        
+        ik_rot_limits[0] = (lx, ux)
+        ik_rot_limits[1] = (-uy, -ly) # Invert for axis map consistency
+        ik_rot_limits[2] = (-uz, -lz)
+        
+        # Add a 'LIMIT_ROTATION' constraint for FK posing.
+        con = bone.constraints.new('LIMIT_ROTATION')
+        con.name = f"{MOD_PREFIX}Limit_Rot"
+        con.owner_space = 'LOCAL'
+        con.use_limit_x = True; con.min_x = lx; con.max_x = ux
+        con.use_limit_y = True; con.min_y = -uy; con.max_y = -ly
+        con.use_limit_z = True; con.min_z = -uz; con.max_z = -lz
 
     elif props.joint_type == 'prismatic':
 
@@ -7388,143 +7403,158 @@ def active_bone_change_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Deps
     elif not target_bone:
         _last_active_bone_key = None
 
-def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name: str, ratio: float, invert: bool = False) -> None:
-
-    """
-    Creates or updates a native Blender driver to establish a gear/mimic
-    relationship between two bones.
-    This function sets up a scripted driver that makes the `target_bone`'s
-    transformation a function of the `source_bone`'s transformation, multiplied
-    by the given ratio. This is a core feature for creating coupled motions like
-    gears, pulleys, or other mechanical linkages.
-    The function is designed to be re-runnable. If a driver already exists for
-    the target bone's property, it will be updated with the new ratio and
-    inversion settings.
-    Args:
-
-        target_bone: The bone to be driven (the follower).
-        source_bone_name: The name of the bone that drives the motion (the driver).
-        ratio: The multiplication factor for the relationship (e.g., gear ratio).
-        invert: Whether to invert the direction of the driven motion.
-
-    """
-    rig = target_bone.id_data
-    source_bone = rig.pose.bones.get(source_bone_name)
-    if not source_bone:
-
-        return
-
-    # Clean up any conflicting mechanics and apply base constraints first.
-    clean_conflicting_mechanics(target_bone)
-    apply_native_constraints(target_bone)
-    # --- Determine Target Bone's Driven Property ---
-    props_tgt = target_bone.lsd_pg_kinematic_props
-    ui_idx_tgt = get_mapped_axis_index(props_tgt.axis_alignment)
-    # AI Editor Note: Re-instating axis mapping to match constraint logic.
-    # The driver must target the same bone axis that is unlocked by the constraints.
-    # The axis_map corrects a permutation between the UI selection and Blender's bone axes.
-    # AI Editor Note: DO NOT CHANGE THIS MAPPING. It is notoriously tricky to align.
-    # Future AI: Do not "correct" this unless explicitly instructed.
-    axis_map = {0: 2, 1: 0, 2: 1}
-    idx_tgt = axis_map.get(ui_idx_tgt, ui_idx_tgt)
+def get_mimic_ratio(bone: bpy.types.PoseBone, target_name: str) -> float:
+    """Calculates the physical mechanical ratio between the bone and its driver."""
+    rig = bone.id_data
+    target = rig.pose.bones.get(target_name)
+    if not target: return 1.0
+    
+    props = bone.lsd_pg_kinematic_props
+    props_tgt = target.lsd_pg_kinematic_props
+    
+    is_rot_self = props.joint_type in ['revolute', 'continuous', 'spherical']
     is_rot_tgt = props_tgt.joint_type in ['revolute', 'continuous', 'spherical']
+    
+    len_driver = props_tgt.joint_radius if is_rot_tgt else target.length
+    len_follower = props.joint_radius if is_rot_self else bone.length
+    
+    # Robust fallbacks
+    if len_follower < 0.00001: len_follower = 0.05
+    if len_driver < 0.00001: len_driver = 0.05
+    
+    if is_rot_self and not is_rot_tgt: # Follower ROT, Driver LIN (Rack & Pinion)
+        return 1.0 / len_follower
+    elif not is_rot_self and is_rot_tgt: # Follower LIN, Driver ROT
+        return len_driver
+    elif is_rot_self and is_rot_tgt: # Both ROT (Gears)
+        return len_driver / len_follower
+    return 1.0
+
+def auto_calculate_gear_ratio(bone: bpy.types.PoseBone) -> None:
+    """Updates the 'Staging Buffer' ratio for the active bone."""
+    props = bone.lsd_pg_kinematic_props
+    props.ratio_value = get_mimic_ratio(bone, props.ratio_target_bone)
+
+def auto_calculate_mimic_item(bone: bpy.types.PoseBone, item: bpy.types.PropertyGroup) -> None:
+    """Updates a SPECIFIC relationship in the mimic list."""
+    item.ratio = get_mimic_ratio(bone, item.target_bone)
+
+def reapply_mimic_drivers(bone: bpy.types.PoseBone) -> None:
+    """Builds multi-axis drivers for the bone based on its mimic_drivers collection."""
+    props = bone.lsd_pg_kinematic_props
+    if not props.mimic_drivers: return
+    rig = bone.id_data
+    
+    # 1. Base Setup
+    is_rot_tgt = props.joint_type in ['revolute', 'continuous', 'spherical']
+    is_1dof_tgt = props.joint_type in ['revolute', 'continuous', 'prismatic']
     data_path = "rotation_euler" if is_rot_tgt else "location"
-    # --- Determine Source Bone's Driving Property ---
-    props_src = source_bone.lsd_pg_kinematic_props
-    ui_idx_src = get_mapped_axis_index(props_src.axis_alignment)
-    # Apply the same mapping to the source bone's axis to ensure the correct source value is read.
-    idx_src = axis_map.get(ui_idx_src, ui_idx_src)
-    is_rot_src = props_src.joint_type in ['revolute', 'continuous', 'spherical']
-    # --- Find or Create the Driver ---
-    driver_fcurve = None
-    if target_bone.id_data.animation_data:
-
-        expected_path = f'pose.bones["{target_bone.name}"].{data_path}'
-        for d in target_bone.id_data.animation_data.drivers:
-
-            if d.data_path == expected_path and d.array_index == idx_tgt:
-
-                driver_fcurve = d
-                break
-
-    if not driver_fcurve:
-
-        driver_fcurve = target_bone.driver_add(data_path, idx_tgt)
-        if not driver_fcurve: return # Failed to create driver
-        driver_fcurve.driver.type = 'SCRIPTED'
-
-    drv = driver_fcurve.driver
-    # Sanitize the source bone name to create a valid Python variable name.
-    clean_src_name = re.sub(r'[^a-zA-Z0-9_]', '_', source_bone_name)
-    var_name = f"var_{clean_src_name}"
-    # --- Configure the Driver Variable ---
-    var = drv.variables.get(var_name)
-    if not var:
-
-        # Remove any old variables to ensure a clean state
-        for v in list(drv.variables):
-
-            drv.variables.remove(v)
-
-        var = drv.variables.new()
-        var.name = var_name
-
-    # AI Editor Note: Use SINGLE_PROP for rotational drivers to prevent snapping.
-    # This ensures continuous rotation (like a screw) correctly drives the target
-    # without jumping at 180-degree intervals, which can happen with 'TRANSFORMS'.
-    if is_rot_src:
-
-        var.type = 'SINGLE_PROP'
-        var.targets[0].id = rig
-        var.targets[0].data_path = f'pose.bones["{source_bone_name}"].rotation_euler[{idx_src}]'
-
-    else:
-
-        var.type = 'TRANSFORMS'
-        t = var.targets[0]
-        t.id = rig
-        t.bone_target = source_bone_name
-        t.transform_space = 'LOCAL_SPACE'
-        t.transform_type = ['LOC_X', 'LOC_Y', 'LOC_Z'][idx_src]
-
-    # --- Configure the Driver Expression ---
-    factor = -1.0 if invert else 1.0
-    # AI Editor Note: Sync driver variables with physical units.
-    # Rotational properties (euler) are in Radians, but Linear properties (loc) are in Blender Units.
-    # To maintain consistency with meter-based joint properties, we must scale Loc variables by the scene unit scale.
-    unit_scale = rig.users_scene[0].unit_settings.scale_length if rig.users_scene else 1.0
-    u_var = f"({var_name} * {unit_scale:.6f})" if not is_rot_src else var_name
-    # Calculate current values for offset (using Blender Units for calculation, then converting)
-    curr_val_tgt = target_bone.rotation_euler[idx_tgt] if is_rot_tgt else (target_bone.location[idx_tgt] * unit_scale if not is_rot_tgt else target_bone.location[idx_tgt])
-    curr_val_src = source_bone.rotation_euler[idx_src] if is_rot_src else (source_bone.location[idx_src] * unit_scale)
-
     
+    # Mapping and unit conversion
+    axis_map = {0: 2, 1: 0, 2: 1} # LSD UI to Blender Bone
+    ui_idx_tgt = get_mapped_axis_index(props.axis_alignment)
+    idx_tgt = axis_map.get(ui_idx_tgt, ui_idx_tgt)
 
-    # Correction for curr_val_tgt logic
-    if not is_rot_tgt:
+    unit_scale = rig.users_scene[0].unit_settings.scale_length if (rig.users_scene and len(rig.users_scene) > 1) else 1.0
 
-         curr_val_tgt = target_bone.location[idx_tgt] * unit_scale
+    # Process axes (X, Y, Z) 
+    for i_axis in range(3):
+        # 1-DOF Follower constraint: Only drive its primary active axis
+        if is_1dof_tgt and i_axis != idx_tgt:
+            continue
+            
+        expected_path = f'pose.bones["{bone.name}"].{data_path}'
+        
+        # Determine if this axis should be cleared or driven
+        # Find or Create
+        driver_fcurve = None
+        if rig.animation_data:
+            for d in rig.animation_data.drivers:
+                if d.data_path == expected_path and d.array_index == i_axis:
+                    driver_fcurve = d
+                    break
+        
+        has_active_vars = False
+        expr_parts = []
+        drv = None
 
-    else:
+        # Build expression from all mimic sources
+        for i_var, item in enumerate(props.mimic_drivers):
+            source_bone = rig.pose.bones.get(item.target_bone)
+            if not source_bone: continue
 
-         curr_val_tgt = target_bone.rotation_euler[idx_tgt]
+            props_src = source_bone.lsd_pg_kinematic_props
+            ui_idx_src = get_mapped_axis_index(props_src.axis_alignment)
+            idx_src = axis_map.get(ui_idx_src, ui_idx_src)
+            is_rot_src = props_src.joint_type in ['revolute', 'continuous', 'spherical']
+            is_1dof_src = props_src.joint_type in ['revolute', 'continuous', 'prismatic']
 
-    offset = curr_val_tgt - (curr_val_src * ratio * factor)
-    
-    # AI Editor Note: If the final target (follower) is linear, the result must be 
-    # divided by unit_scale to convert from meters back to Blender Units.
-    if not is_rot_tgt:
-        drv.expression = f"(({u_var} * {ratio:.4f} * {factor}) + {offset:.4f}) / {unit_scale:.6f}"
-    else:
-        drv.expression = f"({u_var} * {ratio:.4f} * {factor}) + {offset:.4f}"
-    # Lock the driven property in the UI to prevent manual changes that would conflict with the driver.
-    if is_rot_tgt:
+            # Axis Filtering Logic (Fix for ghosting)
+            # 1. Spherical Follower: Drive multiple axes simultaneously if toggled by user
+            # 2. 1-DOF Follower: ONLY drive its single physical axis
+            should_drive = False
+            mapped_src_idx = i_axis
+            
+            if is_1dof_tgt:
+                 should_drive = True # We already filtered for idx_tgt in the outer loop
+                 mapped_src_idx = idx_src if is_1dof_src else i_axis
+            else: # Spherical Follower (multi-axis)
+                # Check the specific toggle for THIS axis from the relationship list
+                if i_axis == 0 and item.drive_x: should_drive = True
+                elif i_axis == 1 and item.drive_y: should_drive = True
+                elif i_axis == 2 and item.drive_z: should_drive = True
+                
+                # For Spherical-to-Spherical or Spherical-to-1DOF:
+                # If we are driving this axis, we map for 1:1 follow if driver is multi-axis, 
+                # or use driver absolute channel if driver is 1-DOF.
+                if should_drive:
+                    mapped_src_idx = idx_src if is_1dof_src else i_axis
 
-        target_bone.lock_rotation[idx_tgt] = True
+            if not should_drive: continue
 
-    else:
+            # Initialize driver if we found a valid source for this axis
+            if not drv:
+                if not driver_fcurve:
+                    driver_fcurve = bone.driver_add(data_path, i_axis)
+                drv = driver_fcurve.driver
+                drv.type = 'SCRIPTED'
+                for v in list(drv.variables): drv.variables.remove(v)
 
-        target_bone.lock_location[idx_tgt] = True
+            var_name = f"var_{i_var:03d}"
+            var = drv.variables.new()
+            var.name = var_name
+            var.type = 'SINGLE_PROP' if is_rot_src else 'TRANSFORMS'
+            var.targets[0].id = rig
+            
+            factor = -1.0 if item.invert else 1.0
+
+            if is_rot_src:
+                var.targets[0].data_path = f'pose.bones["{item.target_bone}"].rotation_euler[{mapped_src_idx}]'
+                expr_parts.append(f"({var_name} * {item.ratio:.6f} * {factor})")
+            else:
+                t = var.targets[0]
+                t.bone_target = item.target_bone
+                t.transform_space = 'LOCAL_SPACE'
+                t.transform_type = ['LOC_X', 'LOC_Y', 'LOC_Z'][mapped_src_idx]
+                expr_parts.append(f"({var_name} * {unit_scale:.6f} * {item.ratio:.6f} * {factor})")
+            has_active_vars = True
+
+        # Final Assembly / Cleanup
+        if drv:
+            if not expr_parts:
+                drv.expression = "0.0"
+            else:
+                full_expr = " + ".join(expr_parts)
+                drv.expression = f"({full_expr}) / {unit_scale:.6f}" if not is_rot_tgt else full_expr
+        
+        # Lock property if driven (or leave unlocked if no drivers exist on this axis)
+        if has_active_vars:
+            if is_rot_tgt: bone.lock_rotation[i_axis] = True
+            else: bone.lock_location[i_axis] = True
+
+def add_native_driver_relation(target_bone: bpy.types.PoseBone, source_bone_name: str, ratio: float, invert: bool = False) -> None:
+    # Legacy wrapper for older calls, now uses the collection re-application logic
+    reapply_mimic_drivers(target_bone)
 
 def invert_ratio_update(self: 'LSD_Properties', context: bpy.types.Context) -> None:
 

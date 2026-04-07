@@ -26,6 +26,35 @@ import xml.etree.ElementTree as ET
 from typing import List, Tuple, Optional, Set, Any, Dict
 from . import config
 from .config import *
+from . import core
+
+def update_target_bone_live(self, context):
+    """Auto-calculate ratio based on physical radii/lengths when a target is selected."""
+    if core._joint_editor_update_guard: return
+    pbone = get_bone_from_props(self)
+    if pbone and self.ratio_auto_calculate:
+        core.auto_calculate_gear_ratio(pbone)
+
+def propagate_auto_calculate_to_followers(bone: bpy.types.PoseBone):
+    """Updates any follower joints in the rig that target this bone."""
+    rig = bone.id_data
+    if not rig or rig.type != 'ARMATURE': return
+    
+    from . import core
+    for b in rig.pose.bones:
+        props = b.lsd_pg_kinematic_props
+        
+        # 1. Update the Staging Buffer if it targets this bone and auto-calc is ON
+        if props.ratio_auto_calculate and props.ratio_target_bone == bone.name:
+            core.auto_calculate_gear_ratio(b)
+            
+        # 2. Update any persistent drivers in the LIST that target this bone
+        for item in props.mimic_drivers:
+            if item.target_bone == bone.name:
+                # We always recalculate if the driver bone itself changed, 
+                # as mechanical ratios are physical invariants.
+                core.auto_calculate_mimic_item(b, item)
+                core.reapply_mimic_drivers(b)
 
 # ------------------------------------------------------------------------
 
@@ -106,6 +135,59 @@ def get_bone_from_props(props):
             
     return None
 
+def update_mini_mimic_live(self, context):
+    """Update callback for individual drivers in the list."""
+    from . import core
+    if core._joint_editor_update_guard: return
+    
+    # self is an item in lsd_pg_kinematic_props.mimic_drivers
+    # We need to find the parent PoseBone
+    bone = get_bone_from_props(self)
+    if bone:
+        core.add_native_driver_relation(bone, self.target_bone, self.ratio, False)
+
+def sync_mimic_list_selection(self, context):
+    """Syncs the 'Drivers Setup' form properties with the selected list item."""
+    from . import core
+    if core._joint_editor_update_guard: return
+    
+    # self is LSD_PG_Kinematic_Props
+    idx = self.mimic_drivers_index
+    if 0 <= idx < len(self.mimic_drivers):
+        item = self.mimic_drivers[idx]
+        core._joint_editor_update_guard = True
+        try:
+            self.ratio_target_bone = item.target_bone
+            self.ratio_value = item.ratio
+            self.ratio_invert = item.invert
+            self.ratio_drive_x = item.drive_x
+            self.ratio_drive_y = item.drive_y
+            self.ratio_drive_z = item.drive_z
+        finally:
+            core._joint_editor_update_guard = False
+
+def update_ratio_live(self, context):
+    """Update callback for the main driver form (real-time setup)."""
+    from . import core
+    if core._joint_editor_update_guard: return
+    
+    # self is LSD_PG_Kinematic_Props
+    bone = get_bone_from_props(self)
+    if bone:
+        idx = self.mimic_drivers_index
+        if 0 <= idx < len(self.mimic_drivers):
+            item = self.mimic_drivers[idx]
+            # Real-time tuning for THE SELECTED DRIVER ONLY if the name matches
+            if item.target_bone == self.ratio_target_bone:
+                item.ratio = self.ratio_value
+                item.invert = self.ratio_invert
+                item.drive_x = self.ratio_drive_x
+                item.drive_y = self.ratio_drive_y
+                item.drive_z = self.ratio_drive_z
+                core.reapply_mimic_drivers(bone)
+        # Note: If names don't match, the form is in 'Stage New' mode and doesn't modify the list.
+        # This allows clicking 'Add Driver' safely without corrupting existing entries.
+
 def update_joint_type_live(self, context):
     """Timer-based dispatcher for joint type changes."""
     from . import core
@@ -133,7 +215,17 @@ def update_joint_type_live(self, context):
                     # Apply kinematic side effects (gizmos, constraints, mechanics)
                     core.clean_conflicting_mechanics(target)
                     core.update_single_bone_gizmo(target, context.scene.lsd_viz_gizmos, context.scene.lsd_gizmo_style)
+                    # 3. Synchronize established native constraints
                     core.apply_native_constraints(target)
+                    # Propagate changes to any mechanical followers
+                    propagate_auto_calculate_to_followers(target)
+                    
+                    # 4. Re-apply mechanical gear/mimic relationships to the new joint type/axis
+                    if props.ratio_auto_calculate:
+                        core.auto_calculate_gear_ratio(target)
+                        for item in props.mimic_drivers:
+                            core.auto_calculate_mimic_item(target, item)
+                    core.reapply_mimic_drivers(target)
             finally:
                 core._joint_editor_update_guard = False
 
@@ -152,7 +244,16 @@ def update_joint_radius_live(self, context):
                 new_radius = self.joint_radius
                 selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
                 for target in selected_bones:
-                    target.lsd_pg_kinematic_props.joint_radius = new_radius
+                    props = target.lsd_pg_kinematic_props
+                    props.joint_radius = new_radius
+                    # Propagate to followers
+                    propagate_auto_calculate_to_followers(target)
+                    # Trigger auto-calculate if enabled locally
+                    if props.ratio_auto_calculate:
+                        core.auto_calculate_gear_ratio(target)
+                        for item in props.mimic_drivers:
+                            core.auto_calculate_mimic_item(target, item)
+                    core.reapply_mimic_drivers(target)
                     core.update_single_bone_gizmo(target, context.scene.lsd_viz_gizmos, context.scene.lsd_gizmo_style)
             finally:
                 core._joint_editor_update_guard = False
@@ -958,9 +1059,12 @@ class LSD_PG_Mech_Props(bpy.types.PropertyGroup):
     material: bpy.props.PointerProperty(type=LSD_PG_Material_Properties)
 
 class LSD_PG_Mimic_Driver(bpy.types.PropertyGroup):
-
-    target_bone: bpy.props.StringProperty(name="Target")
-    ratio: bpy.props.FloatProperty(name="Ratio", default=1.0)
+    target_bone: bpy.props.StringProperty(name="Target", update=update_mini_mimic_live)
+    drive_x: bpy.props.BoolProperty(name="X", default=True, update=update_mini_mimic_live)
+    drive_y: bpy.props.BoolProperty(name="Y", default=True, update=update_mini_mimic_live)
+    drive_z: bpy.props.BoolProperty(name="Z", default=True, update=update_mini_mimic_live)
+    ratio: bpy.props.FloatProperty(name="Ratio", default=1.0, update=update_mini_mimic_live)
+    invert: bpy.props.BoolProperty(name="Invert", default=False, update=update_mini_mimic_live)
 
 class LSD_PG_Kinematic_Props(bpy.types.PropertyGroup):
 
@@ -983,17 +1087,25 @@ class LSD_PG_Kinematic_Props(bpy.types.PropertyGroup):
         update=update_joint_type_live
 
     )
-    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.05, min=0.0, unit='LENGTH', update=update_joint_radius_live)
+    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.0, min=0.0, unit='LENGTH', update=update_joint_radius_live)
     visual_gizmo_scale: bpy.props.FloatProperty(name="Visual Gizmo Scale", default=1.0, min=0.0, update=update_joint_viz_scale_live)
     lower_limit: bpy.props.FloatProperty(name="Lower Limit", default=-90.0, update=update_joint_limits_live)
     upper_limit: bpy.props.FloatProperty(name="Upper Limit", default=90.0, update=update_joint_limits_live)
+    lower_limit_y: bpy.props.FloatProperty(name="Lower Limit Y", default=-90.0, update=update_joint_limits_live)
+    upper_limit_y: bpy.props.FloatProperty(name="Upper Limit Y", default=90.0, update=update_joint_limits_live)
+    lower_limit_z: bpy.props.FloatProperty(name="Lower Limit Z", default=-90.0, update=update_joint_limits_live)
+    upper_limit_z: bpy.props.FloatProperty(name="Upper Limit Z", default=90.0, update=update_joint_limits_live)
     ik_chain_length: bpy.props.IntProperty(name="IK Chain Length", default=0, min=0, max=255, update=update_joint_ik_live)
-    ratio_value: bpy.props.FloatProperty(name="Ratio", default=1.0)
-    ratio_target_bone: bpy.props.StringProperty(name="Target Bone")
+    ratio_value: bpy.props.FloatProperty(name="Ratio", default=1.0, update=update_ratio_live)
+    ratio_auto_calculate: bpy.props.BoolProperty(name="Auto-Calculate Ratio", default=True)
+    ratio_target_bone: bpy.props.StringProperty(name="Target Bone", update=update_target_bone_live)
+    ratio_drive_x: bpy.props.BoolProperty(name="X", default=True, update=update_ratio_live)
+    ratio_drive_y: bpy.props.BoolProperty(name="Y", default=True, update=update_ratio_live)
+    ratio_drive_z: bpy.props.BoolProperty(name="Z", default=True, update=update_ratio_live)
     ratio_ref_bone: bpy.props.StringProperty(name="Ref Bone")
-    ratio_invert: bpy.props.BoolProperty(name="Invert", default=False)
+    ratio_invert: bpy.props.BoolProperty(name="Invert", default=False, update=update_ratio_live)
     mimic_drivers: bpy.props.CollectionProperty(type=LSD_PG_Mimic_Driver)
-    mimic_drivers_index: bpy.props.IntProperty(default=0)
+    mimic_drivers_index: bpy.props.IntProperty(default=0, update=sync_mimic_list_selection)
 
 class LSD_PG_AI_Props(bpy.types.PropertyGroup):
 

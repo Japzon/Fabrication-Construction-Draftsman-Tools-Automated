@@ -65,6 +65,8 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             "lsd_show_panel_dimensions", 
             "lsd_panel_enabled_dimensions"
         )
+        
+        # Standard Dimensions Interface
 
         
 
@@ -318,7 +320,7 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             # New Feature: Consolidated Exposure (Protocol Switch)
             if master:
                 master_box.separator()
-                # AI Editor Note: 'Bake' now triggers tool property consolidation
+                # AI Editor Note: 'Bake' now triggers local sidebar consolidation
                 master_box.operator("lsd.bake_dimensions_master", text="Group for Master Control", icon='GEOMETRY_NODES')
 
             # Global Hide/Show All Dimensions (Moved outside the box for direct accessibility)
@@ -356,79 +358,63 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             
 
 
-class LSD_PT_Dimensions_Tool_Properties(bpy.types.Panel):
-    """
-    Exposes the persistent Dimensions Master Interface.
-    Visible in Properties Editor -> Tool tab OR 3D Viewport Sidebar -> Tool tab.
-    """
-    bl_label = "Dimensions Grouped Control"
-    bl_idname = "LSD_PT_Dimensions_Tool_Properties"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'Tool'
-    bl_options = {'DEFAULT_CLOSED'}
+def lsd_draw_master_control_ui(layout, scene):
+    """Core drawing logic for the persistent grouped dimensions."""
+    grouped_sets = getattr(scene, "lsd_dimensions_grouped_sets", [])
+    if not grouped_sets:
+        layout.label(text="No grouped dimensions.", icon='INFO')
+        return
 
-    @classmethod
-    def poll(cls, context: bpy.types.Context) -> bool:
-        # AI Editor Note: User Request - Grouped control should be visible at all times 
-        # to allow managing the drafting hub even without a direct selection.
-        return True
-
-    def draw(self, context: bpy.types.Context) -> None:
-        layout = self.layout
-        scene = context.scene
-        grouped_sets = scene.lsd_dimensions_grouped_sets
+    for g_idx, group in enumerate(grouped_sets):
+        box = layout.box()
+        header = box.row()
+        icon = 'DISCLOSURE_TRI_DOWN' if group.is_expanded else 'DISCLOSURE_TRI_RIGHT'
+        header.prop(group, "is_expanded", text="", icon=icon, emboss=False)
+        header.prop(group, "name", text="")
         
-        if not grouped_sets:
-            layout.label(text="No grouped dimensions.", icon='INFO')
-            return
+        manage_row = header.row(align=True)
+        imp_op = manage_row.operator("lsd.import_grouped_dimensions_back", text="", icon='IMPORT')
+        imp_op.group_index = g_idx
+        del_op = manage_row.operator("lsd.clear_grouped_dimensions", text="", icon='TRASH')
+        del_op.group_index = g_idx
 
-        for g_idx, group in enumerate(grouped_sets):
-            box = layout.box()
-            header = box.row()
-            # Collapse/Expand Toggle
-            icon = 'DISCLOSURE_TRI_DOWN' if group.is_expanded else 'DISCLOSURE_TRI_RIGHT'
-            header.prop(group, "is_expanded", text="", icon=icon, emboss=False)
-            
-            # Group Naming & Management Actions
-            header.prop(group, "name", text="")
-            
-            manage_row = header.row(align=True)
-            imp_op = manage_row.operator("lsd.import_grouped_dimensions_back", text="", icon='IMPORT')
-            imp_op.group_index = g_idx
-            
-            del_op = manage_row.operator("lsd.clear_grouped_dimensions", text="", icon='TRASH')
-            del_op.group_index = g_idx
+        if group.is_expanded:
+            box.separator()
+            for idx, item in enumerate(group.items):
+                host = item.obj
+                if not host: continue
+                row = box.row(align=True)
+                p_icon = 'DOT' if host.lsd_pg_dim_props.is_manual else 'OUTLINER_OB_FORCE_FIELD'
+                row.prop(host.lsd_pg_dim_props, "is_manual", text="", icon=p_icon, emboss=False)
+                op = row.operator("lsd.select_object_by_name", text="", icon='RESTRICT_SELECT_OFF')
+                op.target_name = host.name
+                controls = row.row(align=True)
+                controls.prop(host, "name", text="")
+                controls.prop(host.lsd_pg_dim_props, "length", text="Length")
+                rem_op = row.operator("lsd.remove_from_dimension_master", text="", icon='X')
+                rem_op.index = idx
+                rem_op.group_index = g_idx
+                rem_op.is_grouped = True
 
-            if group.is_expanded:
-                box.separator()
-                for idx, item in enumerate(group.items):
-                    host = item.obj
-                    if not host: continue
-                    
-                    row = box.row(align=True)
-                    # Sync Mode Toggle (Manual vs Link)
-                    icon = 'DOT' if host.lsd_pg_dim_props.is_manual else 'OUTLINER_OB_FORCE_FIELD'
-                    row.prop(host.lsd_pg_dim_props, "is_manual", text="", icon=icon, emboss=False)
-                    
-                    # Selection & Focus
-                    op = row.operator("lsd.select_object_by_name", text="", icon='RESTRICT_SELECT_OFF')
-                    op.target_name = host.name
-                    
-                    # Sub-Row for property controls
-                    controls = row.row(align=True)
-                    controls.prop(host, "name", text="")
-                    controls.prop(host.lsd_pg_dim_props, "length", text="Length")
-                    
-                    # Removal (Individual)
-                    rem_op = row.operator("lsd.remove_from_dimension_master", text="", icon='X')
-                    rem_op.index = idx
-                    rem_op.group_index = g_idx
-                    rem_op.is_grouped = True
+class LSD_PT_SceneMasterControl_TOP(bpy.types.Panel):
+    """Deeply injected sub-panel to guarantee top-of-tab visibility."""
+    bl_label = "Dimensions Grouped Control"
+    bl_idname = "LSD_PT_SceneMasterControl_TOP"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = 'scene'
+    bl_parent_id = "SCENE_PT_scene"
+    bl_order = -1
+    bl_options = set()
+
+    def draw(self, context):
+        layout = self.layout
+        lsd_draw_master_control_ui(layout, context.scene)
+        layout.separator()
 
 def register():
-    bpy.utils.register_class(LSD_PT_Dimensions_Tool_Properties)
+    bpy.utils.register_class(LSD_PT_SceneMasterControl_TOP)
 
 def unregister():
-    bpy.utils.unregister_class(LSD_PT_Dimensions_Tool_Properties)
+    bpy.utils.unregister_class(LSD_PT_SceneMasterControl_TOP)
 

@@ -943,14 +943,12 @@ def group_dimension_master_list(context, dim_objs):
 
     # Always clear the workspace list as requested
     master.clear()
-            
-    # AI Editor Note: Using a safer context switch. 
-    # "Failed to find ''" often comes from trying to set context when no object is active.
-    for area in context.screen.areas:
+    
+    # Redirect user to the Scene Properties tab as requested
+    for area in bpy.context.screen.areas:
         if area.type == 'PROPERTIES':
             try:
-                # Ensure something is selected/active if needed, though usually not for TOOL
-                area.spaces.active.context = 'TOOL'
+                area.spaces.active.context = 'SCENE'
             except:
                 pass
             break

@@ -97,10 +97,10 @@ class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         from . import core
-        # Allow if at least one selected object is a dimension host
-        for o in context.selected_objects:
-            if core.get_dimension_host(o): return True
-        return core.get_dimension_host(context.active_object) is not None
+        if not context.selected_objects:
+            return False
+        # Allow only if at least one EXPLICITLY selected object is a dimension component
+        return any(core.get_dimension_host(o) for o in context.selected_objects)
         
     def execute(self, context):
         from . import core
@@ -110,7 +110,7 @@ class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
         added_count = 0
         skipped_count = 0
         
-        # 1. Gather all unique dimension hosts from selection
+        # 1. Gather unique dimension hosts from EXPLICIT selection only
         targets = set()
         for obj in context.selected_objects:
             host = core.get_dimension_host(obj)
@@ -118,12 +118,7 @@ class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
                 targets.add(host)
         
         if not targets:
-            active_host = core.get_dimension_host(context.active_object)
-            if active_host:
-                targets.add(active_host)
-        
-        if not targets:
-            self.report({'WARNING'}, "No dimensions found in selection.")
+            self.report({'WARNING'}, "No dimensions found in selection. Please select the dimension lines or labels you wish to track.")
             return {'CANCELLED'}
             
         # 2. Add them to the list if not already present
@@ -208,7 +203,7 @@ class LSD_OT_BakeDimensionsMaster(bpy.types.Operator):
             
         from . import generators
         generators.group_dimension_master_list(context, unique_targets)
-        self.report({'INFO'}, f"Grouped {len(unique_targets)} dimensions to a new set (Tool Tab).")
+        self.report({'INFO'}, f"Grouped {len(unique_targets)} dimensions to a new set in the sidebar.")
         return {'FINISHED'}
 
 class LSD_OT_ImportGroupedDimensionsBack(bpy.types.Operator):
@@ -9670,7 +9665,8 @@ def unregister():
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
-        LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions
+        LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions,
+        LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global
     ]
     for cls in reversed(CLASSES):
 

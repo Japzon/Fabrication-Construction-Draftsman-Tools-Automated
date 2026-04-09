@@ -133,3 +133,5 @@ To enforce memory safety and maintain structural integrity, all procedural mesh 
 * [VERIFIED] Bi-Directional Ratio Propagation: Added 'Auto-Calculate Ratio' feature and implemented property propagation. Editing a driver's geometry now instantly updates all its mechanical followers throughout the rig.
 * [VERIFIED] Batch Radius Scaling Fix: Resolved bug where all joints in a batch inherited the largest target's radius. Implemented independent per-bone detection for 'Automatic' mode in the Apply operator.
 * [VERIFIED] Simplified Joint Purge: Renamed tool to 'Purge Selected Bones / Joints' and removed 'smart' preservation logic for a direct, high-speed deletion workflow.
+* [IN PROGRESS] Dimension Color Sync Fix: Investigating bug where arrowheads fail to sync color when 'Force Global Sync' is disabled.
+* [VERIFIED] Persistent Dimension Grouped Control: Relocated to the native Properties Editor 'Active Tool' tab (`bl_context='tool'`) as shown in the user mockup; added automatic redirection to the Properties context.

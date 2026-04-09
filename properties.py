@@ -338,8 +338,7 @@ def update_text_color(self, context):
     if hasattr(self, "id_data") and self.id_data.get("lsd_is_dimension"):
 
         from . import core
-        core.get_or_create_text_material(self.id_data)
-        self.id_data.update_tag()
+        core.sync_dimension_assembly_material(self.id_data)
 
 def update_curve_orientation_timer(self, context):
     """Dispatches curve vertex rotation via timer."""
@@ -492,35 +491,9 @@ def update_dimension_length_timer(self, context):
     obj = self.id_data
     if not obj: return
     
-    # 1. Selection & Group Propagation (Batch Sync)
-    if not _lsd_is_batch_updating and context:
-         _lsd_is_batch_updating = True
-         try:
-             sync_targets = set()
-             
-             # A. Grouped Sets
-             for g_set in context.scene.lsd_dimensions_grouped_sets:
-                  if any(item.obj == obj for item in g_set.items):
-                       for item in g_set.items:
-                            if item.obj and item.obj != obj:
-                                 sync_targets.add(item.obj)
-             
-             # B. Viewport Selection
-             for o in context.selected_objects:
-                 from . import core
-                 host = core.get_dimension_host(o)
-                 if host and host != obj:
-                      sync_targets.add(host)
-
-             # C. Execute Propagation
-             for target in sync_targets:
-                 sibling_props = getattr(target, "lsd_pg_dim_props", None)
-                 # AI Editor Note: Only sync if NOT manual
-                 if sibling_props and not sibling_props.is_manual:
-                      sibling_props.length = self.length
-                      sibling_props.unit_display = self.unit_display
-         finally:
-             _lsd_is_batch_updating = False
+    # AI Editor Note: Automatic length propagation is disabled here to prevent 
+    # accidental distribution of measured values across groups/selections.
+    # Synchronization is exclusively reserved for visual drafting styles (arrows/fonts).
 
     if hasattr(self, "is_manual"):
         self.is_manual = True
@@ -1342,7 +1315,7 @@ def register():
                     dim_props = getattr(obj, "lsd_pg_dim_props", None)
                     if dim_props:
                         dim_props.text_color = self.lsd_dim_universal_text_color
-                core.get_or_create_text_material(obj)
+                core.sync_dimension_assembly_material(obj)
 
     bpy.types.Scene.lsd_dim_global_text_color_sync = bpy.props.BoolProperty(
         name="Global Color Sync", 

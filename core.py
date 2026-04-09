@@ -1301,6 +1301,50 @@ def get_or_create_text_material(target_obj):
     mat.diffuse_color = color
     return mat
 
+def sync_dimension_assembly_material(host_obj):
+    """
+    Ensures that the correctly synced material is assigned to all members 
+    of the dimension assembly (arrows, lines, labels).
+    """
+    if not host_obj or not host_obj.get("lsd_is_dimension"):
+        return
+
+    root = host_obj.parent
+    if not root: 
+        root = get_dimension_root(host_obj)
+    if not root: return
+
+    # Get/Create the material for this specific host (dimension)
+    mat = get_or_create_text_material(host_obj)
+
+    # Assign to all relevant children
+    for child in root.children:
+        # 1. Label
+        if child.get("lsd_is_dimension"):
+            if child.data:
+                if not child.data.materials:
+                    child.data.materials.append(mat)
+                else:
+                    child.data.materials[0] = mat
+            child.active_material = mat
+            child.color = mat.diffuse_color
+
+        # 2. Arrows (Linked Objects - Shared Mesh)
+        elif child.get("lsd_is_dimension_anchor") == "VISUAL":
+            # Force link to OBJECT for independent coloration of shared meshes
+            if child.material_slots:
+                child.material_slots[0].link = 'OBJECT'
+            child.active_material = mat
+            child.color = mat.diffuse_color
+
+        # 3. Lines & Extensions
+        elif child.get("lsd_is_dimension_line") or child.get("lsd_is_extension_line"):
+            child.active_material = mat
+            child.color = mat.diffuse_color
+
+    root.update_tag()
+    host_obj.update_tag()
+
 def get_dimension_host(obj: Optional[bpy.types.Object]) -> Optional[bpy.types.Object]:
 
     """

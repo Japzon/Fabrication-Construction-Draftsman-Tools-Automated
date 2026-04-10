@@ -25,7 +25,6 @@ from .. import operators
 from . import ui_common
 
 class LSD_PT_Mechanical_Presets:
-
     """
     AI Editor Note:
     This class is a drawing helper for the 'Mechanical Presets' panel. It is not a
@@ -34,7 +33,6 @@ class LSD_PT_Mechanical_Presets:
     """
     @staticmethod
     def draw_wheel_properties(context, layout, props):
-
         # --- Wheel Base Section (Common to all wheels) ---
         base_box = layout.box()
         base_box.label(text="Wheel Base", icon='MESH_CYLINDER')
@@ -42,42 +40,29 @@ class LSD_PT_Mechanical_Presets:
         base_box.prop(props, "wheel_width")
         # --- AI Editor Note: Segregated properties into clear sections for each wheel type ---
         if props.type_wheel == 'WHEEL_STANDARD':
-
             rim_box = layout.box()
             rim_box.label(text="Rim / Hub", icon='MESH_TORUS')
             rim_box.prop(props, "wheel_hub_radius", text="Radius")
             rim_box.prop(props, "wheel_hub_length", text="Width")
             rim_box.prop(props, "wheel_side_pattern", text="Side Pattern")
-
-            
-
             tread_box = layout.box()
             tread_box.label(text="Tire Tread", icon='MOD_DISPLACE')
             tread_box.prop(props, "wheel_tread_pattern", text="Pattern")
             if props.wheel_tread_pattern == 'LINES':
-
                 tread_box.prop(props, "wheel_tread_count")
-
-        
-
         elif props.type_wheel == 'WHEEL_OFFROAD':
-
             sub_box = layout.box()
             sub_box.label(text="Treads", icon='MOD_DISPLACE')
             sub_box.prop(props, "wheel_tread_count")
             sub_box.prop(props, "wheel_sub_radius", text="Height")
-
         elif props.type_wheel == 'WHEEL_MECANUM':
-
             sub_box = layout.box()
             sub_box.label(text="Rollers", icon='MOD_ARRAY')
             sub_box.prop(props, "wheel_tread_count")
             sub_box.prop(props, "wheel_sub_radius", text="Radius")
             sub_box.prop(props, "wheel_sub_length", text="Length")
             sub_box.prop(props, "wheel_sub_support_thickness", text="Support Thickness")
-
         elif props.type_wheel == 'WHEEL_OMNI':
-
             sub_box = layout.box()
             sub_box.label(text="Rollers", icon='MOD_ARRAY')
             sub_box.prop(props, "wheel_tread_count")
@@ -85,36 +70,28 @@ class LSD_PT_Mechanical_Presets:
             sub_box.prop(props, "wheel_sub_radius", text="Radius")
             sub_box.prop(props, "wheel_sub_length", text="Length")
             sub_box.prop(props, "wheel_sub_support_thickness", text="Support Thickness")
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         # This panel is only drawn if its corresponding visibility toggle is enabled.
         return getattr(context.scene, "lsd_panel_enabled_parts", True)
-
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
-
         """
         Main drawing logic for the Mechanical Presets panel.
         """
         scene = context.scene
-
         # 1. Standardized Header
         box, is_expanded = ui_common.draw_panel_header(
-            layout, context, 
-            "Mechanical Presets", 
-            "lsd_show_panel_parts", 
+            layout, context,
+            "Mechanical Presets",
+            "lsd_show_panel_parts",
             "lsd_panel_enabled_parts"
         )
-
         if is_expanded:
             lsd_draw_mechanical_presets_content(box, context)
-
 def lsd_draw_mechanical_presets_content(box, context):
     """Refactored content drawing logic for mechanical presets."""
     scene = context.scene
-
     # --- NEW: Generation Size Constraint ---
     # This allows the user to define a bounding box to scale newly created parts.
     cage_box = box.box()
@@ -128,15 +105,12 @@ def lsd_draw_mechanical_presets_content(box, context):
     row.prop(scene, "lsd_part_type", text="")
     r2 = box.row()
     r2.operator("lsd.create_part", text="Generate", icon='ADD')
-
     obj = context.active_object
     if obj and hasattr(obj, "lsd_pg_mech_props") and obj.lsd_pg_mech_props.is_part:
-
         box.separator()
         edit_box = box.box()
         # The 'props' are on the active object (e.g., the chain proxy).
         props = obj.lsd_pg_mech_props
-
         # --- UI CLEANUP: Display a clear, specific title for the part being edited. ---
         title = f"Edit {props.category.capitalize()}"
         if props.category == 'CHAIN':
@@ -159,14 +133,12 @@ def lsd_draw_mechanical_presets_content(box, context):
         elif props.category == 'BASIC_SHAPE':
             t_name = props.type_basic_shape.replace('SHAPE_', '').title()
             title = f"Edit {t_name}"
-        
         edit_box.label(text=title, icon='MODIFIER')
         if props.category == 'GEAR':
             edit_box.prop(props, "gear_radius")
             edit_box.prop(props, "gear_width")
             if props.type_gear == 'INTERNAL':
                 edit_box.prop(props, "gear_outer_radius")
-            
             # Teeth Properties
             edit_box.separator()
             edit_box.label(text="Teeth Parameters")
@@ -174,43 +146,36 @@ def lsd_draw_mechanical_presets_content(box, context):
             edit_box.prop(props, "tooth_spacing")
             edit_box.prop(props, "gear_tooth_depth")
             edit_box.prop(props, "gear_tooth_taper")
-            
             if props.type_gear not in ['SPUR']:
                 if props.type_gear in ['BEVEL']:
                     edit_box.prop(props, "twist", text="Bevel Angle")
                 else:
                     edit_box.prop(props, "twist", text="Twist Angle")
-            
             if props.type_gear != 'INTERNAL':
                 b_box = edit_box.box()
                 b_box.label(text="Shaft Bore")
                 b_box.prop(props, "bore_radius")
                 if props.bore_radius > 0:
                     b_box.prop(props, "bore_type")
-
         elif props.category == 'RACK':
             edit_box.prop(props, "rack_width")
             edit_box.prop(props, "rack_length")
             edit_box.prop(props, "rack_height")
-            
             edit_box.separator()
             edit_box.label(text="Teeth Parameters")
             edit_box.prop(props, "rack_teeth_count")
             edit_box.prop(props, "tooth_spacing")
             edit_box.prop(props, "rack_tooth_depth")
             edit_box.prop(props, "gear_tooth_taper")
-            
             if props.type_rack not in ['RACK_SPUR']:
                 if props.type_rack in ['RACK_BEVEL']:
                     edit_box.prop(props, "twist", text="Bevel Angle")
                 else:
                     edit_box.prop(props, "twist", text="Twist Angle")
-
-        elif props.category == 'FASTENER': 
+        elif props.category == 'FASTENER':
             edit_box.prop(props, "fastener_radius")
             edit_box.prop(props, "fastener_length")
-
-        elif props.category == 'SPRING': 
+        elif props.category == 'SPRING':
             edit_box.prop(props, "type_spring", text="Type")
             if props.type_spring == 'SPRING':
                 edit_box.prop(props, "spring_radius")
@@ -230,19 +195,15 @@ def lsd_draw_mechanical_presets_content(box, context):
                 edit_box.prop(props, "spring_radius")
                 edit_box.prop(props, "spring_wire_thickness")
                 edit_box.prop(props, "spring_turns")
-                
                 hook_box = edit_box.box()
                 hook_box.label(text="Path Hooks (Middle)", icon='HOOK')
                 row = hook_box.row()
                 row.template_list("LSD_UL_SlinkyHooks_List", "slinky_hooks", props, "slinky_hooks", props, "slinky_active_index")
-                
                 col = row.column(align=True)
                 col.operator("lsd.slinky_add_hook", icon='ADD', text="")
                 col.operator("lsd.slinky_remove_hook", icon='REMOVE', text="")
-
         elif props.category == 'CHAIN':
             edit_box.prop(props, "chain_pitch")
-            
             if props.type_chain == 'ROLLER':
                 edit_box.prop(props, "chain_roller_radius")
                 edit_box.prop(props, "chain_roller_length")
@@ -251,58 +212,46 @@ def lsd_draw_mechanical_presets_content(box, context):
             elif props.type_chain == 'BELT':
                 edit_box.prop(props, "belt_width")
                 edit_box.prop(props, "belt_thickness")
-
             anim_box = edit_box.box()
             anim_box.label(text="Drive System", icon='DRIVER')
             row = anim_box.row(align=True)
             row.prop(props, "chain_drive_target", text="")
             row.operator("lsd.link_chain_driver", text="Update Driver", icon='FILE_REFRESH')
-            
             row = anim_box.row(align=True)
             row.prop(props, "chain_drive_ratio", text="Ratio")
             row.prop(props, "chain_drive_invert", text="Invert", toggle=True)
-            
             wrap_box = edit_box.box()
             wrap_box.label(text="Dynamic Wrapping (Bundle)", icon='MOD_SHRINKWRAP')
-            
             row = wrap_box.row(align=True)
             row.prop(props, "wrap_picker")
             row.operator("lsd.chain_add_picked_wrap_object", text="", icon='ADD')
-            
             wrap_box.operator("lsd.chain_add_wrap_object", icon='SELECT_SET', text="Add Selected Objects")
-            
             wrap_box.template_list(
-                "UI_UL_WrapItems", "", props, "chain_wrap_items", 
+                "UI_UL_WrapItems", "", props, "chain_wrap_items",
                 props, "chain_active_index"
             )
-
         elif props.category == 'WHEEL':
             base_box = edit_box.box()
             base_box.label(text="Wheel Base", icon='MESH_CYLINDER')
             base_box.prop(props, "wheel_radius")
             base_box.prop(props, "wheel_width")
-            
             if props.type_wheel == 'WHEEL_STANDARD':
                 rim_box = edit_box.box()
                 rim_box.label(text="Rim / Hub", icon='MESH_TORUS')
                 rim_box.prop(props, "wheel_hub_radius", text="Radius")
                 rim_box.prop(props, "wheel_hub_length", text="Width")
                 rim_box.prop(props, "wheel_side_pattern", text="Side Pattern")
-                
                 if props.wheel_side_pattern != 'NONE':
                     rim_box.prop(props, "wheel_pattern_spacing", text="Spacing")
                     rim_box.prop(props, "wheel_pattern_depth", text="Depth")
-                
                 tread_box = edit_box.box()
                 tread_box.label(text="Tire Tread", icon='MOD_DISPLACE')
                 tread_box.prop(props, "wheel_tread_pattern", text="Pattern")
                 if props.wheel_tread_pattern == 'LINES':
                     tread_box.prop(props, "wheel_tread_count")
-                
                 if props.wheel_tread_pattern != 'NONE':
                     tread_box.prop(props, "wheel_pattern_spacing", text="Spacing")
                     tread_box.prop(props, "wheel_pattern_depth", text="Depth")
-            
             elif props.type_wheel == 'WHEEL_OFFROAD':
                 sub_box = edit_box.box()
                 sub_box.label(text="Treads", icon='MOD_DISPLACE')
@@ -324,21 +273,18 @@ def lsd_draw_mechanical_presets_content(box, context):
                 sub_box.prop(props, "wheel_sub_length", text="Length")
                 sub_box.prop(props, "wheel_sub_support_thickness", text="Support Thickness")
                 sub_box.prop(props, "wheel_sub_support_length", text="Support Length")
-
         elif props.category == 'PULLEY':
             edit_box.prop(props, "pulley_radius")
             edit_box.prop(props, "pulley_width")
             edit_box.prop(props, "pulley_groove_depth")
             if props.type_pulley == 'PULLEY_TIMING':
                 edit_box.prop(props, "pulley_teeth_count")
-
         elif props.category == 'ROPE':
             edit_box.prop(props, "rope_radius")
             edit_box.prop(props, "rope_length")
             if props.type_rope in ['ROPE_STEEL', 'ROPE_SYNTHETIC']:
                 edit_box.prop(props, "rope_strands")
                 edit_box.prop(props, "twist", text="Twist Rate")
-
         elif props.category == 'BASIC_JOINT':
             if props.type_basic_joint == 'JOINT_REVOLUTE':
                 stator_box = edit_box.box()
@@ -357,7 +303,6 @@ def lsd_draw_mechanical_presets_content(box, context):
                 pin_box.label(text="Pin", icon='GRIP')
                 pin_box.prop(props, "joint_pin_radius", text="Pin Radius")
                 pin_box.prop(props, "joint_sub_size", text="Pin Overhang")
-
             elif props.type_basic_joint == 'JOINT_CONTINUOUS':
                 edit_box.prop(props, "joint_base_radius")
                 edit_box.prop(props, "joint_base_length")
@@ -392,7 +337,6 @@ def lsd_draw_mechanical_presets_content(box, context):
                 edit_box.prop(props, "joint_sub_thickness", text="Socket Thickness")
                 edit_box.prop(props, "joint_pin_radius", text="Stem Radius")
                 edit_box.prop(props, "joint_pin_length", text="Stem Length")
-
         elif props.category == 'BASIC_SHAPE':
             if props.type_basic_shape == 'SHAPE_PLANE':
                 edit_box.prop(props, "shape_size")
@@ -422,14 +366,12 @@ def lsd_draw_mechanical_presets_content(box, context):
                 edit_box.prop(props, "shape_tube_radius")
                 edit_box.prop(props, "shape_horizontal_segments")
                 edit_box.prop(props, "shape_vertical_segments")
-
         edit_box.separator()
         edit_box.operator("lsd.bake_mesh", icon='CHECKMARK')
         material_box = edit_box.box()
         material_box.label(text="Material", icon='MATERIAL')
         material_box.prop(props.material, "color")
         material_box.prop(props.material, "texture")
-
 def register():
     for cls in [LSD_PT_Mechanical_Presets]:
         if hasattr(cls, 'bl_rna'):
@@ -437,7 +379,6 @@ def register():
                 bpy.utils.register_class(cls)
             except Exception:
                 pass
-
 def unregister():
     for cls in reversed([LSD_PT_Mechanical_Presets]):
         if hasattr(cls, 'bl_rna'):

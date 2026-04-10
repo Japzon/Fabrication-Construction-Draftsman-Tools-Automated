@@ -4,7 +4,7 @@
 # Licensed under the GNU General Public License (GPL).
 # Original Architecture & Logic by Greenlex Systems Services Incorporated.
 #
-# No person or organization is authorized to misrepresent this work or claim 
+# No person or organization is authorized to misrepresent this work or claim
 # original authorship for themselves. Proper attribution is mandatory.
 # --------------------------------------------------------------------------------
 
@@ -51,8 +51,6 @@ modules = [
 def register():
     for mod in modules:
         mod.register()
-
 def unregister():
     for mod in reversed(modules):
         mod.unregister()
-

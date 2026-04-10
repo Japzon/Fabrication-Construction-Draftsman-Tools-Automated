@@ -8,31 +8,27 @@ from ..config import *
 
 class LSD_PT_Architectural_Presets:
     """
-    Modular drawing helper for Architectural Presets. 
+    Modular drawing helper for Architectural Presets.
     Completely remade to ensure robust property visibility.
     """
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         return getattr(context.scene, "lsd_panel_enabled_architectural", True)
-
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
         # 1. Standardized Header
         box, is_expanded = ui_common.draw_panel_header(
-            layout, context, 
-            "Architectural Presets", 
-            "lsd_show_panel_architectural", 
+            layout, context,
+            "Architectural Presets",
+            "lsd_show_panel_architectural",
             "lsd_panel_enabled_architectural"
         )
         if is_expanded:
             lsd_draw_architectural_presets_content(box, context)
-
 def lsd_draw_architectural_presets_content(box, context):
     """Refactored content drawing logic for architectural presets."""
     scene = context.scene
-
     # 2. Generation Size Constraint
     cage_box = box.box()
     cage_box.label(text="Generation Size Constraint", icon='SHADING_BBOX')
@@ -40,43 +36,34 @@ def lsd_draw_architectural_presets_content(box, context):
     row = cage_box.row()
     row.enabled = scene.lsd_use_generation_cage
     row.prop(scene, "lsd_generation_cage_size", text="Max Dimension")
-
     # 3. Structural Elements Section
     spawn_box = box.box()
     spawn_box.label(text="Structural Elements", icon='OUTLINER_OB_MESH')
     spawn_box.prop(scene, "lsd_architectural_type", text="Type")
-
     row = spawn_box.row(align=True)
     row.scale_y = 1.2
     op = row.operator("lsd.create_part", text="Add Structural Element", icon='PLUS')
     op.category = 'ARCHITECTURAL'
     op.type_sub = scene.lsd_architectural_type
-
     # 4. Dynamic Edit Section
     obj = context.active_object
-
     # SAFETY CHECK: Only show properties for valid, addon-managed architectural objects.
     if obj and hasattr(obj, "lsd_pg_mech_props"):
         props = obj.lsd_pg_mech_props
         is_arch = (props.category == 'ARCHITECTURAL')
-        
         if is_arch and props.is_part:
             box.separator()
             edit_box = box.box()
             edit_box.label(text=f"Editing: {obj.name}", icon='PROPERTIES')
-            
             raw_type = str(props.type_architectural)
             nice_name = raw_type.replace('_', ' ').title()
             edit_box.label(text=f"Preset: {nice_name}", icon='MODIFIER')
-            
             col = edit_box.column(align=True)
-            
             # --- Shared Dimensional Properties ---
             if raw_type in {'WALL', 'WINDOW', 'DOOR', 'BEAM', 'STAIRS'}:
                 col.prop(props, "length", text="Length")
             if raw_type in {'WALL', 'WINDOW', 'DOOR', 'COLUMN', 'STAIRS'}:
                 col.prop(props, "height", text="Height")
-            
             # --- Specific Logic Properties ---
             if raw_type == 'WALL':
                 col.prop(props, "wall_thickness", text="Thickness")
@@ -93,12 +80,9 @@ def lsd_draw_architectural_presets_content(box, context):
                 col.prop(props, "step_count", text="Total Steps")
                 col.prop(props, "step_height", text="Step Riser")
                 col.prop(props, "step_depth", text="Step Tread")
-            
             edit_box.separator()
             edit_box.operator("lsd.bake_mesh", text="Finalize to Static Mesh", icon='CHECKBOX_HLT')
-
 def register():
     pass
-
 def unregister():
     pass

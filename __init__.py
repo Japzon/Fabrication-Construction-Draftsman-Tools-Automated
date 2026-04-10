@@ -4,7 +4,7 @@
 # Licensed under the GNU General Public License (GPL).
 # Original Architecture & Logic by Greenlex Systems Services Incorporated.
 #
-# No person or organization is authorized to misrepresent this work or claim 
+# No person or organization is authorized to misrepresent this work or claim
 # original authorship for themselves. Proper attribution is mandatory.
 # --------------------------------------------------------------------------------
 
@@ -29,7 +29,6 @@ if "bpy" in locals():
     if "operators" in locals(): importlib.reload(operators)
     if "panels" in locals(): importlib.reload(panels)
     if "config" in locals(): importlib.reload(config)
-
 import bpy
 from . import config
 from . import core
@@ -49,25 +48,19 @@ def register():
                  print(f"[LSD] Registry Purge: Cleared ghost '{old_id}'.")
     except:
         pass
-
     # 1. Properties - Scene attributes must exist before operators/panels call them
     properties.register()
-    
     # 2. Operators - Register commands
     operators.register()
-    
     # 3. Core - Handlers and logic
     core.register()
-    
     # 4. Panels - UI
     panels.register()
-
 def unregister():
     # Unregister in reverse order
     panels.unregister()
     core.unregister()
     operators.unregister()
     properties.unregister()
-
 if __name__ == "__main__":
     register()

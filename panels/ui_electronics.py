@@ -31,11 +31,9 @@ class LSD_PT_Electronic_Presets:
     registered bpy.types.Panel, but is called by the main LSD_PT_FabricationConstructionDraftsmanToolsAutomated
     to draw its content. This structure allows for dynamic reordering of panels.
     """
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         return context.scene.lsd_panel_enabled_electronics
-
     @staticmethod
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
@@ -43,11 +41,9 @@ class LSD_PT_Electronic_Presets:
         box, is_expanded = ui_common.draw_panel_header(layout, context, "Electronic Presets", "lsd_show_panel_electronics", "lsd_panel_enabled_electronics")
         if is_expanded:
             lsd_draw_electronic_presets_content(box, context)
-
 def lsd_draw_electronic_presets_content(box, context):
     """Refactored content drawing logic for electronic presets."""
     scene = context.scene
-
     cage_box = box.box()
     cage_box.label(text="Generation Size Constraint", icon='SHADING_BBOX')
     cage_box.prop(scene, "lsd_use_generation_cage")
@@ -59,14 +55,12 @@ def lsd_draw_electronic_presets_content(box, context):
     row.prop(scene, "lsd_electronics_type", text="")
     r2 = box.row()
     r2.operator("lsd.create_electronic_part", text="Generate", icon='ADD')
-
     obj = context.active_object
     if obj and hasattr(obj, "lsd_pg_mech_props") and obj.lsd_pg_mech_props.is_part and obj.lsd_pg_mech_props.category == 'ELECTRONICS':
         box.separator()
         edit_box = box.box()
         props = obj.lsd_pg_mech_props
         edit_box.label(text=f"Edit {props.type_electronics.replace('_', ' ').title()}", icon='MODIFIER')
-
         if 'MOTOR' in props.type_electronics:
             col = edit_box.column(align=True)
             col.label(text="Body Dimensions:")
@@ -114,15 +108,12 @@ def lsd_draw_electronic_presets_content(box, context):
         else:
             edit_box.prop(props, "radius")
             edit_box.prop(props, "length")
-        
         edit_box.separator()
         edit_box.operator("lsd.bake_mesh", icon='CHECKMARK')
-
 def register():
     for cls in [LSD_PT_Electronic_Presets]:
         if hasattr(cls, 'bl_rna'):
             bpy.utils.register_class(cls)
-
 def unregister():
     for cls in reversed([LSD_PT_Electronic_Presets]):
         if hasattr(cls, 'bl_rna'):

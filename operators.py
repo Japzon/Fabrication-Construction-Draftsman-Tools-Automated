@@ -10,7 +10,7 @@
 
 #
 
-# No person or organization is authorized to misrepresent this work or claim 
+# No person or organization is authorized to misrepresent this work or claim
 
 # original authorship for themselves. Proper attribution is mandatory.
 
@@ -75,9 +75,7 @@ class LSD_OT_SelectObjectByName(bpy.types.Operator):
     bl_idname = "lsd.select_object_by_name"
     bl_label = "Select Dimension"
     bl_options = {'REGISTER', 'UNDO'}
-    
     target_name: bpy.props.StringProperty()
-    
     def execute(self, context):
         obj = bpy.data.objects.get(self.target_name)
         if obj:
@@ -86,14 +84,12 @@ class LSD_OT_SelectObjectByName(bpy.types.Operator):
             context.view_layer.objects.active = obj
             return {'FINISHED'}
         return {'CANCELLED'}
-
 class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
     """Adds the selected dimension objects to the master interface list."""
     bl_idname = "lsd.add_to_dimension_master"
     bl_label = "Track Selected Dimensions"
     bl_description = "Add all currently selected dimension assemblies to the tracking list"
     bl_options = {'REGISTER', 'UNDO'}
-    
     @classmethod
     def poll(cls, context):
         from . import core
@@ -101,54 +97,43 @@ class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
             return False
         # Allow only if at least one EXPLICITLY selected object is a dimension component
         return any(core.get_dimension_host(o) for o in context.selected_objects)
-        
     def execute(self, context):
         from . import core
         master = context.scene.lsd_dimensions_master
         existing_hosts = {item.obj for item in master if item.obj}
-        
         added_count = 0
         skipped_count = 0
-        
         # 1. Gather unique dimension hosts from EXPLICIT selection only
         targets = set()
         for obj in context.selected_objects:
             host = core.get_dimension_host(obj)
             if host:
                 targets.add(host)
-        
         if not targets:
             self.report({'WARNING'}, "No dimensions found in selection. Please select the dimension lines or labels you wish to track.")
             return {'CANCELLED'}
-            
         # 2. Add them to the list if not already present
         for host in targets:
             if host in existing_hosts:
                 skipped_count += 1
                 continue
-            
             item = master.add()
             item.obj = host
             added_count += 1
-            
         if added_count > 0:
             self.report({'INFO'}, f"Tracked {added_count} new dimension(s).")
         elif skipped_count > 0:
             self.report({'INFO'}, "Selected dimensions are already tracked.")
-            
         return {'FINISHED'}
-
 class LSD_OT_RemoveFromDimensionMaster(bpy.types.Operator):
     """Removes a dimension from the drafting lists."""
     bl_idname = "lsd.remove_from_dimension_master"
     bl_label = "Remove From List"
     bl_description = "Remove this dimension from the tracking list without deleting the object"
     bl_options = {'REGISTER', 'UNDO'}
-    
     index: bpy.props.IntProperty()
     group_index: bpy.props.IntProperty(default=-1)
     is_grouped: bpy.props.BoolProperty(default=False)
-    
     def execute(self, context):
         scene = context.scene
         if self.is_grouped:
@@ -170,69 +155,54 @@ class LSD_OT_RemoveFromDimensionMaster(bpy.types.Operator):
             if self.index >= 0 and self.index < len(master):
                 master.remove(self.index)
                 return {'FINISHED'}
-                
         return {'CANCELLED'}
-
 class LSD_OT_BakeDimensionsMaster(bpy.types.Operator):
     """Consolidates selected dimensions into the Master Interface in the Tool Properties tab."""
     bl_idname = "lsd.bake_dimensions_master"
     bl_label = "Group for Master Control"
     bl_description = "Group all selected dimensions into the master list and expose them in the Tool Properties tab for centralized control"
     bl_options = {'REGISTER', 'UNDO'}
-    
     def execute(self, context):
         from . import core
         # Gather targets from workspace and selection
         master = context.scene.lsd_dimensions_master
         target_list = [item.obj for item in master if item.obj]
-        
         for obj in context.selected_objects:
             host = core.get_dimension_host(obj)
             if host and host not in target_list:
                 target_list.append(host)
-        
         # AI Editor Note: Enforce total uniqueness to prevent the "3 instead of 2" bug
         unique_targets = []
         for t in target_list:
             if t not in unique_targets:
                 unique_targets.append(t)
-        
         if not unique_targets:
             self.report({'WARNING'}, "No dimensions in workspace or selected.")
             return {'CANCELLED'}
-            
         from . import generators
         generators.group_dimension_master_list(context, unique_targets)
         self.report({'INFO'}, f"Grouped {len(unique_targets)} dimensions to the Dimensions Group Manager (Scene Tab).")
         return {'FINISHED'}
-
 class LSD_OT_ImportGroupedDimensionsBack(bpy.types.Operator):
     """Moves a specific group of dimensions back into the active Dimensions Master Tracker."""
     bl_idname = "lsd.import_grouped_dimensions_back"
     bl_label = "Import Back"
     bl_description = "Move this specific dimension set back into the main Dimensions Master Tracker list for editing"
     bl_options = {'REGISTER', 'UNDO'}
-    
     group_index: bpy.props.IntProperty()
-    
     def execute(self, context):
         scene = context.scene
         sets = scene.lsd_dimensions_grouped_sets
         master = scene.lsd_dimensions_master
-        
         if self.group_index < 0 or self.group_index >= len(sets):
             return {'CANCELLED'}
-            
         target_group = sets[self.group_index]
-        
         # Restore Group Name to Tracker for Title Continuity
         scene.lsd_dim_tracker_group_name = target_group.name
-        
         count = 0
         for item in target_group.items:
             host = item.obj
             if not host: continue
-            
             # Avoid duplicates in workspace
             if not any(m.obj == host for m in master):
                 new_item = master.add()
@@ -241,28 +211,23 @@ class LSD_OT_ImportGroupedDimensionsBack(bpy.types.Operator):
                 new_item.driver_target = item.driver_target
                 new_item.ratio = item.ratio
                 count += 1
-        
         sets.remove(self.group_index)
         self.report({'INFO'}, f"Imported {count} dimensions back to Sidebar.")
         return {'FINISHED'}
-
 class LSD_OT_ClearGroupedDimensions(bpy.types.Operator):
     """Deletes a specific persistent dimension set."""
     bl_idname = "lsd.clear_grouped_dimensions"
     bl_label = "Delete Group"
     bl_description = "Delete this specific persistent dimension set. Dimension objects are not deleted."
     bl_options = {'REGISTER', 'UNDO'}
-    
     group_index: bpy.props.IntProperty()
-    
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)
-        
     def execute(self, context):
         sets = context.scene.lsd_dimensions_grouped_sets
         if self.group_index >= 0 and self.group_index < len(sets):
             group = sets[self.group_index]
-            # AI Editor Note: Per User Request - Clear all drivers/links 
+            # AI Editor Note: Per User Request - Clear all drivers/links
             # for all items in the group before deleting metadata.
             for item in group.items:
                 host = item.obj
@@ -272,67 +237,43 @@ class LSD_OT_ClearGroupedDimensions(bpy.types.Operator):
                      host.update_tag()
             sets.remove(self.group_index)
         return {'FINISHED'}
-
 class LSD_OT_Open_Asset_Browser(bpy.types.Operator):
-
-
     """Opens the Blender Asset Browser window."""
     bl_idname = "lsd.open_asset_browser"
     bl_label = "Open Asset Browser"
     bl_description = "Opens the Asset Browser editor in a new window"
     def execute(self, context):
-
         try:
-
             bpy.ops.wm.window_new()
             new_window = context.window_manager.windows[-1]
             area = new_window.screen.areas[0]
             area.type = 'FILE_BROWSER'
             area.ui_type = 'ASSETS'
-
         except Exception:
-
             pass
-
         return {'FINISHED'}
-
 class LSD_OT_Add_Asset_Library(bpy.types.Operator):
-
     """Adds a new folder path to Blender's Asset Libraries."""
     bl_idname = "lsd.add_asset_library"
     bl_label = "Add Library"
     bl_description = "Adds the chosen folder path to the asset library list"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         props = context.scene.lsd_pg_asset_props
         path = props.add_library_path
         if not path or not os.path.exists(path):
-
             self.report({'ERROR'}, "Please select a valid directory path first.")
             return {'CANCELLED'}
-
-        
-
         name = os.path.basename(os.path.normpath(path))
         if not name:
-
             name = "New_Library"
-
-            
-
         bpy.ops.preferences.asset_library_add(directory=path)
         new_lib = context.preferences.filepaths.asset_libraries[-1]
         new_lib.name = name
-
-        
-
         props.target_library = name
         self.report({'INFO'}, f"Added and selected library: {name}")
         return {'FINISHED'}
-
 class LSD_OT_Generate_Collision_Mesh(bpy.types.Operator):
-
     """
     Duplicates selected mesh objects, renames them with 'COLL_', and hides them.
     These objects are used as simplified collision geometry for physics simulations.
@@ -342,144 +283,93 @@ class LSD_OT_Generate_Collision_Mesh(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         # AI Editor Note: Only operate if there are mesh objects selected
         return context.selected_objects and any(obj.type == 'MESH' for obj in context.selected_objects)
-
     def execute(self, context):
-
         # 1. Standard mode capture/restore
         initial_mode = context.mode
         if context.mode != 'OBJECT':
-
              bpy.ops.object.mode_set(mode='OBJECT')
-
         # 2. Ensure Collision Collection exists
         col_name = COLLISION_COLLECTION_NAME
         coll = bpy.data.collections.get(col_name)
         if not coll:
-
             coll = bpy.data.collections.new(col_name)
             context.scene.collection.children.link(coll)
-
-        
-
         selected = [obj for obj in context.selected_objects if obj.type == 'MESH']
         count = 0
         depsgraph = context.evaluated_depsgraph_get()
         for obj in selected:
-
             # 3. Identify Source vs Collision Mesh
             source = obj
             is_coll = obj.name.startswith("COLL_")
             if is_coll:
-
                 if obj.parent:
-
                     source = obj.parent
-
                 else:
-
                     # Orphaned COLL_ object, skip or handle as source
                     pass
-
             coll_name = f"COLL_{source.name}"
             new_obj = bpy.data.objects.get(coll_name)
-
-            
-
             # --- UPDATED: REFRESH LOGIC ---
             # AI Editor Note: To ensure the collision mesh reflects the latest source mesh
-            # (including evaluated modifiers), we always purge the old instance before 
+            # (including evaluated modifiers), we always purge the old instance before
             # creating a fresh snapshot. This prevents 'ghost' geometry and z-fighting.
             if new_obj and new_obj.parent == source:
-
                 old_mesh = new_obj.data
                 bpy.data.objects.remove(new_obj, do_unlink=True)
                 if old_mesh and old_mesh.users == 0:
-
                     bpy.data.meshes.remove(old_mesh)
-
             # 4. Create fresh duplication from Evaluated State (Snapshot)
-            # AI Editor Note: In Blender 4.x, creating an object directly from an evaluated mesh 
-            # (via to_mesh) results in a RuntimeError. We instead use new_from_object on an 
+            # AI Editor Note: In Blender 4.x, creating an object directly from an evaluated mesh
+            # (via to_mesh) results in a RuntimeError. We instead use new_from_object on an
             # evaluated instance to secure a permanent data-block in the main database.
             eval_source = source.evaluated_get(depsgraph)
             new_mesh = bpy.data.meshes.new_from_object(eval_source, preserve_all_data_layers=True, depsgraph=depsgraph)
             new_obj = bpy.data.objects.new(coll_name, new_mesh)
-
-            
-
             # Copy world-space transform from original
             new_obj.matrix_world = source.matrix_world.copy()
-
-            
-
             # Link & Parent
             coll.objects.link(new_obj)
             new_obj.parent = source
             new_obj.matrix_parent_inverse = source.matrix_world.inverted()
-
-            
-
             # 5. Hide and Configure based on Global State
             show_global = context.scene.lsd_show_collisions
             new_obj.hide_set(not show_global)
             new_obj.hide_render = True
             new_obj.display_type = 'WIRE'
-
-            
-
-            # AI Editor Note: Enabling 'show_in_front' satisfies the drafting requirement 
-            # for collision meshes to always be selectable even when 'buried' inside 
+            # AI Editor Note: Enabling 'show_in_front' satisfies the drafting requirement
+            # for collision meshes to always be selectable even when 'buried' inside
             # the visual target mesh.
             new_obj.show_in_front = True
             # 6. Add/Update Simplification (Decimate)
             mod_name = "LSD_Collision_Simplify"
             dec_mod = new_obj.modifiers.new(name=mod_name, type='DECIMATE')
-
-            
-
             # 7. Add/Update Thickness (Solidify)
             thick_mod_name = "LSD_Collision_Thickness"
             thick_mod = new_obj.modifiers.new(name=thick_mod_name, type='SOLIDIFY')
-
-            
-
             # AI Editor Note: Configuring 'Solidify' to act as an external shell
             # as per user preference (Positive Offset, Rim-only fill).
             thick_mod.offset = 1.0
             thick_mod.use_rim = True
             thick_mod.use_rim_only = True
-
-            
-
             # Note: We determine the ratio from the source object's properties
             ratio = 1.0
             thickness = 0.0
             if hasattr(source, "lsd_pg_mech_props"):
-
                 coll_props = source.lsd_pg_mech_props.collision
                 ratio = coll_props.decimate_ratio
                 thickness = coll_props.thickness
-
-            
-
             dec_mod.ratio = ratio
             thick_mod.thickness = thickness
             count += 1
-
         # 7. Finalize Selection (keep original selected for further work)
         # 8. Restore Mode
         if context.mode != initial_mode:
-
             bpy.ops.object.mode_set(mode=initial_mode)
-
         self.report({'INFO'}, f"Synchronized {count} collision mesh(es) in '{col_name}'.")
         return {'FINISHED'}
-
 class LSD_OT_Purge_Collision(bpy.types.Operator):
-
     """Deletes existing collision mesh(es) for selected object(s) to clean up simulation data."""
     bl_idname = "lsd.purge_collision"
     bl_label = "Purge Collision (Selected)"
@@ -487,441 +377,251 @@ class LSD_OT_Purge_Collision(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         return context.selected_objects
-
     def execute(self, context):
-
         count = 0
         # Capture reference set of potential sources first to avoid StructRNA errors
         # when objects are removed from the selection collection mid-loop.
         sources = set()
         for obj in context.selected_objects:
-
             try:
-
                 source = obj
                 if obj.name.startswith("COLL_") and obj.parent:
-
                     source = obj.parent
-
                 if source:
-
                     sources.add(source)
-
             except ReferenceError:
-
                 continue
-
-        
-
         for source in sources:
-
             try:
-
                 coll_name = f"COLL_{source.name}"
                 coll_obj = bpy.data.objects.get(coll_name)
-
-                
-
                 # Only purge if it truly belongs to the selected part
                 if coll_obj and coll_obj.parent == source:
-
                     mesh = coll_obj.data
                     bpy.data.objects.remove(coll_obj, do_unlink=True)
                     if mesh and mesh.users == 0:
-
                         bpy.data.meshes.remove(mesh)
-
                     count += 1
-
             except ReferenceError:
-
                 continue
-
-        
-
         self.report({'INFO'}, f"Purged {count} collision mesh(es).")
         return {'FINISHED'}
-
 class LSD_OT_Register_Asset_Catalog(bpy.types.Operator):
-
     """Creates a new catalog ID and folder in the selected library."""
     bl_idname = "lsd.register_asset_catalog"
     bl_label = "Register Catalog"
     bl_description = "Defines a new catalog in the catalog definition file of the library"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         props = context.scene.lsd_pg_asset_props
         cat_name = props.new_catalog_name
         lib_name = props.target_library
-
-        
-
         if lib_name == 'LOCAL':
-
             self.report({'WARNING'}, "Cannot create catalog in 'Current File'. Select a valid Library.")
             return {'CANCELLED'}
-
         if not cat_name.strip():
-
             self.report({'WARNING'}, "Please enter a name for the new catalog.")
             return {'CANCELLED'}
-
-            
-
         prefs = context.preferences
         lib_path = ""
         for lib in prefs.filepaths.asset_libraries:
-
             if lib.name == lib_name:
-
                 lib_path = lib.path
                 break
-
-                
-
         if not lib_path:
-
             self.report({'ERROR'}, f"Target library '{lib_name}' not found.")
             return {'CANCELLED'}
-
-        
-
         cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
         new_uuid = str(uuid.uuid4())
-
-        
-
         try:
-
             if not os.path.exists(cat_file):
-
                 with open(cat_file, "w", encoding='utf-8') as f:
-
                     f.write("# This is an Asset Catalog Definition file for Blender.\n")
                     f.write("VERSION 1\n\n")
                     f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
-
                 self.report({'INFO'}, f"Created catalog '{cat_name}' in '{lib_name}'.")
-
             else:
-
                 with open(cat_file, "r", encoding='utf-8') as f:
-
                     content = f.read()
-
                 if f":{cat_name}:" not in content and f":{cat_name}\n" not in content:
-
                     with open(cat_file, "a", encoding='utf-8') as f:
-
                         f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
-
                     self.report({'INFO'}, f"Added catalog '{cat_name}' to '{lib_name}'.")
-
                 else:
-
                     self.report({'WARNING'}, f"Catalog '{cat_name}' already exists in '{lib_name}'.")
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Failed to write catalog: {e}")
             return {'CANCELLED'}
-
-            
-
         return {'FINISHED'}
-
 class LSD_OT_Mark_And_Upload_Asset(bpy.types.Operator):
-
     """Marks selected items as assets and copies them to the chosen library folder."""
     bl_idname = "lsd.mark_and_upload_asset"
     bl_label = "Import Selected to Catalog"
     bl_description = "Tags selection as assets and organizes them into library folders"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         if not context.selected_objects:
-
             self.report({'WARNING'}, "No objects selected to mark as assets.")
             return {'CANCELLED'}
-
-            
-
         props = context.scene.lsd_pg_asset_props
         lib_name = props.target_library
         # Use the selected catalog's UUID directly from the dropdown property
         cat_uuid = props.selected_catalog if props.selected_catalog != 'NONE' else ""
-
-        
-
         lib_path = ""
         if lib_name != 'LOCAL':
-
             prefs = context.preferences
             for lib in prefs.filepaths.asset_libraries:
-
                 if lib.name == lib_name:
-
                     lib_path = lib.path
                     break
-
-        
-
         for obj in context.selected_objects:
-
             if not obj.asset_data:
-
                 obj.asset_mark()
-
             if cat_uuid and obj.asset_data:
-
                 obj.asset_data.catalog_id = cat_uuid
-
             self.report({'INFO'}, f"Marked: {obj.name}")
-
-        
-
         if lib_name == 'LOCAL' or not lib_path:
-
             self.report({'INFO'}, "Saved to 'Current File' only. Note: For external saving, select a library.")
             return {'FINISHED'}
-
-            
-
         category_path = os.path.join(lib_path, cat_name)
         if not os.path.exists(category_path):
-
             try:
-
                  os.makedirs(category_path)
-
             except Exception as e:
-
                  self.report({'ERROR'}, f"Could not create catalog directory: {e}")
                  return {'CANCELLED'}
-
-                 
-
         exported = 0
         for obj in context.selected_objects:
-
             filepath = os.path.join(category_path, f"{obj.name}.blend")
             try:
-
                 bpy.data.libraries.write(filepath, {obj})
                 exported += 1
-
             except Exception as e:
-
                 self.report({'ERROR'}, f"Failed saving {obj.name}: {e}")
-
-                
-
         self.report({'INFO'}, f"Successfully exported {exported} objects to catalog OS directory.")
         return {'FINISHED'}
-
 class LSD_OT_ImportToAssetCatalog(bpy.types.Operator):
-
     """Imports a 3D file, marks it as an asset, and moves it to the chosen library."""
     bl_idname = "lsd.import_to_asset_catalog"
     bl_label = "Import to Catalog"
     bl_description = "Imports an external file, marks it as an asset, and adds it to the library"
     bl_options = {'REGISTER', 'UNDO'}
     def _resolve_file(self, filepath, context):
-
         """If filepath is a ZIP, extract it to a temp dir and return the first importable file path."""
         import zipfile, tempfile
         ext = os.path.splitext(filepath)[1].lower()
         if ext != '.zip':
-
             return filepath, None
-
         tmp_dir = tempfile.mkdtemp(prefix="lsd_import_")
         with zipfile.ZipFile(filepath, 'r') as zf:
-
             zf.extractall(tmp_dir)
-
         # Find best importable file
         PRIO = ['.blend', '.gltf', '.glb', '.fbx', '.obj', '.dae', '.abc', '.usd', '.usda', '.usdc', '.usdz', '.x3d', '.wrl', '.ply', '.stl', '.3mf']
         found = {}
         for root, dirs, files in os.walk(tmp_dir):
-
             for fname in files:
-
                 fe = os.path.splitext(fname)[1].lower()
                 if fe in PRIO and fe not in found:
-
                     found[fe] = os.path.join(root, fname)
-
         for p in PRIO:
-
             if p in found:
-
                 return found[p], tmp_dir
-
         return None, tmp_dir
-
     def execute(self, context):
-
         import shutil, zipfile
         props = context.scene.lsd_pg_asset_props
         filepath = props.import_source_filepath
         lib_name = props.import_target_library
         cat_uuid = props.import_target_catalog if props.import_target_catalog != 'NONE' else ""
         if not filepath or not os.path.exists(filepath):
-
             self.report({'ERROR'}, "Select a valid source file before importing.")
             return {'CANCELLED'}
-
         actual_filepath, tmp_dir = self._resolve_file(filepath, context)
         if not actual_filepath:
-
             self.report({'ERROR'}, "No importable file found inside ZIP.")
             if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
             return {'CANCELLED'}
-
         ext = os.path.splitext(actual_filepath)[1].lower()
         bpy.ops.object.select_all(action='DESELECT')
         try:
-
             if ext == '.blend':
-
                 # Append all objects from the .blend file
                 with bpy.data.libraries.load(actual_filepath, link=False) as (src, dst):
-
                     dst.objects = src.objects
-
                 for obj in dst.objects:
-
                     if obj is not None:
-
                         context.scene.collection.objects.link(obj)
                         obj.select_set(True)
-
             elif ext == '.obj':
-
                 bpy.ops.wm.obj_import(filepath=actual_filepath)
-
             elif ext == '.fbx':
-
                 bpy.ops.import_scene.fbx(filepath=actual_filepath)
-
             elif ext in ['.gltf', '.glb']:
-
                 bpy.ops.import_scene.gltf(filepath=actual_filepath)
-
             elif ext == '.stl':
-
                 bpy.ops.wm.stl_import(filepath=actual_filepath)
-
             elif ext == '.dae':
-
                 bpy.ops.wm.collada_import(filepath=actual_filepath)
-
             elif ext == '.ply':
-
                 bpy.ops.wm.ply_import(filepath=actual_filepath)
-
             elif ext in ['.abc']:
-
                 bpy.ops.wm.alembic_import(filepath=actual_filepath)
-
             elif ext in ['.usd', '.usda', '.usdc', '.usdz']:
-
                 bpy.ops.wm.usd_import(filepath=actual_filepath)
-
             elif ext in ['.x3d', '.wrl']:
-
                 bpy.ops.import_scene.x3d(filepath=actual_filepath)
-
             elif ext == '.3mf':
-
                 bpy.ops.import_mesh.threemf(filepath=actual_filepath)
-
             else:
-
                 self.report({'ERROR'}, f"Unsupported file format: {ext}")
                 if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
                 return {'CANCELLED'}
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Import failed: {e}")
             if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
             return {'CANCELLED'}
-
         imported_objs = list(context.selected_objects)
         if not imported_objs:
-
             self.report({'WARNING'}, "No objects were imported.")
             if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
             return {'CANCELLED'}
-
         # Mark each imported object as asset and assign catalog UUID
         for obj in imported_objs:
-
             if not obj.asset_data:
-
                 obj.asset_mark()
-
             if cat_uuid and obj.asset_data:
-
                 obj.asset_data.catalog_id = cat_uuid
-
         # Optionally export .blend files into the catalog subfolder
         if lib_name and lib_name != 'LOCAL':
-
             lib_path = ""
             for lib in context.preferences.filepaths.asset_libraries:
-
                 if lib.name == lib_name:
-
                     lib_path = lib.path
                     break
-
             if lib_path:
-
                 base_name = os.path.splitext(os.path.basename(filepath))[0]
                 dest_dir = os.path.join(lib_path, base_name)
                 if not os.path.exists(dest_dir):
-
                     try:
-
                         os.makedirs(dest_dir)
-
                     except Exception as e:
-
                         self.report({'WARNING'}, f"Could not create folder: {e}")
-
                 for obj in imported_objs:
-
                     dest_file = os.path.join(dest_dir, f"{obj.name}.blend")
                     try:
-
                         bpy.data.libraries.write(dest_file, {obj})
-
                     except Exception as e:
-
                         self.report({'WARNING'}, f"Export failed for {obj.name}: {e}")
-
         if tmp_dir:
-
             shutil.rmtree(tmp_dir, ignore_errors=True)
-
         self.report({'INFO'}, f"Imported {len(imported_objs)} object(s) from {os.path.basename(filepath)}.")
         return {'FINISHED'}
-
 # --- MAIN OPERATORS ---
 
 class LSD_OT_Execute_AI_Prompt(bpy.types.Operator):
-
     """
     Executes the AI generation process based on the user's prompt.
-
-    
-
     AI Editor Note:
     This is the entry point for the AI generation logic. The `execute` method
     is responsible for interpreting the user's intent and triggering the
@@ -934,7 +634,6 @@ class LSD_OT_Execute_AI_Prompt(bpy.types.Operator):
     2.  Packaging the prompt and sending it to a remote LLM service.
     3.  Receiving a structured plan (e.g., a JSON list of Python commands or
         operator calls) from the LLM.
-
     4.  Safely executing that plan.
     """
     bl_idname = "lsd.execute_ai_prompt"
@@ -943,58 +642,41 @@ class LSD_OT_Execute_AI_Prompt(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         # The operator can only run if there is a prompt.
         ai_props = context.scene.lsd_pg_ai_props
         return ai_props and ai_props.api_prompt != ""
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         ai_props = context.scene.lsd_pg_ai_props
         prompt = ai_props.api_prompt.lower()
         # AI Editor Note: Add scaling factor from the generation cage
         scale_factor = 1.0
         if context.scene.lsd_use_generation_cage:
-
             scale_factor = context.scene.lsd_generation_cage_size
-
         # --- AI Dispatch Logic (Local vs Cloud API) ---
         if ai_props.ai_source == 'LOCAL':
-
             # Use the local procedural generator
             try:
-
                 self.report({'INFO'}, f"Executing local generation for: '{prompt}'...")
                 # AI Editor Note: Utilizing the 'build_generative_robot' logic in core.py
                 # which can be expanded to utilize any addon feature via keywords or direct scripting.
                 build_generative_robot(context, prompt, scale_factor=scale_factor)
                 self.report({'INFO'}, "Successfully generated content.")
                 return {'FINISHED'}
-
             except Exception as e:
-
                 self.report({'ERROR'}, f"Generation failure: {e}")
                 import traceback
                 traceback.print_exc()
                 return {'CANCELLED'}
-
-        
-
         elif ai_props.ai_source == 'API':
-
             # Placeholder for future API integration (Cloud LLM)
             # The API would receive the prompt + catalog of available operators.
             system_prompt = get_part_catalog_prompt()
             print(f"--- LSD CLOUD AI REQUEST ---\nSystem: {system_prompt}\nPrompt: {prompt}\n-----------------------")
             self.report({'INFO'}, "Cloud API request simulated. Using Local mode for active execution.")
             return {'CANCELLED'}
-
         else:
-
             return {'CANCELLED'}
-
 class LSD_OT_SetJointType(bpy.types.Operator):
-
     """Sets the joint type for all selected pose bones and updates their state"""
     bl_idname = "lsd.set_joint_type"
     bl_label = "Set Joint Type"
@@ -1010,65 +692,43 @@ class LSD_OT_SetJointType(bpy.types.Operator):
             ('prismatic', "Linear", "A sliding joint that moves along a single axis")
         ],
         name="Joint Type"
-
     )
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         # In Blender 3.2+, use context.selected_pose_bones_from_active_object
         if hasattr(context, 'selected_pose_bones_from_active_object'):
-
             return context.mode == 'POSE' and len(context.selected_pose_bones_from_active_object) > 0
-
         return context.mode == 'POSE' and len(context.selected_pose_bones) > 0
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         """
         Executes the operator, applying the joint type and all necessary state
         updates to every selected pose bone.
         """
         bones_to_update = []
         if hasattr(context, 'selected_pose_bones_from_active_object'):
-
             bones_to_update = context.selected_pose_bones_from_active_object
-
         else:
-
             # Fallback for older Blender versions
             bones_to_update = context.selected_pose_bones
-
         # Guard to prevent the update callback from firing redundant operators
         core._prop_update_guard = True
         try:
-
             # Retrieve style once for efficiency
             show = context.scene.lsd_viz_gizmos
             style = context.scene.lsd_gizmo_style
             for pbone in bones_to_update:
-
                 # 1. Set the property value directly.
                 pbone.lsd_pg_kinematic_props.joint_type = self.type
-
-                
-
                 # 2. Update state.
                 clean_conflicting_mechanics(pbone)
                 update_single_bone_gizmo(pbone, show, style)
                 apply_native_constraints(pbone)
-
         finally:
-
             core._prop_update_guard = False
             context.view_layer.update()
-
-        
-
         self.report({'INFO'}, f"Set joint type to '{self.type}' for {len(bones_to_update)} bones.")
         return {'FINISHED'}
-
 class LSD_OT_CalculateCenterOfMass(bpy.types.Operator):
-
     """Calculates the center of mass for the link's visual meshes"""
     bl_idname = "lsd.calculate_center_of_mass"
     bl_label = "Calculate from Visuals"
@@ -1076,124 +736,66 @@ class LSD_OT_CalculateCenterOfMass(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         obj = context.active_object
         if context.mode == 'POSE':
-
             return context.active_pose_bone is not None
-
         return obj is not None and (obj.name.startswith("COLL_") or hasattr(obj, "lsd_pg_mech_props"))
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # Handle Pose Mode (Classic Bone-centric)
         if context.mode == 'POSE':
-
             return self.execute_pose_mode(context)
-
-        
-
         # Handle Object Mode (New Mesh-centric)
         return self.execute_object_mode(context)
-
     def execute_object_mode(self, context):
-
         selected = context.selected_objects
         if not selected:
-
             return {'CANCELLED'}
-
-            
-
         count = 0
         depsgraph = context.evaluated_depsgraph_get()
-
-        
-
         for obj in selected:
-
             source = obj
             target_obj = obj
-
-            
-
             # 1. Identify Target (measure collision mesh if available)
             if obj.name.startswith("COLL_") and obj.parent:
-
                 source = obj.parent
-
             else:
-
                 coll_name = f"COLL_{obj.name}"
                 coll_obj = bpy.data.objects.get(coll_name)
                 if coll_obj and coll_obj.parent == obj:
-
                     target_obj = coll_obj
-
-            
-
             # Identify Property Owner
             if not hasattr(source, "lsd_pg_mech_props"):
-
                 continue
-
             # 2. Calculate COM & Volume from FULL RESOLUTION
             # AI Editor Note: We temporarily suppress the simplification and thickness
             # modifiers to ensure physics integration uses the actual manifold volume.
             mod_dec = target_obj.modifiers.get("LSD_Collision_Simplify")
             mod_thick = target_obj.modifiers.get("LSD_Collision_Thickness")
-
-            
-
             old_dec = mod_dec.show_viewport if mod_dec else True
             old_thick = mod_thick.show_viewport if mod_thick else True
-
-            
-
             if mod_dec: mod_dec.show_viewport = False
             if mod_thick: mod_thick.show_viewport = False
-
-            
-
             try:
-
                 # Re-evaluate for high-fidelity snapshot
                 dg = context.evaluated_depsgraph_get()
                 eval_obj = target_obj.evaluated_get(dg)
                 temp_mesh = bpy.data.meshes.new_from_object(eval_obj)
-
-                
-
                 bm = bmesh.new()
                 bm.from_mesh(temp_mesh)
                 volume = abs(bm.calc_volume())
-
-                
-
                 if bm.verts:
-
                     # Use bounding center for simplicity on collision primitives
                     min_v = mathutils.Vector((min(v.co.x for v in bm.verts), min(v.co.y for v in bm.verts), min(v.co.z for v in bm.verts)))
                     max_v = mathutils.Vector((max(v.co.x for v in bm.verts), max(v.co.y for v in bm.verts), max(v.co.z for v in bm.verts)))
                     com_local = (min_v + max_v) / 2
-
                 else:
-
                     com_local = mathutils.Vector((0, 0, 0))
-
-                    
-
                 bm.free()
                 bpy.data.meshes.remove(temp_mesh)
-
             finally:
-
                 # Restore visual drafting state
                 if mod_dec: mod_dec.show_viewport = old_dec
                 if mod_thick: mod_thick.show_viewport = old_thick
-
-            
-
             # 3. Apply to Source Properties
             inertial = source.lsd_pg_mech_props.inertial
             inertial.volume_m3 = volume
@@ -1201,68 +803,46 @@ class LSD_OT_CalculateCenterOfMass(bpy.types.Operator):
             inertial.mass = volume * (inertial.custom_mass_gcm3 * 1000.0)
             inertial.center_of_mass = com_local
             count += 1
-
-            
-
         self.report({'INFO'}, f"Calculated COM & Mass for {count} object(s)")
         return {'FINISHED'}
-
     def execute_pose_mode(self, context):
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
         count = 0
         for pbone in bones_to_process:
-
             if not pbone: continue
             child_meshes = get_all_children_objects(pbone, context)
             if not child_meshes: continue
             total_volume = 0
             weighted_center = mathutils.Vector((0, 0, 0))
             for obj in child_meshes:
-
                 depsgraph = context.evaluated_depsgraph_get()
                 eval_obj = obj.evaluated_get(depsgraph)
                 temp_mesh = bpy.data.meshes.new_from_object(eval_obj)
                 if not temp_mesh.polygons:
-
                     bpy.data.meshes.remove(temp_mesh)
                     continue
-
                 bm = bmesh.new()
                 bm.from_mesh(temp_mesh)
                 volume = bm.calc_volume()
                 if bm.verts:
-
                     min_v = mathutils.Vector((min(v.co.x for v in bm.verts), min(v.co.y for v in bm.verts), min(v.co.z for v in bm.verts)))
                     max_v = mathutils.Vector((max(v.co.x for v in bm.verts), max(v.co.y for v in bm.verts), max(v.co.z for v in bm.verts)))
                     center_local = (min_v + max_v) / 2
-
                 else:
-
                     center_local = mathutils.Vector((0, 0, 0))
-
-                
-
                 weighted_center += (obj.matrix_world @ center_local) * volume
                 total_volume += volume
                 bm.free()
                 bpy.data.meshes.remove(temp_mesh)
-
             if total_volume > 0:
-
                 avg_center_world = weighted_center / total_volume
                 link_frame_matrix = pbone.id_data.matrix_world @ pbone.matrix
                 com_local = link_frame_matrix.inverted() @ avg_center_world
                 pbone.lsd_pg_kinematic_props.inertial.center_of_mass = com_local
                 count += 1
-
-                
-
         self.report({'INFO'}, f"Calculated COM for {count} bone(s) via visual meshes.")
         return {'FINISHED'}
-
 class LSD_OT_CalculateInertia(bpy.types.Operator):
-
     """
     Calculates and populates the inertia tensor fields for a link based on its
     mass, dimensions, and collision shape.
@@ -1273,117 +853,62 @@ class LSD_OT_CalculateInertia(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         obj = context.active_object
         if context.mode == 'POSE':
-
             return context.active_pose_bone is not None
-
         return obj is not None and (obj.name.startswith("COLL_") or hasattr(obj, "lsd_pg_mech_props"))
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         source = obj
         target_obj = obj
-
-        
-
         # 1. Identify Context and Target
         if context.mode == 'POSE' and context.active_pose_bone:
-
             return self.execute_pose_mode(context)
-
         if context.mode == 'POSE':
-
             return self.execute_pose_mode(context)
-
-        
-
         return self.execute_object_mode(context)
-
     def execute_object_mode(self, context):
-
         selected = context.selected_objects
         if not selected:
-
             return {'CANCELLED'}
-
-            
-
         count = 0
         for obj in selected:
-
             source = obj
             target_obj = obj
-
-            
-
             # Identify Target (measure collision mesh if available)
             if obj.name.startswith("COLL_") and obj.parent:
-
                 source = obj.parent
-
             else:
-
                 coll_name = f"COLL_{obj.name}"
                 coll_obj = bpy.data.objects.get(coll_name)
                 if coll_obj and coll_obj.parent == obj:
-
                     target_obj = coll_obj
-
-            
-
             if not hasattr(source, "lsd_pg_mech_props"):
-
                 continue
-
             props = source.lsd_pg_mech_props
-
-            
-
             # --- HIGH FIDELITY DIMENSION CAPTURE ---
             # Temporarily disable modifiers to get 'full resolution' dimensions
             mod_dec = target_obj.modifiers.get("LSD_Collision_Simplify")
             mod_thick = target_obj.modifiers.get("LSD_Collision_Thickness")
-
-            
-
             old_dec = mod_dec.show_viewport if mod_dec else True
             old_thick = mod_thick.show_viewport if mod_thick else True
-
-            
-
             if mod_dec: mod_dec.show_viewport = False
             if mod_thick: mod_thick.show_viewport = False
-
-            
-
             try:
-
                 # obj.dimensions reflects the current evaluated state
-                context.view_layer.update() 
+                context.view_layer.update()
                 dims = target_obj.dimensions.copy()
-
             finally:
-
                 if mod_dec: mod_dec.show_viewport = old_dec
                 if mod_thick: mod_thick.show_viewport = old_thick
-
             self._calculate_for_props(props, dims)
             count += 1
-
-            
-
         self.report({'INFO'}, f"Calculated inertia for {count} object(s)")
         return {'FINISHED'}
-
     def execute_pose_mode(self, context):
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
         count = 0
         for pbone in bones_to_process:
-
             if not pbone: continue
             props = pbone.lsd_pg_kinematic_props
             child_meshes = get_all_children_objects(pbone, context)
@@ -1392,64 +917,41 @@ class LSD_OT_CalculateInertia(bpy.types.Operator):
             inv_link_matrix = link_frame_matrix.inverted()
             min_v = mathutils.Vector((float('inf'), float('inf'), float('inf')))
             max_v = mathutils.Vector((float('-inf'), float('-inf'), float('-inf')))
-
-            
-
             for mesh_obj in child_meshes:
-
                 for v in mesh_obj.bound_box:
-
                     v_world = mesh_obj.matrix_world @ mathutils.Vector(v)
                     v_local = inv_link_matrix @ v_world
                     for i in range(3):
-
                         min_v[i] = min(min_v[i], v_local[i])
                         max_v[i] = max(max_v[i], v_local[i])
-
-            
-
             dims = max_v - min_v
             self._calculate_for_props(props, dims)
             count += 1
-
         return {'FINISHED'}
-
     def _calculate_for_props(self, props, dims):
-
         inertial = props.inertial
         mass = inertial.mass
         # For parts, collision shape is in lsd_pg_mech_props.collision
         # For bones, context varies. We handle both attribute paths.
         shape = 'BOX'
         if hasattr(props, "collision"):
-
             shape = props.collision.shape
-
-        
-
         # Generic Bounding Box Inertia (Solid Cuboid) - used for BOX and MESH fallback
         if shape in ['BOX', 'MESH']:
-
             inertial.ixx = (1/12) * mass * (dims.y**2 + dims.z**2)
             inertial.iyy = (1/12) * mass * (dims.x**2 + dims.z**2)
             inertial.izz = (1/12) * mass * (dims.x**2 + dims.y**2)
-
         elif shape == 'CYLINDER':
-
             radius = (dims.x + dims.y) / 4
             height = dims.z
             inertial.ixx = (1/12) * mass * (3 * radius**2 + height**2)
             inertial.iyy = (1/12) * mass * (3 * radius**2 + height**2)
             inertial.izz = (1/2) * mass * radius**2
-
         elif shape == 'SPHERE':
-
             radius = max(dims.x, dims.y, dims.z) / 2
             val = (2/5) * mass * radius**2
             inertial.ixx = inertial.iyy = inertial.izz = val
-
 class LSD_OT_Calculate_All_Physics(bpy.types.Operator):
-
     """Calculates both Center of Mass and Inertia Tensor for the active target."""
     bl_idname = "lsd.calculate_all_physics"
     bl_label = "Auto-Calculate Physics"
@@ -1457,28 +959,18 @@ class LSD_OT_Calculate_All_Physics(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         if context.mode == 'POSE':
-
             return context.active_pose_bone is not None
-
         obj = context.active_object
         return obj is not None and (obj.name.startswith("COLL_") or hasattr(obj, "lsd_pg_mech_props"))
-
     def execute(self, context):
-
         # 1. Run COM
         bpy.ops.lsd.calculate_center_of_mass()
         # 2. Run Inertia
         bpy.ops.lsd.calculate_inertia()
-
-        
-
         self.report({'INFO'}, "Physics parameters (COM, Inertia) updated.")
         return {'FINISHED'}
-
 class LSD_OT_BakeMesh(bpy.types.Operator):
-
     """
     Applies all modifiers and converts a parametric object to a plain static mesh,
     permanently removing its parametric controls and helper objects.
@@ -1489,26 +981,20 @@ class LSD_OT_BakeMesh(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         obj = context.active_object
         return obj and obj.type in {'MESH', 'CURVE'} and hasattr(obj, "lsd_pg_mech_props") and obj.lsd_pg_mech_props.is_part
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         """
         Executes the baking process.
         This operator uses a robust, multi-step process to ensure a clean conversion:
         1.  A temporary duplicate of the object is created.
         2.  Blender's native `convert` operator is used on the duplicate. This is the
-
             most reliable way to apply all modifiers, including Geometry Nodes that
             generate instances (like chains).
-
         3.  A new, final baked object is created from the resulting mesh data.
         4.  All original parametric objects and their specific helpers (cutters,
             empties, link meshes) are identified by inspecting properties, not by
             relying on fragile naming conventions.
-
         5.  The original objects and their now-unused data-blocks are deleted.
         6.  The new baked object is selected for a seamless user experience.
         """
@@ -1516,23 +1002,18 @@ class LSD_OT_BakeMesh(bpy.types.Operator):
         original_obj_name = obj_to_bake.name
         # --- 1. Ensure Object Mode for safe operations ---
         if context.mode != 'OBJECT':
-
             bpy.ops.object.mode_set(mode='OBJECT')
-
         # --- 2. Create the final mesh data using the robust convert operator ---
         # This is more reliable than `new_from_object` for complex GN setups.
         # AI Editor Note: Use manual deselection to avoid operator context errors.
         for o in context.view_layer.objects:
-
             o.select_set(False)
-
         obj_to_bake.select_set(True)
         context.view_layer.objects.active = obj_to_bake
         # Duplicate the object to work on a temporary copy.
         bpy.ops.object.duplicate(linked=False)
         temp_baked_obj = context.active_object
         try:
-
             # Convert the duplicate to a mesh, applying all modifiers.
             bpy.ops.object.convert(target='MESH')
             # Apply transforms to "lock in" the geometry.
@@ -1541,30 +1022,19 @@ class LSD_OT_BakeMesh(bpy.types.Operator):
             # preventing the object from "jumping" to the world origin.
             bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
             baked_mesh_data = temp_baked_obj.data.copy()
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Failed to convert object to mesh: {e}")
             # Clean up the temporary duplicate on failure.
             if temp_baked_obj:
-
                 bpy.data.objects.remove(temp_baked_obj, do_unlink=True)
-
             return {'CANCELLED'}
-
         finally:
-
             # Always clean up the temporary object.
             if temp_baked_obj and temp_baked_obj.name in bpy.data.objects:
-
                  bpy.data.objects.remove(temp_baked_obj, do_unlink=True)
-
         # --- 3. Create the new, final baked object ---
         baked_obj_name = get_unique_name(f"{original_obj_name}_Baked")
         baked_obj = bpy.data.objects.new(baked_obj_name, baked_mesh_data)
-
-        
-
         # Copy location and rotation from original, but reset scale to 1.0
         # because we just baked the scale into the mesh.
         loc, rot, _ = obj_to_bake.matrix_world.decompose()
@@ -1573,78 +1043,52 @@ class LSD_OT_BakeMesh(bpy.types.Operator):
         # --- 4. Collect all original parametric objects and helpers for deletion ---
         objects_to_delete = {obj_to_bake}
         props = obj_to_bake.lsd_pg_mech_props
-
-        
-
         # --- AI Editor Note: Handle Basic Joint Stator Baking ---
         # If this is a basic joint, we must also bake the stator object.
         # We do this by recursively calling the bake operator on the stator,
         # or manually converting it here. Manual conversion is safer to avoid context switching issues.
         if props.category == 'BASIC_JOINT' and props.joint_stator_obj:
-
             stator = props.joint_stator_obj
             # Unlink the stator from the properties so it doesn't get deleted as a helper
             props.joint_stator_obj = None
-
-            
-
             # Convert Stator to static mesh
             # We can simply clear its 'is_part' flag, as it's already a mesh object.
             # But to be consistent with 'Bake', we should apply any modifiers if they existed (AutoSmooth).
             # Since we are in a script, we can just apply the modifiers.
             # For now, just marking it as not a part is sufficient to "bake" it in the UI sense.
             stator.lsd_pg_mech_props.is_part = False
-
         if props.category == 'BASIC_JOINT' and props.joint_screw_obj:
-
             screw = props.joint_screw_obj
             props.joint_screw_obj = None
             screw.lsd_pg_mech_props.is_part = False
-
         if props.category == 'BASIC_JOINT' and props.joint_pin_obj:
-
             pin = props.joint_pin_obj
             props.joint_pin_obj = None
             pin.lsd_pg_mech_props.is_part = False
-
         # Find boolean cutters by inspecting modifiers.
         for mod in obj_to_bake.modifiers:
-
             if mod.type == 'BOOLEAN' and mod.object:
-
                 objects_to_delete.add(mod.object)
-
         # Find helpers stored in pointer properties for specific part types.
         if props.category == 'SPRING':
-
             if props.spring_start_obj: objects_to_delete.add(props.spring_start_obj)
             if props.spring_end_obj: objects_to_delete.add(props.spring_end_obj)
-
         elif props.category == 'CHAIN':
-
             if props.instanced_link_obj: objects_to_delete.add(props.instanced_link_obj)
             if props.chain_driver: objects_to_delete.add(props.chain_driver)
             if props.chain_follower_proxy: objects_to_delete.add(props.chain_follower_proxy)
-
         # --- 5. Delete the original objects and their data-blocks ---
         for item in objects_to_delete:
-
             if item and item.name in bpy.data.objects:
-
                 data = item.data
                 is_data_user = isinstance(data, (bpy.types.Mesh, bpy.types.Curve))
                 bpy.data.objects.remove(item, do_unlink=True)
                 # Clean up orphan data-blocks to keep the .blend file clean.
                 if is_data_user and data and data.users == 0:
-
                     if isinstance(data, bpy.types.Mesh):
-
                         bpy.data.meshes.remove(data)
-
                     elif isinstance(data, bpy.types.Curve):
-
                         bpy.data.curves.remove(data)
-
         # Mark the new object as no longer being a parametric part to hide the UI.
         baked_obj.lsd_pg_mech_props.is_part = False
         # --- 6. Select the new baked object for a good user experience ---
@@ -1653,41 +1097,25 @@ class LSD_OT_BakeMesh(bpy.types.Operator):
         baked_obj.select_set(True)
         self.report({'INFO'}, f"Baked '{original_obj_name}' to static mesh: '{baked_obj.name}'")
         return {'FINISHED'}
-
 class LSD_OT_ReadJointSettings(bpy.types.Operator):
-
     """Reads the properties from the active bone into the global Joint Editor tool."""
     bl_idname = "lsd.read_joint_settings"
     bl_label = "Read From Active"
     bl_description = "Load settings from the currently active bone"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         if context.mode == 'POSE':
-
             return context.active_pose_bone is not None
-
         if context.mode == 'OBJECT':
-
             obj = context.active_object
             rig = context.scene.lsd_active_rig
             return obj and rig and obj.parent == rig and obj.parent_type == 'BONE'
-
         return False
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # AI Editor Note: Support reading from the parent bone of a selected mesh in Object Mode.
         if context.mode == 'OBJECT':
-
             bpy.ops.lsd.enter_pose_mode()
-
-            
-
         tool_props = context.scene.lsd_pg_joint_editor_settings
         active_props = context.active_pose_bone.lsd_pg_kinematic_props
         tool_props.joint_type = active_props.joint_type
@@ -1697,14 +1125,9 @@ class LSD_OT_ReadJointSettings(bpy.types.Operator):
         tool_props.lower_limit = active_props.lower_limit
         tool_props.upper_limit = active_props.upper_limit
         tool_props.ik_chain_length = active_props.ik_chain_length
-
-        
-
         self.report({'INFO'}, f"Read settings from '{context.active_pose_bone.name}'")
         return {'FINISHED'}
-
 class LSD_OT_ApplyJointSettings(bpy.types.Operator):
-
     """Applies the properties from the global Joint Editor tool to all selected bones."""
     bl_idname = "lsd.apply_joint_settings"
     bl_label = "Apply to Selected"
@@ -1719,120 +1142,66 @@ class LSD_OT_ApplyJointSettings(bpy.types.Operator):
     apply_ik: bpy.props.BoolProperty(name="Apply IK", default=True)
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         # AI Editor Note: Relaxed poll for timer-based stability.
         # Operators called via bpy.ops in a timer must have a permissive poll.
         if not context or not hasattr(context, 'scene'): return False
         return True
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # AI Editor Note: Robust context retrieval for Timer-based calls.
         ctx = context if context and hasattr(context, 'scene') else bpy.context
         scene = ctx.scene
         tool_props = scene.lsd_pg_joint_editor_settings
-
-        
-
         bones_to_update = []
-
-        
-
         # 1. Determine Selection Context
         mode = getattr(ctx, 'mode', 'OBJECT')
         sel_objs = getattr(ctx, 'selected_objects', [])
         active_obj = getattr(ctx, 'active_object', None)
-
-        
-
         if mode == 'POSE':
-
             # Direct bone selection in Pose Mode
             sel_bones = getattr(ctx, 'selected_pose_bones', [])
             for pb in sel_bones:
-
                 if pb not in bones_to_update:
-
                     bones_to_update.append(pb)
-
-            
-
             # Active Bone Fallback
             active_pb = getattr(ctx, 'active_pose_bone', None)
             if active_pb and active_pb not in bones_to_update:
-
                 bones_to_update.append(active_pb)
-
-        
-
         else: # OBJECT Mode
-
             # Greedy gathering from hierarchies and armatures
             search_scope = list(sel_objs)
             if active_obj and active_obj not in search_scope:
-
                 search_scope.append(active_obj)
-
-            
-
             for obj in search_scope:
-
                 # A. Handle Armatures: look for selected bones
                 if obj.type == 'ARMATURE':
-
                     has_sel_bones = False
                     for pb in obj.pose.bones:
-
                         if pb.bone.select:
-
                             if pb not in bones_to_update:
-
                                 bones_to_update.append(pb)
                                 has_sel_bones = True
-
-                    
-
                     # If an armature is selected but NO bones are selected, use the active one
                     if not has_sel_bones and obj.pose.bones.active:
-
                         pb = obj.pose.bones.active
                         if pb not in bones_to_update:
-
                             bones_to_update.append(pb)
-
-                            
-
                 # B. Handle Mesh hierarchies: find parent bones (Sub-Selection)
                 def find_bones_recursive(o):
-
                     curr = o
                     # Go UP to find if this mesh is parented to a bone
                     while curr:
-
                         if curr.parent and curr.parent.type == 'ARMATURE' and curr.parent_type == 'BONE' and curr.parent_bone:
-
                             pbone = curr.parent.pose.bones.get(curr.parent_bone)
                             if pbone and pbone not in bones_to_update:
-
                                 bones_to_update.append(pbone)
-
                             break # Found the direct logical owner
-
                         curr = curr.parent
-
                     # Go DOWN to handle children of selected meshes
                     for child in o.children:
-
                         find_bones_recursive(child)
-
-                
-
                 find_bones_recursive(obj)
-
         if not bones_to_update:
-
             return {'CANCELLED'}
-
         # 2. Sequential Application with Protection Guards
         from . import core
         old_guard_prop = core._prop_update_guard
@@ -1840,9 +1209,7 @@ class LSD_OT_ApplyJointSettings(bpy.types.Operator):
         core._prop_update_guard = True
         core._joint_editor_update_guard = True
         try:
-
             for bone in bones_to_update:
-
                 props = bone.lsd_pg_kinematic_props
                 # Transfer settings only if flags are enabled (enables multi-bone individual retention)
                 if self.apply_type:
@@ -1862,49 +1229,33 @@ class LSD_OT_ApplyJointSettings(bpy.types.Operator):
                     props.upper_limit = tool_props.upper_limit
                 if self.apply_ik:
                     props.ik_chain_length = tool_props.ik_chain_length
-
                 # Trigger specialized state logic for the bone
                 core.clean_conflicting_mechanics(bone)
                 core.update_single_bone_gizmo(bone, scene.lsd_viz_gizmos, scene.lsd_gizmo_style)
                 core.apply_native_constraints(bone)
                 core.update_ik_chain_length(bone, ctx)
-
         except Exception as e:
-
             msg = f"LSD Error during joint application: {e}"
             print(msg)
             import traceback
             traceback.print_exc()
             self.report({'ERROR'}, msg)
             return {'CANCELLED'}
-
         finally:
-
             core._prop_update_guard = old_guard_prop
             core._joint_editor_update_guard = old_guard_tool
             # Final refresh to ensure depsgraph catches up with constraint changes
             core.cleanup_unused_gizmos(ctx)
             ctx.view_layer.update()
-
-            
-
         # 3. Informative Reporting
         msg = f"Processed {len(bones_to_update)} bones."
         if not scene.lsd_viz_gizmos:
-
             msg += " (Note: Gizmos are HIDDEN in UI)"
-
         if scene.lsd_placement_mode:
-
             msg += " (Note: Constraints DISABLED in Joint Placement Mode)"
-
-            
-
         self.report({'INFO'}, msg)
         return {'FINISHED'}
-
 class LSD_OT_ApplyBoneConstraints(bpy.types.Operator):
-
     """Propagates the properties of the active bone to all other selected bones."""
     bl_idname = "lsd.apply_bone_constraints"
     bl_label = "Propagate Settings"
@@ -1912,56 +1263,34 @@ class LSD_OT_ApplyBoneConstraints(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         # AI Editor Note: Relaxed poll for timer stability.
         # Operators called via bpy.ops in a timer must have a permissive poll.
-        if not context or not hasattr(context, 'scene'): 
-
+        if not context or not hasattr(context, 'scene'):
             return False
-
         return True
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # AI Editor Note: Robust context retrieval for Timer-based calls.
         ctx = context if context and hasattr(context, 'scene') else bpy.context
         source_bone = getattr(ctx, 'active_pose_bone', None)
         if not source_bone:
-
             # If no active bone, we can't propagate anything
             return {'CANCELLED'}
-
         source_props = source_bone.lsd_pg_kinematic_props
-
-        
-
         # 1. Gather bones to update (selection + active)
         bones_to_update = []
         rigs = [obj for obj in context.selected_objects if obj.type == 'ARMATURE']
         if context.active_object and context.active_object.type == 'ARMATURE' and context.active_object not in rigs:
-
             rigs.append(context.active_object)
-
-        
-
         for rig_obj in rigs:
-
             for pb in rig_obj.pose.bones:
-
                 if pb.bone.select and pb != source_bone:
-
                     bones_to_update.append(pb)
-
-        
-
         # Guard to prevent feedback loops
         core._prop_update_guard = True
         try:
-
             show = ctx.scene.lsd_viz_gizmos
             style = ctx.scene.lsd_gizmo_style
             for bone in bones_to_update:
-
                 target_props = bone.lsd_pg_kinematic_props
                 # Sync properties
                 target_props.joint_type = source_props.joint_type
@@ -1971,33 +1300,22 @@ class LSD_OT_ApplyBoneConstraints(bpy.types.Operator):
                 target_props.lower_limit = source_props.lower_limit
                 target_props.upper_limit = source_props.upper_limit
                 target_props.ik_chain_length = source_props.ik_chain_length
-
-                
-
                 # Update mechanics for each bone
                 core.clean_conflicting_mechanics(bone)
                 core.update_single_bone_gizmo(bone, show, style)
                 core.apply_native_constraints(bone)
                 core.update_ik_chain_length(bone, ctx)
-
-            
-
             # Apply to active as well just to be sure
             core.clean_conflicting_mechanics(source_bone)
             core.update_single_bone_gizmo(source_bone, show, style)
             core.apply_native_constraints(source_bone)
             core.update_ik_chain_length(source_bone, ctx)
-
         finally:
-
             core._prop_update_guard = False
             core.cleanup_unused_gizmos(ctx)
             ctx.view_layer.update()
-
         return {'FINISHED'}
-
 class LSD_OT_SetupIK(bpy.types.Operator):
-
     """
     Creates a standard Inverse Kinematics (IK) setup for the active bone,
     including a target bone and a pole target bone.
@@ -2008,138 +1326,78 @@ class LSD_OT_SetupIK(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.mode == 'POSE' and context.active_pose_bone
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         rig = context.object
         ik_bone = context.active_pose_bone
         # --- Cleanup old IK constraint to make the operator re-runnable ---
         for c in list(ik_bone.constraints):
-
             if c.name == IK_CONSTRAINT_NAME:
-
                 ik_bone.constraints.remove(c)
-
-        
-
         # 1. Traverse up the hierarchy to find the chain of parent bones.
         chain = []
         current_bone = ik_bone
         while current_bone:
-
             chain.append(current_bone)
             if len(chain) >= 255:  # Blender's IK chain limit
-
                 break
-
             current_bone = current_bone.parent
-
-        
-
         if len(chain) < 1:
-
             self.report({'WARNING'}, "Could not determine bone chain.")
             return {'CANCELLED'}
-
-            
-
         chain_length = len(chain)
-
-        
-
         # 2. Switch to Edit Mode to create the new IK controller bones.
         bpy.ops.object.mode_set(mode='EDIT')
-
-        
-
         edit_bones = rig.data.edit_bones
-
-        
-
         # Get the edit bone versions of the chain, reversed (from tip to root).
         chain_edit_bones = [edit_bones.get(b.name) for b in chain]
-
-        
-
         # 3. Create the IK Target Bone at the tip of the chain.
         ik_target_name = f"IK_Target_{ik_bone.name}"
         ik_target_eb = edit_bones.new(ik_target_name)
         ik_target_eb.head = chain_edit_bones[0].tail
         ik_target_eb.tail = ik_target_eb.head + (chain_edit_bones[0].tail - chain_edit_bones[0].head).normalized() * 0.2
         ik_target_eb.parent = None  # Un-parent it from the chain.
-
-        
-
         # 4. Create the Pole Target Bone for controlling the "elbow" or "knee".
         pole_target_name = f"IK_Pole_{ik_bone.name}"
         pole_target_eb = None
         if chain_length > 1:
-
             pole_target_eb = edit_bones.new(pole_target_name)
-
-            
-
             # Calculate a good default position for the pole target.
             root_pos = chain_edit_bones[-1].head
             tip_pos = chain_edit_bones[0].tail
             elbow_pos = chain_edit_bones[0].head
-
-            
-
             v_root_tip = tip_pos - root_pos
             v_root_elbow = elbow_pos - root_pos
             v_proj = v_root_elbow.project(v_root_tip)
             v_pole = v_root_elbow - v_proj
-
-            
-
             pole_distance = v_root_tip.length
             if v_pole.length < 0.001:
-
                 # If the arm is straight, default to a pole vector along the world Z-axis.
                 v_pole = mathutils.Vector((0, 0, 1.0))
-
-            
-
             pole_target_eb.head = elbow_pos + v_pole.normalized() * pole_distance
             pole_target_eb.tail = pole_target_eb.head + mathutils.Vector((0, 0, 0.2))
             pole_target_eb.parent = None
-
         # 5. Switch back to Pose Mode to create the constraint.
         bpy.ops.object.mode_set(mode='POSE')
-
-        
-
         ik_con = ik_bone.constraints.new('IK')
         ik_con.name = IK_CONSTRAINT_NAME
         ik_con.target = rig
         ik_con.subtarget = ik_target_name
         ik_con.chain_count = chain_length
         # ik_con.use_ik_limit = True # REMOVED: Attribute does not exist on KinematicConstraint
-
-        
-
         if pole_target_eb:
-
             ik_con.pole_target = rig
             ik_con.pole_subtarget = pole_target_name
-
         # --- UX Improvement: Auto-select the target and activate the move tool ---
         bpy.ops.pose.select_all(action='DESELECT')
         target_pose_bone = rig.pose.bones.get(ik_target_name)
         if target_pose_bone:
-
             target_pose_bone.bone.select = True
             rig.data.bones.active = target_pose_bone.bone
             bpy.ops.wm.tool_set_by_id(name="builtin.move")
-
         self.report({'INFO'}, f"Created IK chain of length {chain_length} on '{ik_bone.name}'")
         return {'FINISHED'}
-
 class LSD_OT_SetOriginToCursor(bpy.types.Operator):
-
     """Moves the origin of the selected object(s) to the 3D cursor"""
     bl_idname = "lsd.set_origin_to_cursor"
     bl_label = "Set Origin to Cursor"
@@ -2147,89 +1405,52 @@ class LSD_OT_SetOriginToCursor(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None and len(context.selected_objects) > 0
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # AI Editor Note: This operator is a simple wrapper around Blender's native
         # 'origin_set' function. To ensure it works from any mode (Pose, Edit, etc.),
         # we temporarily switch to Object Mode, perform the operation, and then restore the mode.
         # This aligns with the addon's philosophy of using native features while improving UX.
-
-        
-
         original_mode = context.mode
         # --- AI Editor Note: Map specific edit modes (e.g., 'EDIT_MESH') to the generic 'EDIT' ---
         # The bpy.ops.object.mode_set() operator expects generic mode names like 'EDIT', not 'EDIT_MESH'.
         # This mapping prevents a TypeError when trying to restore the original mode.
         mode_to_restore = original_mode
         if original_mode.startswith('EDIT_'):
-
             mode_to_restore = 'EDIT'
-
-        
-
         try:
-
             # Switch to Object Mode if necessary, as origin_set requires it.
             if original_mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT')
-
-            
-
             # AI Editor Note: Support sub-selection/hierarchies.
             # Blender's origin_set works on selected objects. We must select descendants if the user expects them to be affected.
             for obj in context.selected_objects:
-
                 def select_descendants(o):
-
                     for child in o.children:
-
                         child.select_set(True)
                         select_descendants(child)
-
                 select_descendants(obj)
-
             bpy.ops.object.origin_set(type='ORIGIN_CURSOR', center='MEDIAN')
-
-            
-
             # Restore the original mode if possible.
             if original_mode != 'OBJECT':
-
                 try:
-
                     # AI Editor Note: Use the mapped mode name for restoration.
                     bpy.ops.object.mode_set(mode=mode_to_restore)
-
                 except RuntimeError:
-
                     # If mode restoration fails (e.g. invalid context), stay in Object Mode.
                     pass
-
             self.report({'INFO'}, f"Moved origin of {len(context.selected_objects)} object(s) to cursor.")
-
         except RuntimeError as e:
-
             self.report({'ERROR'}, f"Could not set origin. Error: {e}")
             # Attempt to restore mode even on error to avoid leaving user in unexpected state.
             if context.mode != original_mode:
-
                 try:
-
                     # AI Editor Note: Use the mapped mode name for restoration on error.
                     bpy.ops.object.mode_set(mode=mode_to_restore)
-
                 except:
-
                     pass
-
             return {'CANCELLED'}
-
         return {'FINISHED'}
-
 # ------------------------------------------------------------------------
 
 #   SECTION: MATERIAL & TEXTURING SYSTEM (REWRITTEN)
@@ -2237,23 +1458,16 @@ class LSD_OT_SetOriginToCursor(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 def update_material_merge_trigger(self, context):
-
     """Trigger a re-merge when layer settings change."""
     # Use a timer to avoid context issues during property updates
     if context.active_object:
-
         bpy.app.timers.register(lambda: (bpy.ops.lsd.material_merge() and None), first_interval=0.01)
-
 class LSD_OT_Material_AddSmart(bpy.types.Operator):
-
     """Add a new material slot with a pre-configured smart material preset"""
     bl_idname = "lsd.material_add_smart"
     bl_label = "Add Smart Material"
     bl_description = "Adds a new material layer with a specific preset configuration"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     mat_type: bpy.props.EnumProperty(
         name="Material Type",
         items=[
@@ -2266,93 +1480,57 @@ class LSD_OT_Material_AddSmart(bpy.types.Operator):
             ('PRINTED', "3D Printed", "Plastic with layer lines"),
             ('ALUMINUM', "Brushed Aluminum", "Anisotropic metallic"),
         ]
-
     )
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # Use scene property if not explicitly set (e.g. from the dropdown)
         mat_type = self.mat_type
         if not self.properties.is_property_set("mat_type"):
-
             mat_type = context.scene.lsd_smart_material_type
-
         obj = context.active_object
         if not obj or obj.type != 'MESH':
-
             self.report({'WARNING'}, "Active object must be a mesh.")
             return {'CANCELLED'}
-
-        
-
         # 1. Create Slot
         bpy.ops.object.material_slot_add()
         slot = obj.material_slots[obj.active_material_index]
-
-        
-
         # 2. Create Material
         mat = bpy.data.materials.new(name=f"{mat_type.capitalize()}_{obj.name}")
         mat.use_nodes = True
         slot.material = mat
-
-        
-
         # 3. Configure Nodes
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
         bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
-
-        
-
         if not bsdf:
-
             bsdf = nodes.new('ShaderNodeBsdfPrincipled')
             output = nodes.get("Material Output") or nodes.new('ShaderNodeOutputMaterial')
             links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-
         # Apply Preset Logic
         if self.mat_type == 'PLASTIC':
-
             bsdf.inputs['Roughness'].default_value = 0.5
             bsdf.inputs['Metallic'].default_value = 0.0
-
         elif self.mat_type == 'METAL':
-
             bsdf.inputs['Roughness'].default_value = 0.2
             bsdf.inputs['Metallic'].default_value = 1.0
             bsdf.inputs['Base Color'].default_value = (0.8, 0.8, 0.8, 1.0)
-
         elif self.mat_type == 'RUBBER':
-
             bsdf.inputs['Base Color'].default_value = (0.1, 0.1, 0.1, 1.0)
             bsdf.inputs['Roughness'].default_value = 0.9
             bsdf.inputs['Metallic'].default_value = 0.0
-
         elif self.mat_type == 'EMISSIVE':
-
             bsdf.inputs['Emission Strength'].default_value = 5.0
-
         elif self.mat_type == 'GLASS':
-
             bsdf.inputs['Transmission Weight'].default_value = 1.0
             bsdf.inputs['Roughness'].default_value = 0.0
-
         elif self.mat_type == 'CARBON':
-
             coord = nodes.new('ShaderNodeTexCoord')
             coord.location = (-700, 0)
             mapping = nodes.new('ShaderNodeMapping')
             mapping.location = (-500, 0)
             links.new(coord.outputs['UV'], mapping.inputs['Vector'])
-
-            
-
             tex = nodes.new('ShaderNodeTexBrick')
             tex.location = (-300, 0)
             links.new(mapping.outputs['Vector'], tex.inputs['Vector'])
-
-            
-
             tex.inputs['Color1'].default_value = (0.1, 0.1, 0.1, 1)
             tex.inputs['Color2'].default_value = (0.05, 0.05, 0.05, 1)
             tex.inputs['Mortar'].default_value = (0, 0, 0, 1)
@@ -2360,23 +1538,15 @@ class LSD_OT_Material_AddSmart(bpy.types.Operator):
             links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
             links.new(tex.outputs['Color'], bsdf.inputs['Roughness'])
             bsdf.inputs['Metallic'].default_value = 0.0
-
         elif self.mat_type == 'PRINTED':
-
             coord = nodes.new('ShaderNodeTexCoord')
             coord.location = (-700, 0)
             mapping = nodes.new('ShaderNodeMapping')
             mapping.location = (-500, 0)
             links.new(coord.outputs['UV'], mapping.inputs['Vector'])
-
-            
-
             tex = nodes.new('ShaderNodeTexWave')
             tex.location = (-300, 0)
             links.new(mapping.outputs['Vector'], tex.inputs['Vector'])
-
-            
-
             tex.inputs['Scale'].default_value = 100
             tex.bands_direction = 'Z'
             bump = nodes.new('ShaderNodeBump')
@@ -2386,79 +1556,52 @@ class LSD_OT_Material_AddSmart(bpy.types.Operator):
             links.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
             bsdf.inputs['Base Color'].default_value = (0.8, 0.3, 0.0, 1)
             bsdf.inputs['Roughness'].default_value = 0.6
-
         elif self.mat_type == 'ALUMINUM':
-
             coord = nodes.new('ShaderNodeTexCoord')
             coord.location = (-700, 0)
             mapping = nodes.new('ShaderNodeMapping')
             mapping.location = (-500, 0)
             links.new(coord.outputs['UV'], mapping.inputs['Vector'])
-
-            
-
             bsdf.inputs['Base Color'].default_value = (0.9, 0.9, 0.9, 1)
             bsdf.inputs['Metallic'].default_value = 1.0
             bsdf.inputs['Roughness'].default_value = 0.3
             tex = nodes.new('ShaderNodeTexNoise')
             tex.location = (-300, 0)
             links.new(mapping.outputs['Vector'], tex.inputs['Vector'])
-
-            
-
             tex.inputs['Scale'].default_value = 200
             bump = nodes.new('ShaderNodeBump')
             bump.location = (-100, -200)
             bump.inputs['Strength'].default_value = 0.05
             links.new(tex.outputs['Fac'], bump.inputs['Height'])
             links.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
-
         # 4. Assign to selection if in Edit Mode
         if obj.mode == 'EDIT':
-
             bpy.ops.object.material_slot_assign()
-
         self.report({'INFO'}, f"Added smart material: {self.mat_type}")
         return {'FINISHED'}
-
 class LSD_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
-
     """Load an image texture into the active material's Base Color"""
     bl_idname = "lsd.material_load_texture"
     bl_label = "Load Texture"
     bl_description = "Load an image file and connect it to the Base Color of the active material"
-
-    
-
     filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.tga;*.bmp", options={'HIDDEN'})
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         mat = obj.active_material
-        if not mat or not mat.use_nodes: 
-
+        if not mat or not mat.use_nodes:
             self.report({'WARNING'}, "Active material must use nodes.")
             return {'CANCELLED'}
-
-        
-
         try:
-
             img = bpy.data.images.load(self.filepath)
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Failed to load image: {e}")
             return {'CANCELLED'}
-
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
         bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
         if not bsdf:
-
             self.report({'WARNING'}, "No Principled BSDF found in material.")
             return {'CANCELLED'}
-
         # --- Declarative Node Setup ---
         # Find or create the required nodes for a standard texture setup.
         # This ensures a predictable structure for the UI to find and control.
@@ -2466,25 +1609,15 @@ class LSD_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
         mapping_node = next((n for n in nodes if n.type == 'MAPPING'), None) or nodes.new('ShaderNodeMapping')
         tex_node = None
         if bsdf.inputs['Base Color'].is_linked:
-
             from_node = bsdf.inputs['Base Color'].links[0].from_node
             if from_node.type == 'TEX_IMAGE':
-
                 tex_node = from_node
-
         if not tex_node:
-
             tex_node = nodes.new('ShaderNodeTexImage')
-
-        
-
         # Position nodes for a clean layout
         tex_coord_node.location = (bsdf.location.x - 700, bsdf.location.y)
         mapping_node.location = (bsdf.location.x - 500, bsdf.location.y)
         tex_node.location = (bsdf.location.x - 300, bsdf.location.y)
-
-        
-
         tex_node.image = img
         # Forcefully create the correct node links, removing any old ones.
         for link in list(bsdf.inputs['Base Color'].links): links.remove(link)
@@ -2495,9 +1628,7 @@ class LSD_OT_Material_LoadTexture(bpy.types.Operator, ImportHelper):
         links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
         self.report({'INFO'}, f"Loaded texture '{img.name}' into '{mat.name}'")
         return {'FINISHED'}
-
 class LSD_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
-
     """Create a new material from an image file"""
     bl_idname = "lsd.material_from_image"
     bl_label = "New Material from Image"
@@ -2505,23 +1636,16 @@ class LSD_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
     bl_options = {'REGISTER', 'UNDO'}
     filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.tga;*.bmp", options={'HIDDEN'})
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         if not obj or obj.type != 'MESH':
-
             self.report({'WARNING'}, "Active object must be a mesh.")
             return {'CANCELLED'}
-
         # 1. Load Image
         try:
-
             img = bpy.data.images.load(self.filepath)
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Failed to load image: {e}")
             return {'CANCELLED'}
-
         # 2. Create Material Slot and Material
         bpy.ops.object.material_slot_add()
         slot = obj.material_slots[obj.active_material_index]
@@ -2542,52 +1666,33 @@ class LSD_OT_Material_FromImage(bpy.types.Operator, ImportHelper):
         links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
         self.report({'INFO'}, f"Created material '{mat.name}' from '{img.name}'")
         return {'FINISHED'}
-
 class LSD_OT_AddMappingNodes(bpy.types.Operator):
-
     """Add Texture Coordinate and Mapping nodes to the active material"""
     bl_idname = "lsd.add_mapping_nodes"
     bl_label = "Add Transform Controls"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         obj = context.active_object
         return obj and obj.active_material and obj.active_material.use_nodes
-
     def execute(self, context):
-
         mat = context.active_object.active_material
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
-
-        
-
         # Create nodes
         coord = nodes.new('ShaderNodeTexCoord')
         coord.location = (-900, 0)
         mapping = nodes.new('ShaderNodeMapping')
         mapping.location = (-700, 0)
         links.new(coord.outputs['UV'], mapping.inputs['Vector'])
-
-        
-
         # Try to connect to existing texture nodes
         for node in nodes:
-
             if node.type.startswith('TEX_') and 'Vector' in node.inputs:
-
                 if not node.inputs['Vector'].is_linked:
-
                     links.new(mapping.outputs['Vector'], node.inputs['Vector'])
-
-        
-
         self.report({'INFO'}, "Added mapping nodes")
         return {'FINISHED'}
-
 class LSD_OT_UV_SmartUnwrap(bpy.types.Operator):
-
     """Apply smart UV unwrapping to the active mesh"""
     bl_idname = "lsd.uv_smart_unwrap"
     bl_label = "Smart UV Unwrap"
@@ -2601,314 +1706,164 @@ class LSD_OT_UV_SmartUnwrap(bpy.types.Operator):
             ('UNWRAP', "Unwrap", "Standard unwrap (requires seams)"),
         ],
         default='SMART'
-
     )
     @classmethod
     def poll(cls, context):
-
         return context.active_object and context.active_object.type == 'MESH'
-
     def execute(self, context):
-
         obj = context.active_object
         original_mode = obj.mode
-
-        
-
         if original_mode != 'EDIT':
-
             bpy.ops.object.mode_set(mode='EDIT')
-
-        
-
         bpy.ops.mesh.select_all(action='SELECT')
-
-        
-
         if self.method == 'SMART':
-
             bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.02)
-
         elif self.method == 'CUBE':
-
             bpy.ops.uv.cube_project(cube_size=1.0)
-
         elif self.method == 'CYLINDER':
-
             bpy.ops.uv.cylinder_project()
-
         elif self.method == 'SPHERE':
-
             bpy.ops.uv.sphere_project()
-
         elif self.method == 'UNWRAP':
-
             bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.02)
-
-            
-
         if original_mode != 'EDIT':
-
             bpy.ops.object.mode_set(mode=original_mode)
-
-            
-
         self.report({'INFO'}, f"Applied UV: {self.method}")
         return {'FINISHED'}
-
 class LSD_OT_Material_Merge(bpy.types.Operator):
-
     """Merge all enabled material slots into a single composite material"""
     bl_idname = "lsd.material_merge"
     bl_label = "Composite All Layers"
     bl_description = "Combines all enabled material layers into a single composite material (preserving settings) and deletes old layers"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         if not obj or not obj.material_slots:
-
             return {'CANCELLED'}
-
-        
-
         comp_mat_name = f"Composite_{obj.name}"
-
-        
-
         # Filter valid source slots
         source_slots = [
-            slot for slot in obj.material_slots 
+            slot for slot in obj.material_slots
             if slot.material and slot.material.name != comp_mat_name and getattr(slot, "lsd_enabled", True)
         ]
         if not source_slots:
-
             self.report({'WARNING'}, "No enabled material layers to merge.")
             return {'CANCELLED'}
-
         # Create or Reset Composite Material
         comp_mat = bpy.data.materials.get(comp_mat_name)
         if not comp_mat:
-
             comp_mat = bpy.data.materials.new(name=comp_mat_name)
-
-        
-
         comp_mat.use_nodes = True
         tree = comp_mat.node_tree
         tree.nodes.clear()
-
-        
-
         output_node = tree.nodes.new('ShaderNodeOutputMaterial')
         output_node.location = (300, 0)
-
-        
-
         # Stack Shaders
         current_shader_socket = None
         x_offset = -300
-
-        
-
         def copy_material_to_group(mat, group_tree):
-
             """Helper to copy a material's node tree into a node group."""
             group_tree.nodes.clear()
-
-            
-
             # Create Group Outputs
             g_out = group_tree.nodes.new('NodeGroupOutput')
             g_out.location = (300, 0)
             group_tree.interface.new_socket(name="Surface", in_out='OUTPUT', socket_type='NodeSocketShader')
             group_tree.interface.new_socket(name="Alpha", in_out='OUTPUT', socket_type='NodeSocketFloat')
-
-            
-
             # Copy nodes
             node_map = {}
             src_tree = mat.node_tree
-
-            
-
             for node in src_tree.nodes:
-
                 if node.type == 'OUTPUT_MATERIAL': continue
-
-                
-
                 new_node = group_tree.nodes.new(node.bl_idname)
                 new_node.location = node.location
                 new_node.label = node.label
                 new_node.name = node.name
-
-                
-
                 # Copy properties
                 for prop in node.bl_rna.properties:
-
                     if not prop.is_readonly:
-
                         try:
-
                             setattr(new_node, prop.identifier, getattr(node, prop.identifier))
-
                         except: pass
-
-                
-
                 # Copy inputs defaults
                 for i, inp in enumerate(node.inputs):
-
                     if hasattr(inp, 'default_value'):
-
                         try:
-
                             new_node.inputs[i].default_value = inp.default_value
-
                         except: pass
-
-                
-
                 if node.type == 'TEX_IMAGE' and node.image:
-
                     new_node.image = node.image
-
-                
-
                 node_map[node] = new_node
-
-            
-
             # Reconnect links
             for link in src_tree.links:
-
                 if link.from_node in node_map and link.to_node in node_map:
-
                     try:
-
                         group_tree.links.new(node_map[link.from_node].outputs[link.from_socket.name],
                                              node_map[link.to_node].inputs[link.to_socket.name])
-
                     except: pass
-
-            
-
             # Connect to Group Output
             # 1. Surface
             mat_out = next((n for n in src_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
             if mat_out and mat_out.inputs['Surface'].is_linked:
-
                 link = mat_out.inputs['Surface'].links[0]
                 if link.from_node in node_map:
-
                     group_tree.links.new(node_map[link.from_node].outputs[link.from_socket.name], g_out.inputs['Surface'])
-
-            
-
             # 2. Alpha (Find Principled BSDF)
             bsdf = next((n for n in node_map.values() if n.type == 'BSDF_PRINCIPLED'), None)
             if bsdf:
-
                 if bsdf.inputs['Alpha'].is_linked:
-
                     link = bsdf.inputs['Alpha'].links[0]
                     # Connect the source of the alpha link to the group output
                     group_tree.links.new(link.from_node.outputs[link.from_socket.name], g_out.inputs['Alpha'])
-
                 else:
-
                     # Create a value node for constant alpha
                     val = group_tree.nodes.new('ShaderNodeValue')
                     val.outputs[0].default_value = bsdf.inputs['Alpha'].default_value
                     val.location = (g_out.location.x - 200, g_out.location.y - 200)
                     group_tree.links.new(val.outputs[0], g_out.inputs['Alpha'])
-
             else:
-
                 # Default Alpha 1.0
                 val = group_tree.nodes.new('ShaderNodeValue')
                 val.outputs[0].default_value = 1.0
                 val.location = (g_out.location.x - 200, g_out.location.y - 200)
                 group_tree.links.new(val.outputs[0], g_out.inputs['Alpha'])
-
         # Layer stacking: We iterate from bottom to top of the UI list.
         # To make the top-most item in the list the top-most visual layer,
         # we start from the bottom items as the base and stack upwards.
         for i, slot in enumerate(reversed(source_slots)):
-
             mat = slot.material
             if not mat or not mat.use_nodes: continue
-
-            
-
             # Create a Group Node for each material
             group_node = tree.nodes.new('ShaderNodeGroup')
             group_node.location = (x_offset, i * -300)
             group_node.label = mat.name
-
-            
-
             # Create a unique node group for this layer to preserve settings
             group_name = f"LSD_Layer_{mat.name}_{obj.name}_{i}"
             if group_name in bpy.data.node_groups:
-
                 bpy.data.node_groups.remove(bpy.data.node_groups[group_name])
-
-            
-
             new_group = bpy.data.node_groups.new(group_name, 'ShaderNodeTree')
             copy_material_to_group(mat, new_group)
             group_node.node_tree = new_group
-
-            
-
             # Get outputs
             layer_shader = group_node.outputs.get('Surface')
             layer_alpha = group_node.outputs.get('Alpha')
-
-            
-
             if not layer_shader: continue
-
-            
-
             if current_shader_socket is None:
-
                 current_shader_socket = layer_shader
-
             else:
-
                 # Mix with previous layer
                 mix_node = tree.nodes.new('ShaderNodeMixShader')
                 mix_node.location = (x_offset + 200, i * -300)
-
-                
-
                 # Use the layer's alpha as the mix factor
                 if layer_alpha:
-
                     tree.links.new(layer_alpha, mix_node.inputs['Fac'])
-
                 else:
-
                     mix_node.inputs['Fac'].default_value = 1.0
-
-                
-
                 tree.links.new(current_shader_socket, mix_node.inputs[1])
                 tree.links.new(layer_shader, mix_node.inputs[2])
                 current_shader_socket = mix_node.outputs['Shader']
-
-            
-
             x_offset -= 400
-
         if current_shader_socket:
-
             tree.links.new(current_shader_socket, output_node.inputs['Surface'])
-
         # AI Editor Note: Ensure the core composite material is Opaque.
         # This follows the user's request that alpha controls layer transparency
         # but not the global object transparency (unless they manually override it).
@@ -2917,63 +1872,34 @@ class LSD_OT_Material_Merge(bpy.types.Operator):
         # Assign Composite Material to a new slot if needed
         comp_slot_index = obj.material_slots.find(comp_mat_name)
         if comp_slot_index == -1:
-
             bpy.ops.object.material_slot_add()
             comp_slot_index = len(obj.material_slots) - 1
-
-        
-
         obj.material_slots[comp_slot_index].material = comp_mat
-
-        
-
         # Ensure the composite slot is at the very bottom (base index) but assigned to all faces
         # Note: We keep the source slots for non-destructive editing.
-
-        
-
         # Assign all faces to composite
         for poly in obj.data.polygons:
-
             poly.material_index = comp_slot_index
-
-            
-
-        # AI Editor Note: Removed destructive slot removal loop to allow real-time preview 
-        # and editing of individual layers. The composite material now acts as the 
+        # AI Editor Note: Removed destructive slot removal loop to allow real-time preview
+        # and editing of individual layers. The composite material now acts as the
         # "flattened" output while preserving the working layers in the slot list.
-
-            
-
         self.report({'INFO'}, f"Updated composite material '{comp_mat_name}'")
         return {'FINISHED'}
-
 class LSD_OT_Material_Add(bpy.types.Operator):
-
     """Add a new material slot (Blank or Existing)"""
     bl_idname = "lsd.material_add"
     bl_label = "Add Material"
     bl_description = "Adds a new material slot. Use properties to select existing material."
     bl_options = {'REGISTER', 'UNDO'}
     mode: bpy.props.EnumProperty(items=[('NEW', "New", ""), ('EXISTING', "Existing", "")], default='NEW')
-
-    
-
     def get_materials(self, context):
-
         return [(mat.name, mat.name, "") for mat in bpy.data.materials]
-
     material_name: bpy.props.EnumProperty(items=get_materials, name="Material")
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         if not obj: return {'CANCELLED'}
         bpy.ops.object.material_slot_add()
-
-        
-
         if self.mode == 'NEW':
-
             mat = bpy.data.materials.new(name=f"Mat_{obj.name}")
             mat.use_nodes = True
             # --- AI Editor Note: Add default nodes for a valid base material ---
@@ -2985,87 +1911,48 @@ class LSD_OT_Material_Add(bpy.types.Operator):
             bsdf = nodes.new('ShaderNodeBsdfPrincipled')
             bsdf.location = output.location.x - 250, output.location.y
             links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-
         else:
-
             mat = bpy.data.materials.get(self.material_name)
-
-            
-
         if mat:
-
             obj.material_slots[obj.active_material_index].material = mat
-
-            
-
         if obj.mode == 'EDIT':
-
             bpy.ops.object.material_slot_assign()
-
-            
-
         return {'FINISHED'}
-
-    
-
     def invoke(self, context, event):
-
         if self.mode == 'EXISTING':
-
             return context.window_manager.invoke_search_popup(self)
-
         return {'RUNNING_MODAL'}
-
 class LSD_UL_Mat_List(bpy.types.UIList):
-
     """Simple UI List for Materials"""
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-
         slot = item
         mat = slot.material
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-
             row = layout.row(align=True)
             row.prop(slot, "lsd_enabled", text="")
             row.prop(slot, "material", text="", emboss=False, icon='MATERIAL')
-
         elif self.layout_type == 'GRID':
-
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
-
 class LSD_UL_SlinkyHooks_List(bpy.types.UIList):
-
     """Simple UI List for Slinky Hooks"""
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-
         hook = item.target
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-
             row = layout.row(align=True)
             if hook:
-
                 row.label(text=hook.name, icon='EMPTY_AXIS')
-
             else:
-
                 row.label(text="(Empty Slot)", icon='ERROR')
-
         elif self.layout_type == 'GRID':
-
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
-
 class LSD_OT_Paint_SetupBrush(bpy.types.Operator):
-
     """Configure a texture paint brush with a specific preset"""
     bl_idname = "lsd.paint_setup_brush"
     bl_label = "Setup Smart Brush"
     bl_description = "Sets up the active brush with texture and settings for painting"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     brush_type: bpy.props.EnumProperty(
         items=[
             ('DIRT', "Dirt/Grime", "Dark, low opacity, cloudy pattern"),
@@ -3073,124 +1960,76 @@ class LSD_OT_Paint_SetupBrush(bpy.types.Operator):
             ('RUST', "Rust", "Reddish-brown, musgrave pattern"),
             ('OIL', "Oil Stain", "Dark, glossy, smooth"),
         ]
-
     )
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         if not obj or obj.type != 'MESH':
-
             self.report({'WARNING'}, "Select a mesh object.")
             return {'CANCELLED'}
-
-            
-
         # 0. Ensure UV Map (Crucial for painting)
         if not obj.data.uv_layers:
-
             bpy.ops.mesh.uv_texture_add()
-
-            
-
         # 1. Ensure Material and Image
         mat = obj.active_material or bpy.data.materials.new(name=f"Paint_{obj.name}")
         if not mat:
-
             bpy.ops.lsd.add_smart_material(mat_type='PLASTIC')
             mat = obj.active_material
-
         if not mat.use_nodes: mat.use_nodes = True
         nodes = mat.node_tree.nodes
         bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
         if not bsdf: return {'CANCELLED'}
-
-            
-
         # Check for image texture connected to Base Color
         base_color_socket = bsdf.inputs['Base Color']
         img_node = next((l.from_node for l in base_color_socket.links if l.from_node.type == 'TEX_IMAGE'), None)
-
-        
-
         if not img_node:
-
             img_node = nodes.new('ShaderNodeTexImage')
             img_node.location = (bsdf.location.x - 300, bsdf.location.y)
             img = bpy.data.images.new(name=f"{obj.name}_BaseColor", width=2048, height=2048)
             img.generated_color = base_color_socket.default_value
             img_node.image = img
             mat.node_tree.links.new(img_node.outputs['Color'], base_color_socket)
-
         # 2. Enter Texture Paint Mode
         if obj.mode != 'TEXTURE_PAINT':
-
             bpy.ops.object.mode_set(mode='TEXTURE_PAINT')
-
-            
-
         # 3. Setup Brush
         brush = context.tool_settings.image_paint.brush
         if not brush:
-
             # Fix: Ensure a brush exists to make the feature usable
             if bpy.data.brushes:
-
                 brush = bpy.data.brushes[0]
-
             else:
-
                 brush = bpy.data.brushes.new(name="LSD_Smart_Brush", mode='TEXTURE_PAINT')
-
             context.tool_settings.image_paint.brush = brush
-
-            
-
         if self.brush_type == 'DIRT':
-
             brush.color = (0.1, 0.08, 0.05); brush.strength = 0.4; brush.blend = 'MIX'
             tex = bpy.data.textures.get("LSD_Brush_Dirt") or bpy.data.textures.new("LSD_Brush_Dirt", type='CLOUDS')
             tex.noise_scale = 0.5; brush.texture = tex
-
         elif self.brush_type == 'SCRATCH':
-
             brush.color = (0.8, 0.8, 0.8); brush.strength = 0.8; brush.blend = 'LIGHTEN'
             tex = bpy.data.textures.get("LSD_Brush_Scratch") or bpy.data.textures.new("LSD_Brush_Scratch", type='NOISE')
             brush.texture = tex
-
         elif self.brush_type == 'RUST':
-
             brush.color = (0.4, 0.15, 0.05); brush.strength = 0.6; brush.blend = 'MIX'
             tex = bpy.data.textures.get("LSD_Brush_Rust") or bpy.data.textures.new("LSD_Brush_Rust", type='MUSGRAVE')
             tex.noise_scale = 0.8; brush.texture = tex
-
         elif self.brush_type == 'OIL':
-
             brush.color = (0.05, 0.05, 0.05); brush.strength = 0.5; brush.blend = 'MIX'; brush.texture = None
-
         self.report({'INFO'}, f"Brush set to {self.brush_type}")
         return {'FINISHED'}
-
 class LSD_OT_ExportGazeboWorld(bpy.types.Operator):
-
     """Exports a simple Gazebo world file containing the robot"""
     bl_idname = "lsd.export_gazebo_world"
     bl_label = "Export Gazebo World"
     bl_options = {'INTERNAL'}
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         rig = context.scene.lsd_active_rig
         if not rig:
-
             self.report({'ERROR'}, "No active rig selected.")
             return {'CANCELLED'}
-
         robot_name = rig.name
         sdf = ET.Element('sdf', version='1.6')
         world = ET.SubElement(sdf, 'world', name='default')
-
-        
-
         # Add lighting
         light = ET.SubElement(world, 'light', name='sun', type='directional')
         ET.SubElement(light, 'cast_shadows').text = 'true'
@@ -3211,9 +2050,7 @@ class LSD_OT_ExportGazeboWorld(bpy.types.Operator):
         tree.write(self.filepath, encoding='utf-8', xml_declaration=True)
         self.report({'INFO'}, f"Exported Gazebo world to {self.filepath}")
         return {'FINISHED'}
-
 class LSD_OT_LinkChainDriver(bpy.types.Operator):
-
     """
     Links the chain's animation to the rotation of a selected object (e.g., a sprocket).
     Calculates the linear motion based on the driver's radius.
@@ -3222,60 +2059,41 @@ class LSD_OT_LinkChainDriver(bpy.types.Operator):
     bl_label = "Link Driver"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         path_obj = context.active_object
         props = path_obj.lsd_pg_mech_props
         driver_obj = props.chain_drive_target
         # If no specific driver is selected, try to use the first wrap object
         if not driver_obj and len(props.chain_wrap_items) > 0:
-
             driver_obj = props.chain_wrap_items[0].target
             props.chain_drive_target = driver_obj
-
         if not driver_obj:
-
             self.report({'WARNING'}, "No driver object selected or found in wrap list.")
             return {'CANCELLED'}
-
         # Determine the effective radius for the driver
         radius = 1.0
         if hasattr(driver_obj, "lsd_pg_mech_props") and driver_obj.lsd_pg_mech_props.is_part:
-
             # If it's a generated gear/pulley, use its parametric radius
             radius = driver_obj.lsd_pg_mech_props.radius
-
         else:
-
             # Otherwise, estimate from dimensions (assuming Z-axis rotation, so X/Y radius)
             radius = (driver_obj.dimensions.x + driver_obj.dimensions.y) / 4.0
-
         # AI Editor Note: Fallback for objects with zero dimensions (like Empties) to ensure movement.
         if radius < 0.001: radius = 1.0
         # Create the driver on the chain's animation offset property
         # AI Editor Note: Remove existing driver first to ensure a clean update.
         # This fixes the issue where the driver object couldn't be changed.
         path_obj.driver_remove('["lsd_native_anim_offset"]')
-
-        
-
         # This property drives the Geometry Nodes modifier input
         fcurve_anim = path_obj.driver_add('["lsd_native_anim_offset"]')
         driver_anim = fcurve_anim.driver
-
-        
-
         # AI Editor Note: Clear existing variables to ensure a clean switch when changing drivers.
         # This fixes the issue where the driver would stick to the previous object.
         for v in list(driver_anim.variables):
-
             driver_anim.variables.remove(v)
-
-            
-
         driver_anim.type = 'SCRIPTED'
         var_rot = driver_anim.variables.new()
         var_rot.name = "rotation"
-        # AI Editor Note: Use SINGLE_PROP for raw Euler rotation to avoid 
+        # AI Editor Note: Use SINGLE_PROP for raw Euler rotation to avoid
         # -180/180 degree wrapping (snapping) that occurs with TRANSFORMS.
         var_rot.type = 'SINGLE_PROP'
         var_rot.targets[0].id = driver_obj
@@ -3290,72 +2108,46 @@ class LSD_OT_LinkChainDriver(bpy.types.Operator):
         update_chain_driver_settings(props, context)
         self.report({'INFO'}, f"Linked chain to '{driver_obj.name}' with radius {radius:.3f}")
         return {'FINISHED'}
-
 class LSD_OT_AddBoolean(bpy.types.Operator):
-
     bl_idname = "lsd.add_boolean"
     bl_label = "Add Boolean"
     bl_options = {'REGISTER', 'UNDO'}
     operation: bpy.props.EnumProperty(items=[('DIFFERENCE', "Cut", ""), ('UNION', "Join", ""), ('INTERSECT', "Intersect", "")])
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         active_obj = context.active_object
         if not active_obj or active_obj.type != 'MESH':
-
             cls.poll_message_set("Active object must be a mesh.")
             return False
-
-        
-
         selected_meshes = [obj for obj in context.selected_objects if obj != active_obj and obj.type == 'MESH']
         if not selected_meshes:
-
             cls.poll_message_set("Select at least one other mesh object.")
             return False
-
-            
-
         return True
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         active = context.active_object
         # The objects to be used by the modifier are the selected ones, excluding the active one.
         selected = [o for o in context.selected_objects if o != active and o.type == 'MESH']
         for target in selected:
-
             mod = active.modifiers.new(name=f"{BOOL_PREFIX}{target.name}", type='BOOLEAN')
             mod.operation = self.operation
             mod.object = target
             mod.solver = 'EXACT'
             target.display_type = 'BOUNDS'
             target.hide_render = True
-
-            
-
         self.report({'INFO'}, f"Added {len(selected)} boolean modifier(s) to '{active.name}'.")
         return {'FINISHED'}
-
 def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", display_size=0.05, display_type='SINGLE_ARROW', force_location=None):
-
     """
     Creates a Parametric Hook anchor at the world-space center of the provided vertex indices.
     Uses hook_reset to ensure the mesh does not warp when the modifier is bound.
     Expects context to be in OBJECT mode.
     """
     import mathutils
-
-    
-
     mw = mesh_obj.matrix_world
     coords = [mw @ mesh_obj.data.vertices[i].co.copy() for i in vert_indices]
     if not coords:
-
         return None
-
-    
-
     # Determination of Target Placed Location (Project Task 1.1.2)
     if force_location is not None:
         final_location = force_location
@@ -3365,7 +2157,6 @@ def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", disp
         # If 3D Cursor is chosen, use it for the Anchor visual position, while keeping the modifier center stable.
         if context.scene.lsd_anchor_placement_source == 'CURSOR':
              final_location = context.scene.cursor.location
-
     # 1. Create Empty
     empty = bpy.data.objects.new(f"{name_prefix}_{mesh_obj.name}", None)
     empty.location = final_location
@@ -3373,54 +2164,40 @@ def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", disp
     empty.empty_display_size = display_size
     empty["lsd_anchor"] = True
     context.scene.collection.objects.link(empty)
-
-    
-
     # 2. Setup Vertex Group
     vg_name = f"VG_{empty.name}"
     vg = mesh_obj.vertex_groups.new(name=vg_name)
     vg.add(vert_indices, 1.0, 'REPLACE')
-
-    
-
     # 3. Setup Modifier
     mod = mesh_obj.modifiers.new(name="HookAnchor", type='HOOK')
     mod.show_viewport = False # ATOMIC GUARD: Prevents initial jump on binding
     mod.object = empty
     mod.vertex_group = vg_name
-    
     # Ensure matrix data is absolute after location set and linking
     context.view_layer.update()
     # ZERO-WARP: Force evaluate to ensure world matrices are absolute before inverse calculation
     context.evaluated_depsgraph_get().update()
-
     # 4. Neutralize Binding (Prevent Warping)
     # Correct inverse matrix for a hook is the relative transform from mesh to empty.
     mod.matrix_inverse = empty.matrix_world.inverted() @ mesh_obj.matrix_world
     mod.show_viewport = True # RE-ENABLE: Zero-warp is now baked
-
     return empty
-
 class LSD_OT_AlignAllSelectedDimensions(bpy.types.Operator):
     """Applies the current alignment settings of the active dimension to all selected dimensions."""
     bl_idname = "lsd.align_all_selected_dimensions"
     bl_label = "Align All Selected Dimensions"
     bl_description = "Apply the active dimension's alignment offsets (+X/-X etc) to all selected dimension assemblies"
     bl_options = {'REGISTER', 'UNDO'}
-    
     @classmethod
     def poll(cls, context):
         from . import core
         return context.active_object and core.get_dimension_host(context.active_object) is not None
-        
     def execute(self, context):
         from . import core
         host = core.get_dimension_host(context.active_object)
         if not host: return {'CANCELLED'}
-        
         src_props = host.lsd_pg_dim_props
         count = 0
-        
         # 1. Capture alignment state
         tags = {
             "align_x": src_props.align_x,
@@ -3430,7 +2207,6 @@ class LSD_OT_AlignAllSelectedDimensions(bpy.types.Operator):
             "align_z": src_props.align_z,
             "align_nz": src_props.align_nz
         }
-        
         # 2. Propagate to selection
         for obj in context.selected_objects:
             target_host = core.get_dimension_host(obj)
@@ -3439,68 +2215,45 @@ class LSD_OT_AlignAllSelectedDimensions(bpy.types.Operator):
                 for attr, val in tags.items():
                     setattr(tgt_props, attr, val)
                 count += 1
-                
         self.report({'INFO'}, f"Applied alignment offsets to {count} dimension(s).")
         return {'FINISHED'}
-
 class LSD_OT_AddParametricAnchor(bpy.types.Operator):
-
     """Creates an Empty object and adds a Hook modifier to the selected mesh elements"""
     bl_idname = "lsd.add_parametric_anchor"
     bl_label = "Attach Hook to Selected"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object and context.active_object.type == 'MESH'
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         initial_mode = context.mode
         initial_active = context.view_layer.objects.active
         scene = context.scene
         obj = initial_active
         if not obj or obj.type != 'MESH':
-
             self.report({'WARNING'}, "Requires an active Mesh object.")
             return {'CANCELLED'}
-
         active_name = obj.name
-
-            
-
         try:
-
             # Scale normalization
             unit_scale = scene.unit_settings.scale_length
             s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-
-            
-
             targets = [o for o in context.selected_objects if o.type == 'MESH']
             if not targets:
-
                 if obj and obj.type == 'MESH': targets = [obj]
                 else:
-
                     self.report({'WARNING'}, "Action requires selected Mesh object(s).")
                     return {'CANCELLED'}
-
             # Initialize island mapping
             all_islands = {} # Mapping obj -> List[List[indices]]
-
-            
-
             # --- Collection Phase ---
-            # AI Editor Note: Per User Request - Group by connectivity (Islands) 
+            # AI Editor Note: Per User Request - Group by connectivity (Islands)
             # to avoid hook-spamming on faces while allowing individual anchors for disconnected points.
             all_islands = {} # Mapping obj -> List[List[indices]]
-            
             for target in targets:
                 if initial_mode.startswith('EDIT'):
                     bm = bmesh.from_edit_mesh(target.data)
                     bm.verts.ensure_lookup_table()
-                    
                     remaining = {v for v in bm.verts if v.select}
                     islands = []
                     while remaining:
@@ -3516,30 +2269,23 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                                     island.add(other)
                                     stack.append(other)
                         islands.append([v.index for v in island])
-                    
                     if islands:
                         all_islands[target] = islands
                     bmesh.update_edit_mesh(target.data)
                 else:
                     # Object Mode: Single "island" containing all vertices
                     all_islands[target] = [[v.index for v in target.data.vertices]]
-
             if not all_islands:
                 self.report({'WARNING'}, "No selection found on objects.")
                 return {'CANCELLED'}
-
             # --- Transient Context Transition (USER ESCAPE) ---
             if initial_mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT')
-
             # --- Generation & Assignment Phase ---
             # --- Generation & Assignment Phase ---
             # Determination of Target Placed Location (Project Task 1.1.2)
             import mathutils
-            
             group_mode = scene.lsd_anchor_grouping_mode
-            
             # --- PATH A: Grouped Anchor ---
             if group_mode == 'GROUP':
                 # 1. Shared World Position
@@ -3552,7 +2298,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                         for island_indices in islands:
                              all_coords.extend([mw @ target.data.vertices[i].co.copy() for i in island_indices])
                     shared_location = sum(all_coords, mathutils.Vector()) / len(all_coords) if all_coords else mathutils.Vector()
-
                 # 2. Precision Sizing
                 ref_objs = list(all_islands.keys())
                 ref_obj = initial_active if (initial_active and initial_active in ref_objs) else ref_objs[0]
@@ -3563,7 +2308,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                     final_display_size = avg_dim * 0.2
                 else:
                     final_display_size = scene.lsd_anchor_initial_size
-
                 # 3. Create SINGLE Empty
                 empty = bpy.data.objects.new(f"HookGroup_{ref_obj.name}", None)
                 empty.location = shared_location
@@ -3572,7 +2316,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                 empty["lsd_anchor"] = True
                 empty.show_in_front = True
                 context.scene.collection.objects.link(empty)
-
                 # 4. Bind ALL
                 for target, islands in all_islands.items():
                     # Flatten islands for grouped binding
@@ -3586,7 +2329,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                     # ZERO-WARP: Core Fix. Explicitly set matrix_inverse for total stability in 4.x.
                     context.view_layer.update()
                     mod.matrix_inverse = empty.matrix_world.inverted() @ target.matrix_world
-            
             # --- PATH B: Individual Anchors ---
             else:
                 created_count = 0
@@ -3599,7 +2341,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                         else:
                              mw = target.matrix_world
                              loc = sum([mw @ target.data.vertices[i].co.copy() for i in island_indices], mathutils.Vector()) / len(island_indices)
-
                         # 2. Size
                         if scene.lsd_anchor_auto_size:
                             avg_dim = (target.dimensions.x + target.dimensions.y + target.dimensions.z) / 3.0
@@ -3607,13 +2348,11 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                             fs = avg_dim * 0.2
                         else:
                             fs = scene.lsd_anchor_initial_size
-
                         # 3. Create
-                        # Unique name per island 
+                        # Unique name per island
                         name_base = f"Hook_{target.name}"
                         if len(islands) > 1:
                              name_base += f"_{island_indices[0]}"
-                        
                         empty = bpy.data.objects.new(name_base, None)
                         empty.location = loc
                         empty.empty_display_type = 'SINGLE_ARROW'
@@ -3621,7 +2360,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                         empty["lsd_anchor"] = True
                         empty.show_in_front = True
                         context.scene.collection.objects.link(empty)
-
                         # 4. Bind
                         vg_name = f"VG_{empty.name}"
                         vg = target.vertex_groups.new(name=vg_name)
@@ -3632,83 +2370,39 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                         # ZERO-WARP Fix: Force matrix resolution
                         context.view_layer.update()
                         mod.matrix_inverse = empty.matrix_world.inverted() @ target.matrix_world
-                        
                         created_count += 1
-                
                 self.report({'INFO'}, f"Created {created_count} individual anchor(s).")
-
-            
-
             if not empty:
-
                 self.report({'ERROR'}, "Failed to generate anchors.")
                 return {'CANCELLED'}
-
-                
-
             self.report({'INFO'}, f"[LSD v1.3.1] Hook Attached. Workspace Restored: {context.mode}")
-
-            
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Hook System Failure: {str(e)}")
             return {'CANCELLED'}
-
-            
-
         finally:
-
             # --- Categorical Mode Restoration (USER PRIORITY) ---
             if active_name in bpy.data.objects:
-
                 target_obj = bpy.data.objects[active_name]
-
-                
-
                 # 2. State Prep for Mode Set
                 if context.view_layer.objects.active != target_obj:
-
                     context.view_layer.objects.active = target_obj
-
                 target_obj.select_set(True)
-
-                
-
                 # 3. Aggressive Restoration
                 # Check for any 'EDIT' flavor (EDIT_MESH, EDIT_CURVE, etc.)
                 if initial_mode and "EDIT" in initial_mode:
-
                     if context.mode != initial_mode:
-
                         try:
-
                             bpy.ops.object.mode_set(mode='EDIT')
-
                         except:
-
                             pass
-
                 elif initial_mode == 'OBJECT':
-
                     if context.mode != 'OBJECT':
-
                         try:
-
                             bpy.ops.object.mode_set(mode='OBJECT')
-
                         except:
-
                             pass
-
-            
-
             self.report({'INFO'}, f"[LSD v1.3.1] Hook Attached. Workspace Restored: {context.mode}")
-
-            
-
         return {'FINISHED'}
-
 class LSD_OT_AddMarker(bpy.types.Operator):
     """Creates an Empty marker at each selected vertex"""
     bl_idname = "lsd.add_marker"
@@ -3724,26 +2418,15 @@ class LSD_OT_AddMarker(bpy.types.Operator):
         if obj.type == 'EMPTY' and (obj.get("lsd_anchor") or obj.get("lsd_is_dimension_hook")):
             return True
         return False
-
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # --- Context Store ---
         initial_mode = context.mode
         initial_active = context.view_layer.objects.active
         obj = initial_active
-
-        
-
         if not obj:
             self.report({'WARNING'}, "Requires an active Mesh or Anchor object.")
             return {'CANCELLED'}
-
-
         active_name = obj.name
-
-        
-
         try:
             # Target Resolution (Mesh or LSD Anchor)
             targets = []
@@ -3751,23 +2434,18 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                 if o.type == 'MESH': targets.append(o)
                 elif o.type == 'EMPTY' and (o.get("lsd_anchor") or o.get("lsd_is_dimension_hook")):
                     targets.append(o)
-
             if not targets:
                 if obj and (obj.type == 'MESH' or obj.type == 'EMPTY'): targets = [obj]
                 else: return {'CANCELLED'}
-
             created_count = 0
             created_empties = []
-            
             all_indices = {} # Mapping target_name -> list of indices (or None for empties)
-            
             # --- Collection Phase ---
             for target in targets:
                 if target.type == 'EMPTY':
                     # Empties have no vertices, we mark their origin
                     all_indices[target.name] = None
                     continue
-
                 if initial_mode.startswith('EDIT'):
                     bm = bmesh.from_edit_mesh(target.data)
                     bm.verts.ensure_lookup_table()
@@ -3777,34 +2455,27 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                     bmesh.update_edit_mesh(target.data)
                 else:
                     all_indices[target.name] = [v.index for v in target.data.vertices]
-
             if not all_indices:
                 self.report({'WARNING'}, "No selection available.")
                 return {'CANCELLED'}
-
             # --- Context Switch ---
             if initial_mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode='OBJECT')
-
             group_mode = context.scene.lsd_anchor_grouping_mode
-            
             if group_mode == 'GROUP':
                 # --- SHARED MARKER PATH ---
                 ref_obj = initial_active if initial_active in targets else targets[0]
                 empty = bpy.data.objects.new(f"MarkerGroup_{ref_obj.name}", None)
                 empty.empty_display_type = 'PLAIN_AXES'
-                
                 # Sizing
                 if context.scene.lsd_anchor_auto_size:
                     dims = ref_obj.dimensions
                     avg_dim = (dims.x + dims.y + dims.z) / 3.0
                     if avg_dim < 0.001: avg_dim = 0.1
-                    empty.empty_display_size = avg_dim * 0.1 
+                    empty.empty_display_size = avg_dim * 0.1
                 else:
                     empty.empty_display_size = context.scene.lsd_anchor_initial_size
-                
                 context.scene.collection.objects.link(empty)
-                
                 # Placement
                 if context.scene.lsd_anchor_placement_source == 'CURSOR':
                     empty.location = context.scene.cursor.location
@@ -3822,17 +2493,14 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                         empty.location = sum(all_coords, mathutils.Vector()) / len(all_coords)
                     else:
                         empty.location = (0, 0, 0)
-
                 empty["lsd_anchor"] = True
                 empty.show_in_front = True
                 created_empties.append(empty)
                 created_count = 1
-                
                 # --- Parenting logic for grouped marker ---
                 # We now ALWAYS parent markers so they follow their target components.
                 empty.parent = ref_obj
                 empty.matrix_parent_inverse = ref_obj.matrix_world.inverted()
-
             else:
                 # --- INDIVIDUAL MARKER PATH (LEGACY) ---
                 for target_name, indices in all_indices.items():
@@ -3844,12 +2512,10 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                         dims = target.dimensions
                         avg_dim = (dims.x + dims.y + dims.z) / 3.0
                         if avg_dim < 0.001: avg_dim = 0.1
-                        empty.empty_display_size = avg_dim * 0.1 
+                        empty.empty_display_size = avg_dim * 0.1
                     else:
                         empty.empty_display_size = context.scene.lsd_anchor_initial_size
-                    
                     context.scene.collection.objects.link(empty)
-                    
                     if context.scene.lsd_anchor_placement_source == 'CURSOR':
                         empty.location = context.scene.cursor.location
                     else:
@@ -3861,8 +2527,6 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                             # For hook-parents, use their world origin
                             loc = target.matrix_world.translation.copy()
                         empty.location = loc
-
-
                     empty["lsd_anchor"] = True
                     empty.show_in_front = True
                     # --- Always parent individual markers ---
@@ -3870,106 +2534,61 @@ class LSD_OT_AddMarker(bpy.types.Operator):
                     empty.matrix_parent_inverse = target.matrix_world.inverted()
                     created_empties.append(empty)
                     created_count += 1
-
-            
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Marker failure: {e}")
             return {'CANCELLED'}
-
         finally:
-
             # --- Categorical Mode Restoration (USER PRIORITY) ---
             if active_name in bpy.data.objects:
-
                 target_obj = bpy.data.objects[active_name]
-
-                
-
                 if context.view_layer.objects.active != target_obj:
-
                     context.view_layer.objects.active = target_obj
-
                 target_obj.select_set(True)
-
-                
-
                 if initial_mode and "EDIT" in initial_mode:
-
                     if context.mode != initial_mode:
-
                         try:
-
                             bpy.ops.object.mode_set(mode='EDIT')
-
                         except:
-
                             pass
-
                 elif initial_mode == 'OBJECT':
-
                     if context.mode != 'OBJECT':
-
                         try:
-
                             bpy.ops.object.mode_set(mode='OBJECT')
-
                         except:
-
                             pass
-
-            
-
             self.report({'INFO'}, f"[LSD v1.3.1] Markers Attached. Workspace Restored: {context.mode}")
             return {'FINISHED'}
-
 class LSD_OT_ToggleHookPlacement(bpy.types.Operator):
-
     """Toggle placement mode for the hook anchor. Move the empty without deforming the mesh, then stop to rebind."""
     bl_idname = "lsd.toggle_hook_placement"
     bl_label = "Start/Stop Anchor Transform Mode"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object and context.active_object.type == 'EMPTY'
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         empty = context.active_object
         scene = context.scene
-
-        
-
         # Toggle state
         is_starting = not scene.lsd_hook_placement_mode
         scene.lsd_hook_placement_mode = is_starting
-
-        
-
         if is_starting:
-
             # Start Placement: Apply modifiers to bake deformation, allowing empty to move freely
             target_meshes = []
             hook_data = []
-
             for obj in context.scene.objects:
                 if obj.type == 'MESH':
                     # 1. Scan for Hook Modifiers (driving the mesh)
                     for mod in obj.modifiers:
                         if mod.type == 'HOOK' and mod.object == empty:
                             target_meshes.append(('HOOK', obj, mod))
-
                 # 2. Scan for Markers (children or vertex-parents) where 'empty' is child of 'obj'
                 if empty.parent == obj:
                     target_meshes.append(('MARKER', obj, None))
-
             if not target_meshes:
                 self.report({'WARNING'}, "This object is not an anchor for any meshes.")
                 scene.lsd_hook_placement_mode = False
                 return {'CANCELLED'}
-
             for mtype, mesh, mod in target_meshes:
                 if mtype == 'HOOK':
                     # Prep Hook Re-binding
@@ -3994,39 +2613,22 @@ class LSD_OT_ToggleHookPlacement(bpy.types.Operator):
                     mw = empty.matrix_world.copy()
                     empty.parent = None
                     empty.matrix_world = mw
-
-            
-
             # Store hook data on the empty
             empty["lsd_hook_data"] = hook_data
             self.report({'INFO'}, "Anchor Transform Mode Started. Target links temporarily detached.")
             return {'FINISHED'}
-
         else:
-
             # Stop Placement: Re-create Hook modifiers at new empty position
             original_active = context.view_layer.objects.active
             original_selected = context.selected_objects
-
-            
-
             # Ensure Object Mode to start
             if context.mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT')
-
-                
-
             bpy.ops.object.select_all(action='DESELECT')
-
-            
-
             hook_data = empty.get("lsd_hook_data", [])
-
             for item in hook_data:
                 mesh = bpy.data.objects.get(item["mesh_name"])
                 if not mesh: continue
-
                 if item.get("type") == "MARKER":
                     # Restore Parenting link
                     mw = empty.matrix_world.copy()
@@ -4034,13 +2636,11 @@ class LSD_OT_ToggleHookPlacement(bpy.types.Operator):
                     empty.parent_type = item.get("parent_type", 'OBJECT')
                     empty.matrix_world = mw
                     continue
-
                 # Restore Hook Modifier link
                 vg_name = item.get("vg_name")
                 mod = mesh.modifiers.new(name="Hook_Restored", type='HOOK')
                 mod.object = empty
                 if vg_name: mod.vertex_group = vg_name
-
                 # Re-synchronize
                 context.view_layer.objects.active = mesh
                 mesh.select_set(True)
@@ -4051,7 +2651,6 @@ class LSD_OT_ToggleHookPlacement(bpy.types.Operator):
                         bpy.ops.object.vertex_group_select()
                     else:
                         bpy.ops.mesh.select_all(action='SELECT')
-                    
                     # Reset the hook to new visual position
                     bpy.ops.object.hook_reset(modifier=mod.name)
                 except Exception as e:
@@ -4060,208 +2659,117 @@ class LSD_OT_ToggleHookPlacement(bpy.types.Operator):
                     if context.mode != 'OBJECT':
                         bpy.ops.object.mode_set(mode='OBJECT')
                 mesh.select_set(False)
-
             # Cleanup and Restore State
             if "lsd_hook_data" in empty: del empty["lsd_hook_data"]
-
             # Restore original active/selected state
             if original_active and original_active.name in context.scene.objects:
                 context.view_layer.objects.active = original_active
             for o in original_selected:
                 if o.name in context.scene.objects:
                     o.select_set(True)
-
             self.report({'INFO'}, "Anchor Transform Mode Stopped. All targets re-linked.")
             return {'FINISHED'}
-
 class LSD_OT_CleanupAnchor(bpy.types.Operator):
-
     bl_idname = "lsd.cleanup_anchor"
     bl_label = "Remove Selected Hook/Marker"
     bl_description = "Purge selected Hook/Marker"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.selected_objects
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # Implementation Note: Recursive cleanup ensures that selecting a MESH
         # will purge all of its associated LSD parametric anchors and markers.
         # Selecting an anchor Empty directly will purge it universally.
-
-        
-
         targets = context.selected_objects
         if not targets:
-
             targets = [context.active_object] if context.active_object else []
-
-            
-
         all_anchors = set()
-
-        
-
         # Robust Identification: Matches our creation pattern
         def is_lsd_anchor(o):
-
             return o.get("lsd_anchor") or o.name.startswith(("Hook_", "Marker_"))
-
         # Phase 1: Harvesting hooks/markers from selection
         for o in targets:
-
             if o.type == 'EMPTY' and is_lsd_anchor(o):
-
                 all_anchors.add(o)
-
             elif o.type == 'MESH':
-
                 # Deep scan for attached Hooks
                 for mod in o.modifiers:
-
                     if mod.type == 'HOOK' and mod.object:
-
                         if is_lsd_anchor(mod.object):
-
                             all_anchors.add(mod.object)
-
                 # Deep scan for attached Markers (children)
                 for child in o.children:
-
                     if child.type == 'EMPTY' and is_lsd_anchor(child):
-
                         # Vertex parenting is the primary indicator for LSD markers
                         if child.parent_type == 'VERTEX' or child.name.startswith("Marker_"):
-
                             all_anchors.add(child)
-
         if not all_anchors:
-
             self.report({'WARNING'}, "No LSD hooks or markers found in selection.")
             return {'CANCELLED'}
-
         cleaned_count = 0
-
-        
-
         # Phase 2: Systematic Purge
         # Pre-collection of MESH objects to optimize universal cleanup
         scene_meshes = [obj for obj in context.scene.objects if obj.type == 'MESH']
-
-        
-
         for empty in all_anchors:
-
             for obj in scene_meshes:
-
                 # 1. Clean up Hook Modifiers
                 mods_to_remove = [m for m in obj.modifiers if m.type == 'HOOK' and m.object == empty]
                 for mod in mods_to_remove:
-
                     vg_name = mod.vertex_group
                     try:
-
                         obj.modifiers.remove(mod)
                         # 2. Cleanup associated Vertex Group
                         if vg_name and vg_name in obj.vertex_groups:
-
                             vg = obj.vertex_groups.get(vg_name)
                             if vg: obj.vertex_groups.remove(vg)
-
                     except Exception as e:
-
                         print(f"Cleanup non-critical error: {e}")
-
-            
-
             # 3. Terminate the Empty
             try:
-
                 bpy.data.objects.remove(empty, do_unlink=True)
                 cleaned_count += 1
-
             except:
-
                 pass
-
-        
-
         self.report({'INFO'}, f"Purged {cleaned_count} LSD parametric hooks/markers.")
         return {'FINISHED'}
-
 class LSD_OT_BakeAnchor(bpy.types.Operator):
-
     """Applies the hook deformation to the mesh geometry (Bake)"""
     bl_idname = "lsd.bake_anchor"
     bl_label = "Bake Anchor (Apply)"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         targets = context.selected_objects
         if not targets: targets = [context.active_object]
-
-        
-
         meshes_to_process = set()
-
-        
-
         # Identify meshes to process
         for obj in targets:
-
             if obj.type == 'MESH':
-
                 meshes_to_process.add(obj)
-
             elif obj.type == 'EMPTY':
-
                 for m_obj in context.scene.objects:
-
                     if m_obj.type == 'MESH':
-
                         for mod in m_obj.modifiers:
-
                             if mod.type == 'HOOK' and mod.object == obj:
-
                                 meshes_to_process.add(m_obj)
-
-        
-
         if not meshes_to_process:
-
             self.report({'WARNING'}, "No meshes with hooks found.")
             return {'CANCELLED'}
-
         processed_count = 0
-
-        
-
         # Ensure Object Mode
         if context.mode != 'OBJECT':
-
             bpy.ops.object.mode_set(mode='OBJECT')
-
-            
-
         # Process each mesh
         for mesh_obj in meshes_to_process:
-
             mods_to_apply = []
             hooks_to_restore = []
             for mod in mesh_obj.modifiers:
-
                 if mod.type == 'HOOK':
-
                     # Apply if mesh selected OR if hook is linked to selected empty
                     if mesh_obj in targets or (mod.object in targets):
-
                         mods_to_apply.append(mod.name)
                         # Save state to restore after baking
                         hooks_to_restore.append({
@@ -4273,85 +2781,49 @@ class LSD_OT_BakeAnchor(bpy.types.Operator):
                             'falloff_radius': mod.falloff_radius,
                             'uniform': mod.use_falloff_uniform
                         })
-
-            
-
             if mods_to_apply:
-
                 context.view_layer.objects.active = mesh_obj
                 for mod_name in mods_to_apply:
-
                     try:
-
                         bpy.ops.object.modifier_apply(modifier=mod_name)
                         processed_count += 1
-
                     except Exception as e:
-
                         self.report({'WARNING'}, f"Failed to apply {mod_name}: {e}")
-
-                
-
                 # Restore hooks to maintain parametric control over the new rest pose
                 for hook_data in reversed(hooks_to_restore):
-
                     try:
-
                         new_mod = mesh_obj.modifiers.new(name=hook_data['name'], type='HOOK')
                         new_mod.object = hook_data['object']
                         if hook_data['vertex_group']:
-
                             new_mod.vertex_group = hook_data['vertex_group']
-
                         new_mod.strength = hook_data['strength']
                         new_mod.falloff_type = hook_data['falloff_type']
                         new_mod.falloff_radius = hook_data['falloff_radius']
                         new_mod.use_falloff_uniform = hook_data['uniform']
-
-                        
-
                         # Reset (Rebind) to current state
                         bpy.ops.object.mode_set(mode='EDIT')
                         bpy.ops.mesh.select_all(action='DESELECT')
                         if hook_data['vertex_group'] and hook_data['vertex_group'] in mesh_obj.vertex_groups:
-
                             mesh_obj.vertex_groups.active_index = mesh_obj.vertex_groups[hook_data['vertex_group']].index
                             bpy.ops.object.vertex_group_select()
-
                         else:
-
                             bpy.ops.mesh.select_all(action='SELECT')
-
                         bpy.ops.object.hook_reset(modifier=new_mod.name)
                         bpy.ops.object.mode_set(mode='OBJECT')
-
-                        
-
                         # Move to top to maintain stack order logic
                         bpy.ops.object.modifier_move_to_index(modifier=new_mod.name, index=0)
-
                     except Exception as e:
-
                         self.report({'ERROR'}, f"Failed to restore hook {hook_data['name']}: {e}")
-
-        
-
         self.report({'INFO'}, f"Baked {processed_count} hook modifiers (Pose Updated).")
         return {'FINISHED'}
-
 def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_b: bpy.types.Object, context: bpy.types.Context) -> None:
-
     """
     Creates a Geometry Nodes setup to dynamically display the distance between two objects as text.
     """
     gn_name = "LSD_Dynamic_Dimension_GN"
     gn_group = bpy.data.node_groups.get(gn_name)
     if not gn_group:
-
         gn_group = bpy.data.node_groups.new(name=gn_name, type='GeometryNodeTree')
-
-        
-
     # AI Editor Note: Only build if missing or empty to preserve socket IDs for existing users.
     # FIX: Check for missing "Object Scale" socket to ensure compatibility with new features.
     needs_build = False
@@ -4389,12 +2861,8 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         g_out.location = (800, 0)
         # Get Locations
         info_a = nodes.new('GeometryNodeObjectInfo')
-
         info_a.location = (-600, 100)
         info_a.transform_space = 'RELATIVE'
-
-        
-
         info_b = nodes.new('GeometryNodeObjectInfo')
         info_b.location = (-600, -100)
         info_b.transform_space = 'RELATIVE'
@@ -4402,16 +2870,10 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         dist = nodes.new('ShaderNodeVectorMath')
         dist.operation = 'DISTANCE'
         dist.location = (-400, 0)
-
-        
-
         # --- NEW: Scale Compensation ---
         # AI Editor Note: Use explicit input for Object Scale to ensure reliability.
         # Relative distance (from Object Info) is divided by object scale.
         # We must multiply by Object Scale to get World Distance.
-
-        
-
         math_compensate = nodes.new('ShaderNodeMath')
         math_compensate.operation = 'MULTIPLY'
         math_compensate.location = (-200, 0)
@@ -4439,9 +2901,6 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         fill = nodes.new('GeometryNodeFillCurve')
         fill.location = (800, 0)
         fill.mode = 'NGONS'
-
-        
-
         # Set Material
         set_mat = nodes.new('GeometryNodeSetMaterial')
         set_mat.location = (1000, 0)
@@ -4450,63 +2909,33 @@ def setup_dimension_gn(text_obj: bpy.types.Object, obj_a: bpy.types.Object, obj_
         # --- Links ---
         links.new(g_in.outputs['Object A'], info_a.inputs['Object'])
         links.new(g_in.outputs['Object B'], info_b.inputs['Object'])
-
-        
-
         links.new(info_a.outputs['Location'], dist.inputs[0])
         links.new(info_b.outputs['Location'], dist.inputs[1])
-
-        
-
         # Link Scale Compensation
         links.new(dist.outputs['Value'], math_compensate.inputs[0])
         links.new(g_in.outputs['Object Scale'], math_compensate.inputs[1])
-
-        
-
         links.new(math_compensate.outputs['Value'], math_scale.inputs[0])
         links.new(g_in.outputs['Scale'], math_scale.inputs[1])
-
-        
-
         links.new(math_scale.outputs['Value'], val_to_str.inputs['Value'])
-
-        
-
         links.new(val_to_str.outputs['String'], join_str.inputs['Strings'])
         links.new(g_in.outputs['Suffix'], join_str.inputs['Strings'])
-
-        
-
         links.new(join_str.outputs['String'], str_to_curve.inputs['String'])
         links.new(g_in.outputs['Font'], str_to_curve.inputs['Font'])
         links.new(str_to_curve.outputs['Curve Instances'], fill.inputs['Curve'])
         links.new(fill.outputs['Mesh'], set_mat.inputs['Geometry'])
         links.new(set_mat.outputs['Geometry'], g_out.inputs['Geometry'])
-
     # --- Apply Modifier ---
     mod = text_obj.modifiers.new(name="Dynamic_Dimension", type='NODES')
     mod.node_group = gn_group
-
-    
-
     # AI Editor Note: Robustly assign objects using socket identifiers
     if hasattr(gn_group, "interface"):
-
         for item in gn_group.interface.items_tree:
-
             if item.name == "Object A":
-
                 mod[item.identifier] = obj_a
-
             elif item.name == "Object B":
-
                 mod[item.identifier] = obj_b
-
         pass # Functions moved to generators.py and core.py
-
 class LSD_OT_AddTextDescription(bpy.types.Operator):
-
     """Add a text description label to the selected element"""
     bl_idname = "lsd.add_text_description"
     bl_label = "Add Text Description"
@@ -4514,47 +2943,32 @@ class LSD_OT_AddTextDescription(bpy.types.Operator):
     text: bpy.props.StringProperty(name="Description", default="Label")
     @classmethod
     def poll(cls, context):
-
         return context.active_object is not None
-
     def invoke(self, context, event):
-
         return context.window_manager.invoke_props_dialog(self)
-
     def execute(self, context):
-
         obj = context.active_object
         location = obj.matrix_world.translation.copy()
         parent_args = {}
         original_mode = context.mode
         if context.mode == 'EDIT_MESH' and obj.type == 'MESH':
-
             bm = bmesh.from_edit_mesh(obj.data)
             selected_verts = [v for v in bm.verts if v.select]
             if selected_verts:
-
                 target_v = selected_verts[-1]
                 location = obj.matrix_world @ target_v.co
                 parent_args = {'parent': obj, 'parent_type': 'VERTEX', 'parent_vertices': (target_v.index, 0, 0)}
-
             else:
-
                 self.report({'WARNING'}, "No vertices selected")
                 return {'CANCELLED'}
-
             bpy.ops.object.mode_set(mode='OBJECT')
-
         elif context.mode == 'OBJECT':
-
              parent_args = {'parent': obj, 'parent_type': 'OBJECT'}
-
         # Create Text Object
         font_curve = bpy.data.curves.new(type="FONT", name="Description_Curve")
         font_curve.body = self.text
         font_curve.align_x = 'CENTER'
         font_curve.align_y = 'CENTER'
-
-        
         text_obj = bpy.data.objects.new(name="Description_Text", object_data=font_curve)
         # Apply standard LSD font discovery for consistency
         try:
@@ -4576,61 +2990,39 @@ class LSD_OT_AddTextDescription(bpy.types.Operator):
                 else:
                     font_curve.offset = 0.0
         except: pass
-        
-
         coll = bpy.data.collections.get("LSD_Dimensions")
         if not coll:
-
             coll = bpy.data.collections.new("LSD_Dimensions")
             context.scene.collection.children.link(coll)
-
         coll.objects.link(text_obj)
-
-        
-
         text_obj.location = location
         text_obj.scale = (0.2, 0.2, 0.2)
         text_obj.show_in_front = True # Always visible (X-Ray)
         # Assign Material
         mat = core.get_or_create_text_material(text_obj)
         if text_obj.data.materials:
-
             text_obj.data.materials[0] = mat
-
         else:
-
             text_obj.data.materials.append(mat)
-
         if parent_args:
-
             text_obj.parent = parent_args['parent']
             text_obj.parent_type = parent_args['parent_type']
             if 'parent_vertices' in parent_args:
-
                 text_obj.parent_vertices = parent_args['parent_vertices']
                 text_obj.location = (0,0,0)
-
         if context.scene.camera:
-
             c = text_obj.constraints.new('DAMPED_TRACK')
             c.target = context.scene.camera
             c.track_axis = 'TRACK_Z'
-
-        
-
         if original_mode == 'EDIT_MESH':
-
              context.view_layer.objects.active = obj
              bpy.ops.object.mode_set(mode='EDIT')
-
         return {'FINISHED'}
-
 class LSD_OT_Remove_Dimension(bpy.types.Operator):
     """Removes all selected dimensions and purges their associated mechatronic hooks."""
     bl_idname = "lsd.remove_dimension"
     bl_label = "Remove Selected Dimensions"
     bl_options = {'REGISTER', 'UNDO'}
-
     @classmethod
     def poll(cls, context):
         from . import core
@@ -4638,10 +3030,8 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
         for o in context.selected_objects:
             if core.get_dimension_host(o): return True
         return core.get_dimension_host(context.active_object) is not None
-
     def execute(self, context):
         from . import core
-        
         # 1. Harvest UNIQUE dimension roots from selection
         unique_roots = set()
         for o in context.selected_objects:
@@ -4649,40 +3039,31 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
             if host:
                 root = host.parent if host.parent else host
                 unique_roots.add(root)
-        
         if not unique_roots:
             active_host = core.get_dimension_host(context.active_object)
             if active_host:
                 unique_roots.add(active_host.parent if active_host.parent else active_host)
-        
         if not unique_roots:
             self.report({'WARNING'}, "No selected dimensions found.")
             return {'CANCELLED'}
-
         all_affected_meshes = set()
-        
         # Ensure Object Mode for modifier/deletion operations
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
-
         removed_count = 0
         for root in unique_roots:
             # Safety Check: Object might have been deleted if selected WITH its parent root
             if not root or root.name not in bpy.data.objects: continue
-
             # Identify participants
             participants = []
             if root.get("lsd_parent_obj"): participants.append(root["lsd_parent_obj"])
             if root.get("lsd_slave_obj"):  participants.append(root["lsd_slave_obj"])
-
             # --- PHASE 1: BAKE & DETACH ---
             for hook_empty in participants:
                 if not (hook_empty and hook_empty.name in bpy.data.objects): continue
-                
                 # Find all meshes driven by this hook
                 for scene_obj in bpy.data.objects:
                     if scene_obj.type != 'MESH': continue
-                    
                     # If the mesh is driven by our dimension's hook, bake it
                     for mod in scene_obj.modifiers:
                         if mod.type == 'HOOK' and mod.object == hook_empty:
@@ -4694,14 +3075,12 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             except: pass
                             finally:
                                 scene_obj.select_set(False)
-
             # --- PHASE 2: PURGE ASSEMBLY ---
             to_delete = {root}
-            for child in root.children: 
+            for child in root.children:
                 if child: to_delete.add(child)
                 for grandchild in child.children:
                     if grandchild: to_delete.add(grandchild)
-
             # Unparent orphans with Keep Transform
             for p_obj in to_delete:
                 if not p_obj or p_obj.name not in bpy.data.objects: continue
@@ -4710,7 +3089,6 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                         mw = victim.matrix_world.copy()
                         victim.parent = None
                         victim.matrix_world = mw
-
             for obj in list(to_delete):
                 if obj and obj.name in bpy.data.objects:
                     data = obj.data
@@ -4720,30 +3098,23 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             if isinstance(data, bpy.types.Mesh): bpy.data.meshes.remove(data)
                             elif isinstance(data, bpy.types.Curve): bpy.data.curves.remove(data)
                         except: pass
-            
             removed_count += 1
-
         # --- PHASE 3: FINAL ANCHOR CLEANUP ---
         if all_affected_meshes:
             original_sel = context.selected_objects
             original_act = context.view_layer.objects.active
-            
             bpy.ops.object.select_all(action='DESELECT')
-            for m in all_affected_meshes: 
+            for m in all_affected_meshes:
                 if m.name in bpy.data.objects: m.select_set(True)
-            
             # Trigger the universal cleanup operator on these meshes
             bpy.ops.lsd.cleanup_anchor()
-            
             # Restore selection (minus what was deleted)
             for o in original_sel:
                 if o and o.name in bpy.data.objects: o.select_set(True)
             if original_act and original_act.name in bpy.data.objects:
                 context.view_layer.objects.active = original_act
-
         self.report({'INFO'}, f"Purged {removed_count} Dimension(s) and associated mechatronic links.")
         return {'FINISHED'}
-
 class LSD_OT_Add_Dimension(bpy.types.Operator):
     """
     Generate a parametric dimension between two points.
@@ -4757,28 +3128,22 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         return context.active_object is not None
-
     def execute(self, context):
-
         from . import generators
         initial_mode = context.mode
         initial_active = context.active_object
         scene = context.scene
         dim_was_generated = False  # Flag to skip workspace restoration if a new dimension was spawned
         try:
-
             # ======================================================================
             # EDIT MODE PATH — Hook-first, then dimension
             # ======================================================================
             if initial_mode == 'EDIT_MESH':
-
                 import bmesh
                 # --- Step 1: Capture selection in Edit Mode ---
                 per_obj_data = [] # (mesh_obj, world_center, [vert_indices])
                 for obj in context.objects_in_mode:
-
                     if obj.type != 'MESH': continue
                     bm = bmesh.from_edit_mesh(obj.data)
                     bm.verts.ensure_lookup_table()
@@ -4788,24 +3153,18 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                     center = sum(pts, mathutils.Vector()) / len(pts)
                     indices = [v.index for v in sel_verts]
                     per_obj_data.append((obj, center.copy(), indices))
-
                 if not per_obj_data:
-
                     self.report({'WARNING'}, "No vertices selected.")
                     return {'CANCELLED'}
-
                 anchor_spec = [] # (mesh_obj, [vert_indices], world_point)
                 if len(per_obj_data) >= 2:
-
                     # Multiple objects: pick two for the dimension
                     o2c = initial_active
                     d2 = next((d for d in per_obj_data if d[0] == o2c), per_obj_data[-1])
                     d1 = next((d for d in per_obj_data if d != d2), per_obj_data[0])
                     anchor_spec.append((d1[0], d1[2], d1[1]))
                     anchor_spec.append((d2[0], d2[2], d2[1]))
-
                 else:
-
                     # Single object: pick two vertices
                     obj0, center0, indices0 = per_obj_data[0]
                     bm0 = bmesh.from_edit_mesh(obj0.data)
@@ -4813,119 +3172,70 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                     # Using Active Vertex logic for selection order certainty
                     v_active = bm0.select_history.active if isinstance(bm0.select_history.active, bmesh.types.BMVert) else None
                     if not v_active:
-
                         hist = [e for e in bm0.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
                         if hist: v_active = hist[-1]
-
-                    
-
                     v1, v2 = None, None
                     if v_active and v_active.select:
-
                         # v2 is the Dynamic end (Active)
                         v2 = v_active
                         # Find the furthest vertex from v_active to serve as v1 (Static)
                         v_sel = [v for v in bm0.verts if v.select and v != v2]
                         if v_sel:
-
                             v1 = max(v_sel, key=lambda v: (v.co - v2.co).length)
-
-                    
-
                     if not v1 or not v2:
-
                         # Absolute fallback to indices
                         v_sel = [v for v in bm0.verts if v.select]
                         if len(v_sel) >= 2: v1, v2 = v_sel[0], v_sel[-1]
-
-                    
-
                     if not v1 or not v2:
-
                         self.report({'WARNING'}, "Select at least 2 vertices.")
                         return {'CANCELLED'}
-
                     anchor_spec.append((obj0, [v1.index], obj0.matrix_world @ v1.co.copy()))
                     anchor_spec.append((obj0, [v2.index], obj0.matrix_world @ v2.co.copy()))
-
                 # --- STEP 1.5: Workspace Transition (MANDATORY for creation) ---
                 # Vertex group assignment and Hook reset require Object Mode.
                 if context.mode != 'OBJECT':
-
                     bpy.ops.object.mode_set(mode='OBJECT')
-
                 # --- Step 2: Process anchors (Consolidated Workflow) ---
                 # We use the same helper as the standard Attach Hook feature
                 # to guarantee consistency and non-warping behavior.
                 hook_empties = []
                 for mesh_obj, vert_indices, world_point in anchor_spec:
-
                     empty = create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook_Dim", display_type='CUBE', force_location=world_point)
                     if empty:
-
                         hook_empties.append((empty, world_point))
-
                 if len(hook_empties) < 2:
-
                     self.report({'ERROR'}, "Failed to create anchor hooks.")
                     return {'CANCELLED'}
-
                 # --- Step 3: Generate Dimension ---
                 hook_a_obj, p1_v = hook_empties[0]
                 hook_b_obj, p2_v = hook_empties[1]
-
-                
-
                 # CAST TO CONCRETE TUPLES TO AVOID MATRIX POINTERS
                 p1 = (p1_v.x, p1_v.y, p1_v.z)
                 p2 = (p2_v.x, p2_v.y, p2_v.z)
-
-                
-
                 # Dim creation must happen in Object Mode
                 if context.mode != 'OBJECT':
-
                     bpy.ops.object.mode_set(mode='OBJECT')
-
                 bpy.ops.object.select_all(action='DESELECT')
-
-                
-
                 dim_result = generators.generate_smart_dimension_parametric(
-                    context, p1, p2, 
-                    parent_a=(hook_a_obj, 'OBJECT', 0), 
+                    context, p1, p2,
+                    parent_a=(hook_a_obj, 'OBJECT', 0),
                     parent_b=(hook_b_obj, 'OBJECT', 0))
-
-                
-
                 if dim_result:
-
                     def _deferred_select_edit():
-
                         try:
-
                             if dim_result.name in bpy.data.objects:
-
                                 bpy.ops.object.select_all(action='DESELECT')
                                 dim_result.select_set(True)
                                 bpy.context.view_layer.objects.active = dim_result
                                 bpy.context.view_layer.update()
                                 for area in bpy.context.screen.areas:
-
                                     if area.type in ['VIEW_3D', 'PROPERTIES']:
-
                                         area.tag_redraw()
-
                         except: pass
                         return None
-
                     bpy.app.timers.register(_deferred_select_edit, first_interval=0.2)
                     dim_was_generated = True
-
-                
-
                 return {'FINISHED'}
-
             # ======================================================================
             # OBJECT MODE PATH — measure between centers of two objects
             # ======================================================================
@@ -4935,13 +3245,9 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
             # Filter: Exclude dimension internals (text/arrows/anchors), but INCLUDE parametric hooks (lsd_anchor)
             valid_sel = [o for o in sel if not o.get("lsd_is_dimension") and not o.get("lsd_is_dimension_anchor")]
             if len(valid_sel) >= 2:
-
                 # Identification: Active is the dynamic end (p2), Other is start (p1)
                 o2 = context.active_object if context.active_object in valid_sel else valid_sel[-1]
                 o1 = next((o for o in valid_sel if o != o2), valid_sel[0])
-
-                
-
                 # --- Pre-calculate Definitive World Coordinates ---
                 # We do this BEFORE any parenting or hook creation to bypass matrix-update lag.
                 context.view_layer.update()
@@ -4950,20 +3256,15 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                 p2_v = o2.matrix_world.translation.copy()
                 p1 = (p1_v.x, p1_v.y, p1_v.z)
                 p2 = (p2_v.x, p2_v.y, p2_v.z)
-
-                
-
                 # --- Attachment Phase (Stable Anchor Identification or Generation) ---
-                # Strategy: If the object is ALREADY a hook, use it. 
+                # Strategy: If the object is ALREADY a hook, use it.
                 # If the object is a MESH, search for existing LSD hook modifiers to reuse.
                 # Otherwise, generate a fresh hook anchor.
                 h1, h2 = None, None
-
                 def resolve_anchor(obj, measured_p):
                     # 1. Direct pass-through if the object is already a hook/anchor
                     if obj.get("lsd_anchor") or obj.get("lsd_is_dimension_hook"):
                         return obj
-                    
                     # 2. Search for existing LSD-controlled hook modifier on mesh objects
                     if obj.type == 'MESH':
                         for mod in obj.modifiers:
@@ -4972,57 +3273,39 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                                 if target_o.get("lsd_anchor") or target_o.get("lsd_is_dimension_hook"):
                                     # Re-use existing stable anchor
                                     return target_o
-                        
                         # 3. Fallback: Create a fresh hook anchor at the measured position
-                        return create_hook_anchor(context, obj, [v.index for v in obj.data.vertices], 
+                        return create_hook_anchor(context, obj, [v.index for v in obj.data.vertices],
                                                  name_prefix="Hook_Dim_Obj", force_location=measured_p)
                     return None
-
                 h1 = resolve_anchor(o1, p1_v)
                 h2 = resolve_anchor(o2, p2_v)
-
                 if h1 and h2:
-
                     parent_a = (h1, 'OBJECT', 0)
                     parent_b = (h2, 'OBJECT', 0)
-
             if p1 is not None and p2 is not None:
-
                 bpy.ops.object.select_all(action='DESELECT')
                 dim_result = generators.generate_smart_dimension_parametric(context, p1, p2, parent_a=parent_a, parent_b=parent_b)
                 if dim_result:
-
                     def _deferred_select_obj():
-
                         try:
-
                             if dim_result.name in bpy.data.objects:
-
                                 bpy.ops.object.select_all(action='DESELECT')
                                 dim_result.select_set(True)
                                 bpy.context.view_layer.objects.active = dim_result
                                 bpy.context.view_layer.update()
                                 for area in bpy.context.screen.areas:
-
                                     if area.type in ['VIEW_3D', 'PROPERTIES']:
-
                                         area.tag_redraw()
-
                         except: pass
                         return None
-
                     bpy.app.timers.register(_deferred_select_obj, first_interval=0.2)
                     dim_was_generated = True
-
                 return {'FINISHED'}
-
             # --- FALLBACK: Bounding Box on single active mesh ---
             obj = initial_active
             if not obj or obj.type != 'MESH':
-
                 self.report({'WARNING'}, "Select two objects or a mesh for BBox measurement.")
                 return {'CANCELLED'}
-
             axis_pref = getattr(scene, 'lsd_dim_axis', 'ALL')
             axes_to_gen = ['X', 'Y', 'Z'] if axis_pref == 'ALL' else [axis_pref]
             offset_val = getattr(scene, 'lsd_dim_offset', 0.1)
@@ -5035,175 +3318,98 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
             # Collect all generated dims to handle selection focus
             new_dims = []
             for ax in axes_to_gen:
-
                 if ax == 'X':
-
                     p1 = mathutils.Vector((min_x, mid_y, max_z + offset_val))
                     p2 = mathutils.Vector((max_x, mid_y, max_z + offset_val))
-
                 elif ax == 'Y':
-
                     p1 = mathutils.Vector((mid_x, min_y, max_z + offset_val))
                     p2 = mathutils.Vector((mid_x, max_y, max_z + offset_val))
-
                 else:
-
                     p1 = mathutils.Vector((max_x + offset_val, mid_y, min_z))
                     p2 = mathutils.Vector((max_x + offset_val, mid_y, max_z))
-
-                
-
                 dim = generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
                 if dim: new_dims.append(dim)
-
             if new_dims:
-
                 # Select the last generated dimension (host label) so properties appear instantly
                 last_host = new_dims[-1]
                 if last_host:
-
                     # Defer selection slightly to ensure Blender panel updates properly
                     def deferred_select():
-
                         try:
-
                             # Re-verify existence in case of undo/cancel
                             if last_host.name in bpy.data.objects:
-
                                 bpy.ops.object.select_all(action='DESELECT')
                                 last_host.select_set(True)
                                 bpy.context.view_layer.objects.active = last_host
-
-                                
-
                                 # Force redraw of all GUI components
                                 for area in bpy.context.screen.areas:
-
                                      if area.type in ['VIEW_3D', 'PROPERTIES']:
-
                                           area.tag_redraw()
-
-                                
-
                                 # CRITICAL: Workspace Update
                                 bpy.context.view_layer.update()
-
                         except: pass
                         return None
-
                     bpy.app.timers.register(deferred_select, first_interval=0.2)
-
-                
-
                 # Signal to the finally block to skip workspace restoration
                 dim_was_generated = True
-
             return {'FINISHED'}
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Dimension failure: {e}")
             return {'CANCELLED'}
-
         finally:
-
             # --- Categorical Workspace Enforcement (LSD v1.0.6) ---
             try:
-
                 if not dim_was_generated and initial_active and initial_active.name in bpy.data.objects:
-
                     target_obj = bpy.data.objects[initial_active.name]
                     if context.view_layer.objects.active != target_obj:
-
                         context.view_layer.objects.active = target_obj
-
                     target_obj.select_set(True)
                     # --- Anti-Warping Normalization (LSD v1.4.1) ---
                     # Use a stable, mathematically correct matrix-inverse to lock the rest state
                     try:
-
                         for mod in target_obj.modifiers:
-
                              if mod.type == 'HOOK' and mod.object:
-
                                   # Correct normalization: Δ = Empty^-1 * Object
                                   mod.matrix_inverse = mod.object.matrix_world.inverted() @ target_obj.matrix_world
                                   mod.center = (0, 0, 0)
-
                     except:
-
                         pass
-
                     if initial_mode and "EDIT" in initial_mode:
-
                         # AI Editor Note: Logic Change - Context Switching.
                         # If a dimension was created, stay in OBJECT mode to show properties.
                         if not new_dims:
-
                             if context.mode != initial_mode:
-
                                 try:
-
                                     bpy.ops.object.mode_set(mode='EDIT')
-
                                 except:
-
                                     pass
-
                     elif initial_mode == 'OBJECT':
-
                         if context.mode != 'OBJECT':
-
                             try:
-
                                 bpy.ops.object.mode_set(mode='OBJECT')
-
                             except:
-
                                 pass
-
             except:
-
                 pass
-
-            
-
             self.report({'INFO'}, f"[LSD v1.5.1] Dimension Process Complete. Workspace Sync: {context.mode}")
-
 class LSD_OT_AddModifier(bpy.types.Operator):
-
     bl_idname = "lsd.add_parametric_mod"
     bl_label = "Add Parametric Feature"
     bl_options = {'REGISTER', 'UNDO'}
     type: bpy.props.EnumProperty(items=[('BEVEL', "Fillet/Chamfer", ""), ('SOLIDIFY', "Shell/Thicken", ""), ('SCREW', "Revolve", ""), ('MIRROR', "Mirror", "")])
-
-    
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
-
-        
-
         if self.type == 'BEVEL':
-
             mod = obj.modifiers.new(f"{MOD_PREFIX}Parametric_Fillet", 'BEVEL')
             mod.limit_method = 'ANGLE'
             mod.angle_limit = math.radians(30)
             mod.harden_normals = True
-
         elif self.type == 'SOLIDIFY':
-
             # --- Create the Solidify modifier for the shell effect ---
             mod = obj.modifiers.new(f"{MOD_PREFIX}Parametric_Shell", 'SOLIDIFY')
-
-            
-
             # --- Set offset to 1 for an outward shell ---
             # The default is -1 (inward), but an outward shell is often more predictable
             # for mechanical parts, preventing self-intersection with internal geometry.
@@ -5213,29 +3419,17 @@ class LSD_OT_AddModifier(bpy.types.Operator):
             # This provides a reasonable starting point relative to the object's scale.
             avg_dimension = (obj.dimensions.x + obj.dimensions.y + obj.dimensions.z) / 3.0 if obj.dimensions.length > 0 else 1.0
             mod.thickness = avg_dimension * 0.1
-
         elif self.type == 'SCREW':
-
             obj.modifiers.new(f"{MOD_PREFIX}Parametric_Revolve", 'SCREW')
-
         elif self.type == 'MIRROR':
-
             obj.modifiers.new(f"{MOD_PREFIX}Parametric_Mirror", 'MIRROR')
-
-            
-
         self.report({'INFO'}, f"Added {self.type.lower()} modifier to '{obj.name}'.")
         return {'FINISHED'}
-
 class LSD_OT_AddSimplify(bpy.types.Operator):
-
     """Applies geometry cleanup operations (Weld or Simplify) directly to the mesh"""
     bl_idname = "lsd.add_simplify"
     bl_label = "Simplify"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     mode: bpy.props.EnumProperty(
         name="Mode",
         items=[
@@ -5244,163 +3438,88 @@ class LSD_OT_AddSimplify(bpy.types.Operator):
             ('QUADIFY', "Quad-ify", "Convert triangles to quads"),
         ],
         default='WELD'
-
     )
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None and context.active_object.type == 'MESH'
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
         original_mode = obj.mode
-
-        
-
         # --- AI Editor Note: Handle Multi-Object Editing ---
         # Collect objects to process based on context.
         objects_to_process = [obj]
         if context.mode == 'OBJECT':
-
             objects_to_process = [o for o in context.selected_objects if o.type == 'MESH']
-
         if self.mode == 'WELD':
-
             for target_obj in objects_to_process:
-
                 context.view_layer.objects.active = target_obj
-
-                
-
                 # 1. Destructive Intersect (Create vertices at overlaps)
                 # This fulfills the requirement to "create new vertices in between overlapping edges".
                 if target_obj.mode != 'EDIT':
-
                     bpy.ops.object.mode_set(mode='EDIT')
                     bpy.ops.mesh.select_all(action='SELECT')
-
-                
-
                 # AI Editor Note: Use EXACT solver for precise cuts at intersections
                 bpy.ops.mesh.intersect(mode='SELECT', solver='EXACT')
-
-                
-
                 # --- AI Editor Note: Auto Merge & Split Edges ---
                 # Enable Auto Merge and Split Edges & Faces to handle vertices on edges.
                 # This ensures that vertices lying on edges split the edge, creating valid topology.
                 context.tool_settings.use_mesh_automerge = True
                 context.tool_settings.use_mesh_automerge_and_split = True
-
-                
-
                 # Trigger the auto-merge logic by performing a zero-distance translation.
                 # This forces Blender to process the geometry with the enabled settings.
                 bpy.ops.transform.translate(value=(0, 0, 0))
-
-                
-
                 if original_mode == 'OBJECT':
-
                     bpy.ops.object.mode_set(mode='OBJECT')
-
-                
-
                 # 2. Non-Destructive Weld (Merge vertices)
                 # Adds the requested Weld modifier to handle the merging.
                 if f"{MOD_PREFIX}Weld" not in target_obj.modifiers:
-
                     mod = target_obj.modifiers.new(f"{MOD_PREFIX}Weld", 'WELD')
                     mod.merge_threshold = 0.001
-
-            
-
             self.report({'INFO'}, "Applied Intersect, Auto-Merge & Added Weld Modifier")
-
         elif self.mode == 'COLLAPSE':
-
             for target_obj in objects_to_process:
-
                 # AI Editor Note: Use Decimate Modifier for non-destructive reduction
                 mod_name = f"{MOD_PREFIX}Decimate"
                 mod = target_obj.modifiers.get(mod_name)
                 if not mod:
-
                     mod = target_obj.modifiers.new(mod_name, 'DECIMATE')
-
-                
-
                 # AI Editor Note: Switch to Planar (Dissolve) mode for maximum simplification while retaining shape
                 mod.decimate_type = 'DISSOLVE'
                 mod.angle_limit = math.radians(20.0) # Increased to catch subdivided flat faces reliably
                 mod.use_dissolve_boundaries = True # Ensure grid topology on flat faces is cleaned up
-
             self.report({'INFO'}, "Applied Decimate Modifier (Planar)")
-
         elif self.mode == 'QUADIFY':
-
             for target_obj in objects_to_process:
-
                 context.view_layer.objects.active = target_obj
                 # Ensure Edit Mode for mesh operation
                 if target_obj.mode != 'EDIT':
-
                     bpy.ops.object.mode_set(mode='EDIT')
                     bpy.ops.mesh.select_all(action='SELECT')
-
-                
-
                 bpy.ops.mesh.tris_convert_to_quads()
-
-                
-
                 if original_mode == 'OBJECT':
-
                     bpy.ops.object.mode_set(mode='OBJECT')
-
-            
-
             self.report({'INFO'}, "Converted Tris to Quads")
-
         # Restore original mode
         if original_mode == 'OBJECT' and context.mode != 'OBJECT':
-
             bpy.ops.object.mode_set(mode=original_mode)
-
-            
-
         return {'FINISHED'}
-
 class LSD_OT_SetupLinearArray(bpy.types.Operator):
-
     bl_idname = "lsd.setup_linear_array"
     bl_label = "Linear Pattern"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     count: bpy.props.IntProperty(name="Count", default=3, min=2)
     offset: bpy.props.FloatVectorProperty(name="Offset", default=(1.0, 0.0, 0.0), subtype='TRANSLATION')
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
-
-        
-
         base_name = f"{MOD_PREFIX}Linear_Pattern"
         mod_name = base_name
         i = 0
         while obj.modifiers.get(mod_name):
-
             i += 1
             mod_name = f"{base_name}.{i:03d}"
-
         mod = obj.modifiers.new(mod_name, 'ARRAY')
         mod.count = self.count
         # Default to relative offset for a non-destructive, scalable pattern.
@@ -5408,56 +3527,33 @@ class LSD_OT_SetupLinearArray(bpy.types.Operator):
         mod.use_relative_offset = True
         mod.use_constant_offset = False
         mod.relative_offset_displace = self.offset
-
-        
-
         self.report({'INFO'}, f"Added linear array to '{obj.name}'.")
         return {'FINISHED'}
-
 class LSD_OT_SetupRadialArray(bpy.types.Operator):
-
     bl_idname = "lsd.setup_radial_array"
     bl_label = "Radial Pattern"
     bl_options = {'REGISTER', 'UNDO'}
     count: bpy.props.IntProperty(default=6, min=2)
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
-
-        
-
         # --- Create and configure the axis Empty ---
         # This empty object will act as the pivot point for the radial array.
         empty = bpy.data.objects.new(f"Radial_Axis_{obj.name}", None)
         context.collection.objects.link(empty)
-
-        
-
         # Parent the empty to the object first. This ensures that all subsequent
         # transformations on the empty are in the object's local space.
         empty.parent = obj
-
-        
-
         # Explicitly set the empty's local transform to the parent's origin (identity).
         # This guarantees it is perfectly centered and has no initial rotation or scale,
         # preventing unwanted offsets in the array that cause a screw pattern.
         empty.location = (0, 0, 0)
         empty.rotation_euler = (0, 0, 0)
         empty.scale = (1, 1, 1)
-
-        
-
         # The empty's local rotation now determines the angle between array instances.
         empty.rotation_euler.z = (math.pi * 2) / self.count
-
-        
-
         # --- Create and configure the Array modifier ---
         mod = obj.modifiers.new(f"{MOD_PREFIX}Radial_Array_{empty.name}", 'ARRAY')
         mod.count = self.count
@@ -5466,25 +3562,17 @@ class LSD_OT_SetupRadialArray(bpy.types.Operator):
         # the user can set the relative offset to zero in the modifier panel.
         mod.use_relative_offset = True
         mod.relative_offset_displace = (1.0, 0.0, 0.0)
-
-        
-
         # The primary control for the radial pattern is the Object Offset.
         # Because the empty is a child, its local transform is used as the offset.
         mod.use_object_offset = True
         mod.offset_object = empty
-
-        
-
         self.report({'INFO'}, f"Added radial array to '{obj.name}'.")
         return {'FINISHED'}
-
 class LSD_OT_CreateCurveForPath(bpy.types.Operator):
     """Spawns a single vertex or control point at the 3D cursor for path drafting."""
     bl_idname = "lsd.create_curve_for_path"
     bl_label = "Spawn Vertex"
     bl_options = {'REGISTER', 'UNDO'}
-
     type: bpy.props.EnumProperty(
         name="Path Type",
         items=[
@@ -5492,62 +3580,45 @@ class LSD_OT_CreateCurveForPath(bpy.types.Operator):
             ('NURBS', "NURBS Path", "Draft a path using NURBS control points"),
             ('POLY', "Mesh Vertex", "Spawn a real mesh vertex object for precision vertex-instancing"),
         ],
-
         default='BEZIER'
     )
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
         import bmesh
         # Ensure we are in object mode before creating new objects
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
-
         if self.type == 'POLY':
-            # Create a real MESH object with a single vertex 
+            # Create a real MESH object with a single vertex
             mesh_data = bpy.data.meshes.new("Path0_Data")
             bm = bmesh.new()
             bm.verts.new((0, 0, 0)) # Start with a pure, single point
             bm.to_mesh(mesh_data)
             bm.free()
-            
             path_obj = bpy.data.objects.new("Path_Origin", mesh_data)
-
-
             path_obj.location = context.scene.cursor.location
             context.collection.objects.link(path_obj)
-            
             # Select and enter edit mode
             bpy.ops.object.select_all(action='DESELECT')
             context.view_layer.objects.active = path_obj
             path_obj.select_set(True)
             bpy.ops.object.mode_set(mode='EDIT')
-            
             # --- SELECTION FIX: Select the single vertex for immediate path extension ---
             bm = bmesh.from_edit_mesh(path_obj.data)
             for v in bm.verts: v.select = True
             bmesh.update_edit_mesh(path_obj.data)
-
-
-            
             self.report({'INFO'}, f"Spawned new Mesh Vertex '{path_obj.name}' at cursor.")
-
             return {'FINISHED'}
-
         # Create curve data and object
         curve_data = bpy.data.curves.new("Path_Data", type='CURVE')
         curve_data.dimensions = '3D'
-        
         spline = curve_data.splines.new(self.type)
-        
         if self.type == 'BEZIER':
             spline.bezier_points[0].co = (0, 0, 0)
             spline.bezier_points[0].handle_left_type = 'AUTO'
             spline.bezier_points[0].handle_right_type = 'AUTO'
         else: # NURBS
             spline.points[0].co = (0, 0, 0, 1)
-
         path_obj = bpy.data.objects.new("Path_Path", curve_data)
-
         path_obj.location = context.scene.cursor.location
         context.collection.objects.link(path_obj)
         # Make the new curve active and enter edit mode for immediate shaping
@@ -5555,33 +3626,22 @@ class LSD_OT_CreateCurveForPath(bpy.types.Operator):
         context.view_layer.objects.active = path_obj
         path_obj.select_set(True)
         bpy.ops.object.mode_set(mode='EDIT')
-
-        
-
         # Select the last created point for immediate extrusion by the user.
         bpy.ops.curve.select_all(action='DESELECT')
         spline = path_obj.data.splines[0]
         if spline.type == 'BEZIER':
-
             # For Bezier, select the last point's control point
             if len(spline.bezier_points) > 0:
-
                 spline.bezier_points[-1].select_control_point = True
-
         elif spline.points: # For NURBS/POLY
-
             if len(spline.points) > 0:
-
                 spline.points[-1].select = True
-
         self.report({'INFO'}, f"Created new {self.type} curve '{path_obj.name}' at cursor.")
         return {'FINISHED'}
-
 class LSD_OT_SetupCurveArray(bpy.types.Operator):
     """Creates an array of the selected object(s) that follows the active path (Curve or Vertex Mesh)"""
     bl_idname = "lsd.setup_curve_array"
     bl_label = "Follow Path"
-
     bl_options = {'REGISTER', 'UNDO'}
     mode: bpy.props.EnumProperty(
         name="Path Type",
@@ -5592,75 +3652,47 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
         ],
         default='DEFORM'
     )
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         active_obj = context.active_object
         if not active_obj or active_obj.type not in {'CURVE', 'MESH'}:
             cls.poll_message_set("Active object must be a Curve or a Mesh Path.")
             return False
-
-
         selected_meshes = [obj for obj in context.selected_objects if obj != active_obj and obj.type == 'MESH']
         if not selected_meshes:
-
             cls.poll_message_set("Select a mesh object to array, then the curve object last.")
             return False
-
         for mesh_obj in selected_meshes:
-
             # AI Editor Note: Allow parametric parts to be used with this tool, but explicitly
             # block 'CHAIN' types, as they have their own dedicated curve-following system.
             # This allows users to create arrays of gears, custom links, etc., along a curve.
             if hasattr(mesh_obj, 'lsd_pg_mech_props') and mesh_obj.lsd_pg_mech_props.is_part:
-
                 if mesh_obj.lsd_pg_mech_props.category == 'CHAIN':
-
                     cls.poll_message_set("Cannot use 'Follow Curve' on a Chain part. Use its own settings.")
                     return False
-
-        
-
         return True
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         path_obj = context.active_object  # The active object is the curve path
         objects_to_modify = [obj for obj in context.selected_objects if obj != path_obj and obj.type == 'MESH']
         # --- Main loop to apply the selected mode to each object ---
         for obj in objects_to_modify:
-
-            
-
             # --- STEP 1: Clean up any previous setups from this tool ---
             for mod_name in [f"{MOD_PREFIX}FollowPath_Array", f"{MOD_PREFIX}FollowPath_Deform"]:
                 if mod_name in obj.modifiers:
                     obj.modifiers.remove(obj.modifiers[mod_name])
-
-
             # B. If the object was part of a 'Rigid' setup, dismantle it completely.
             # Use startswith for robustness in case of .001 suffixes.
             proxy_name_prefix = f"Proxy_{obj.name}"
             if obj.parent and obj.parent.name.startswith(proxy_name_prefix):
-
                 proxy_obj = obj.parent
-
-                
-
                 # Restore object's world transform before unparenting.
                 original_matrix = obj.matrix_world.copy()
                 obj.parent = None
                 obj.matrix_world = original_matrix
-
-                
-
                 # Delete the old proxy object and its mesh data to prevent orphans.
                 if proxy_obj.data:
-
                     bpy.data.meshes.remove(proxy_obj.data, do_unlink=True)
-
                 bpy.data.objects.remove(proxy_obj, do_unlink=True)
-
             # C. Ensure the object is visible and selectable again.
             obj.hide_set(False)
             obj.hide_select = False
@@ -5668,7 +3700,6 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
             obj.hide_render = False
             # --- STEP 2: Apply the new setup based on the selected mode ---
             if self.mode == 'DEFORM':
-
                 # --- Deforming Array Method ---
                 # --- FIX: Auto-align object to curve start ---
                 # To prevent the object from jumping when the Curve modifier is added,
@@ -5676,38 +3707,25 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
                 # This code block calculates the world-space position of the curve's
                 # first vertex and moves the object there before adding modifiers.
                 if path_obj.data.splines:
-
                     spline = path_obj.data.splines[0]
                     if spline.type == 'BEZIER' and spline.bezier_points:
-
                         first_vtx_local_co = spline.bezier_points[0].co
-
                     elif spline.points:
-
                         first_vtx_local_co = spline.points[0].co.to_3d()
-
                     else:
-
                         # Fallback for empty curves: use the curve object's origin.
                         first_vtx_local_co = mathutils.Vector((0,0,0))
-
-                    
-
                     # Move the object's origin to the curve's starting point.
                     obj.matrix_world.translation = path_obj.matrix_world @ first_vtx_local_co
-
                 # This is the classic setup that bends and stretches the mesh itself.
                 # It requires the object to have enough geometry to deform smoothly.
                 if path_obj.type != 'CURVE':
                     self.report({'WARNING'}, f"Object '{obj.name}' cannot use DEFORM on a non-curve path.")
                     continue
-
                 # --- NEW: Synchronize origins to prevent "floating" displacement ---
                 # The object should be at the curve's location for accurate deformation.
                 obj.matrix_world.translation = path_obj.matrix_world.translation
-
                 array_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowPath_Array", 'ARRAY')
-
                 array_mod.fit_type = 'FIT_CURVE'
                 array_mod.curve = path_obj
                 array_mod.use_relative_offset = True
@@ -5715,246 +3733,154 @@ class LSD_OT_SetupCurveArray(bpy.types.Operator):
                 curve_mod = obj.modifiers.new(f"{MOD_PREFIX}FollowPath_Deform", 'CURVE')
                 curve_mod.object = path_obj
                 curve_mod.deform_axis = 'POS_X'
-
-
-            
-
             elif self.mode == 'RIGID':
-
                 # --- NEW: Geometry Nodes Rigid Instancing Method ---
                 # This modern approach uses a GN modifier on the curve itself.
                 # It avoids parenting and hiding the original object, which resolves
                 # the user's issue of the object being grayed out and hard to edit.
                 # The original object remains visible and fully editable.
-
-                
-
                 # Get or create the reusable node group for this tool.
                 gn_group = generators.setup_gn_for_rigid_array(path_obj)
-
-
-                
-
                 # Add a dedicated GN modifier to the curve for this specific object.
                 mod_name = f"{MOD_PREFIX}RigidArray_{obj.name}"
                 if mod_name in path_obj.modifiers:
                     path_obj.modifiers.remove(path_obj.modifiers[mod_name])
-
                 mod = path_obj.modifiers.new(name=mod_name, type='NODES')
                 mod.node_group = gn_group
-
                 # --- Connect Modifier Inputs ---
                 iface = gn_group.interface
                 instance_obj_socket = iface.items_tree.get("Instance Object")
                 spacing_socket = iface.items_tree.get("Spacing")
                 is_mesh_socket = iface.items_tree.get("Is Mesh")
-
                 if instance_obj_socket:
                     mod[instance_obj_socket.identifier] = obj
-
                 if spacing_socket:
                     # Use the object's X-dimension as the default spacing.
                     spacing = obj.dimensions.x if obj.dimensions.x > 0.01 else 1.0
                     mod[spacing_socket.identifier] = spacing
-                
                 if is_mesh_socket:
                     # Inform GN if we are using a Mesh Path (Spawn Vertex) or a Curve Path
                     mod[is_mesh_socket.identifier] = (path_obj.type == 'MESH')
-
-
         self.report({'INFO'}, f"Set {len(objects_to_modify)} object(s) to follow '{path_obj.name}' using '{self.mode}' mode.")
         return {'FINISHED'}
-
 class LSD_OT_CommitPathAlignment(bpy.types.Operator):
     """Bakes the current alignment offsets and clears the alignment mask."""
     bl_idname = "lsd.commit_path_alignment"
     bl_label = "Commit Path Alignment"
     bl_options = {'REGISTER', 'UNDO'}
-    
     def execute(self, context: bpy.types.Context) -> Set[str]:
         scene = context.scene
         # Final pass to ensure maximum precision before bake
         from . import core
         core.apply_path_vertex_alignment(context)
-        
         # Reset and Clear
         scene.lsd_path_live_align = False
         scene.lsd_path_align_pos = (False, False, False)
         scene.lsd_path_align_neg = (False, False, False)
-        
         self.report({'INFO'}, "Path alignment committed and drafting masks reset.")
         return {'FINISHED'}
-
-
 class LSD_OT_SmartSmooth(bpy.types.Operator):
-
     bl_idname = "lsd.smart_smooth"
     bl_label = "Smart Smooth"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.active_object is not None and context.active_object.type == 'MESH'
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         obj = context.active_object
-
-        
-
         # Apply the base auto smooth (Edge Split via GN)
         apply_auto_smooth(obj)
-
-            
-
         if f"{MOD_PREFIX}Weighted_Normal" not in obj.modifiers:
-
             mod = obj.modifiers.new(f"{MOD_PREFIX}Weighted_Normal", 'WEIGHTED_NORMAL')
             mod.keep_sharp = True
-
-            
-
         self.report({'INFO'}, f"Applied smart smooth to '{obj.name}'.")
         return {'FINISHED'}
-
 class LSD_OT_CreatePart(bpy.types.Operator):
-
     bl_idname = "lsd.create_part"
     bl_label = "Generate"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     category: bpy.props.StringProperty(default="")
     type_sub: bpy.props.StringProperty(default="")
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # --- 1. Get Scaling Factor from Generation Cage ---
         scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
         use_cage = context.scene.lsd_use_generation_cage
         if use_cage:
-
             scale_factor = context.scene.lsd_generation_cage_size
             self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
-
         else:
-
             self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
-
         cursor_loc = context.scene.cursor.location
         cat = self.category if self.category else context.scene.lsd_part_category
         type_sub = self.type_sub if self.type_sub else context.scene.lsd_part_type
-
-        
-
         # Override with scene-specific properties if available
         if cat == 'ELECTRONICS' and not self.type_sub:
-
             type_sub = context.scene.lsd_electronics_type
-
         elif cat == 'VEHICLE' and not self.type_sub:
-
             type_sub = context.scene.lsd_vehicle_type
-
         elif cat == 'ARCHITECTURAL' and not self.type_sub:
-
             type_sub = context.scene.lsd_architectural_type
-
-        
-
         # --- AI Editor Note: Use the new centralized helper function ---
         new_obj = create_parametric_part_object(context, cat, type_sub, cursor_loc, scale_factor)
         props = new_obj.lsd_pg_mech_props
         # --- AI Editor Note: Auto-rigging for Basic Robot Joints ---
         # Moved outside the removed 'if' block to ensure it runs.
         if cat == 'BASIC_JOINT':
-
             rig = ensure_default_rig(context)
             if not rig:
-
                 self.report({'ERROR'}, "Could not find or create a default rig.")
                 return {'CANCELLED'}
-
-            
-
             # AI Editor Note: Use the shared helper function for rigging basic joints.
             # This ensures consistency between manual creation and AI generation.
             base_bone, joint_bone = rig_parametric_joint(context, new_obj)
-
-            
-
             if joint_bone:
-
                 pbone_joint = rig.pose.bones.get(joint_bone)
                 # Sync to UI tool
                 core._joint_editor_update_guard = True
                 try:
-
                     tool_props = context.scene.lsd_pg_joint_editor_settings
                     tool_props.joint_type = pbone_joint.lsd_pg_kinematic_props.joint_type
                     tool_props.axis_alignment = pbone_joint.lsd_pg_kinematic_props.axis_alignment
                     tool_props.joint_radius = pbone_joint.lsd_pg_kinematic_props.joint_radius
                     tool_props.lower_limit = pbone_joint.lsd_pg_kinematic_props.lower_limit
                     tool_props.upper_limit = pbone_joint.lsd_pg_kinematic_props.upper_limit
-
                 finally:
-
                     core._joint_editor_update_guard = False
-
         if new_obj:
-
             # --- Set up initial viewport material ---
             # This ensures the new part has the correct default color immediately.
             # The update callback on the color property will handle subsequent changes.
             obj_for_material = new_obj
             props_owner = new_obj.lsd_pg_mech_props
             if props_owner.category == 'CHAIN':
-
                 # For chains, the material goes on the instanced link object,
                 # but the properties are on the main curve object.
                 obj_for_material = props_owner.instanced_link_obj
-
-            
-
             if obj_for_material and hasattr(props_owner, 'material'):
-
                 # Use the color from the main properties owner (the curve for chains).
                 setup_and_update_material(obj_for_material, props_owner.material.color)
-
             for o in context.view_layer.objects.selected:
-
                 o.select_set(False)
-
             new_obj.select_set(True)
             context.view_layer.objects.active = new_obj
             self.report({'INFO'}, f"Created new part: {new_obj.name}")
-
         return {'FINISHED'}
-
 class LSD_OT_ChainAddWrapObject(bpy.types.Operator):
-
     bl_idname = "lsd.chain_add_wrap_object"
     bl_label = "Add Wrap Object"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         obj = context.active_object
         # Operator works on an active Chain object
         if not (obj and obj.lsd_pg_mech_props.category == 'CHAIN'):
-
             return False
-
         # Ensure there is a selected object to wrap around
         selected = [o for o in context.selected_objects if o != obj]
         if not selected:
-
             return False
-
         return True
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         chain_obj = context.active_object
         props = chain_obj.lsd_pg_mech_props
         targets = [o for o in context.selected_objects if o != chain_obj]
@@ -5962,365 +3888,219 @@ class LSD_OT_ChainAddWrapObject(bpy.types.Operator):
         coll_name = f"LSD_Wraps_{chain_obj.name}"
         wrap_coll = bpy.data.collections.get(coll_name)
         if not wrap_coll:
-
             wrap_coll = bpy.data.collections.new(coll_name)
             context.scene.collection.children.link(wrap_coll)
-
-        
-
         props.chain_wrap_collection = wrap_coll
         # 2. Add objects to collection and UI list
         for target in targets:
-
             # Check if already in list
             exists = False
             for item in props.chain_wrap_items:
-
                 if item.target == target:
-
                     exists = True
                     break
-
-            
-
             if not exists:
-
                 # Link to collection if not already there
                 if target.name not in wrap_coll.objects:
-
                     wrap_coll.objects.link(target)
-
-                
-
                 # Add to UI list
                 item = props.chain_wrap_items.add()
                 item.target = target
-
         # 3. Update GN Modifier
         mod_name = f"{MOD_PREFIX}Native_{props.type_chain.capitalize()}Chain"
         mod = chain_obj.modifiers.get(mod_name)
         if mod:
-
             # We need to find the socket index or name for "Wrap Collection"
             # Since we added it to the node group, it should be available.
             # We can access it by identifier if we knew it, or by name.
             # The setup_native_chain_gn function sets it up, but we can re-trigger it or set it here.
             # Re-running setup is safe.
             setup_native_wrap_gn(chain_obj)
-
         self.report({'INFO'}, f"Added {len(targets)} wrap objects to '{chain_obj.name}'")
         return {'FINISHED'}
-
 class LSD_OT_SlinkyAddHook(bpy.types.Operator):
-
     """Adds a new middle hook for the Slinky spring at the 3D cursor location."""
     bl_idname = "lsd.slinky_add_hook"
     bl_label = "Add Middle Hook"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         obj = context.active_object
         return obj and obj.lsd_pg_mech_props.category == 'SPRING' and obj.lsd_pg_mech_props.type_spring == 'SPRING_SLINKY'
-
     def execute(self, context):
-
         obj = context.active_object
         props = obj.lsd_pg_mech_props
-
-        
-
         # Create an Empty at the 3D cursor
         hook = bpy.data.objects.new(name=f"Hook_{obj.name}", object_data=None)
         hook.location = context.scene.cursor.location
         context.collection.objects.link(hook)
         hook.empty_display_type = 'SPHERE'
         hook.empty_display_size = 0.02
-
-        
-
         # Add to collection
         item = props.slinky_hooks.add()
         item.target = hook
-
-        
-
         # Trigger regeneration
         from .core import setup_native_slinky
         setup_native_slinky(obj, props.spring_start_obj, props.spring_end_obj)
-
-        
-
         return {'FINISHED'}
-
 class LSD_OT_SlinkyRemoveHook(bpy.types.Operator):
-
     """Removes the active middle hook from the Slinky spring."""
     bl_idname = "lsd.slinky_remove_hook"
     bl_label = "Remove Active Hook"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         obj = context.active_object
         if not (obj and obj.lsd_pg_mech_props.category == 'SPRING'): return False
         return len(obj.lsd_pg_mech_props.slinky_hooks) > 0
-
     def execute(self, context):
-
         obj = context.active_object
         props = obj.lsd_pg_mech_props
-
-        
-
         if props.slinky_active_index >= 0 and props.slinky_active_index < len(props.slinky_hooks):
-
             props.slinky_hooks.remove(props.slinky_active_index)
             props.slinky_active_index = max(0, props.slinky_active_index - 1)
-
-            
-
             # Trigger regeneration
             from .core import setup_native_slinky
             setup_native_slinky(obj, props.spring_start_obj, props.spring_end_obj)
-
-            
-
         return {'FINISHED'}
-
 class LSD_OT_CreateElectronicPart(bpy.types.Operator):
-
     """Creates a new parametric electronic component."""
     bl_idname = "lsd.create_electronic_part"
     bl_label = "Generate Electronic Part"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         cursor_loc = context.scene.cursor.location
         type_sub = context.scene.lsd_electronics_type
-
-        
-
         # --- 1. Get Scaling Factor from Generation Cage ---
         scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
         if context.scene.lsd_use_generation_cage:
-
             scale_factor = context.scene.lsd_generation_cage_size
             self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
-
         else:
-
             self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
-
         # Use the centralized helper
         new_obj = create_parametric_part_object(context, 'ELECTRONICS', type_sub, cursor_loc, scale_factor)
         props = new_obj.lsd_pg_mech_props
-
-        
-
         setup_and_update_material(new_obj, props.material.color)
         for o in context.view_layer.objects.selected:
-
             o.select_set(False)
-
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         self.report({'INFO'}, f"Created new electronic part: {new_obj.name}")
         return {'FINISHED'}
-
 class LSD_OT_ChainAddPickedWrapObject(bpy.types.Operator):
-
     """Adds the object selected in the 'Pick Object' field to the wrap bundle"""
     bl_idname = "lsd.chain_add_picked_wrap_object"
     bl_label = "Add Picked Object"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         obj = context.active_object
-        return (obj and obj.lsd_pg_mech_props.category == 'CHAIN' and 
+        return (obj and obj.lsd_pg_mech_props.category == 'CHAIN' and
                 obj.lsd_pg_mech_props.wrap_picker is not None)
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         chain_obj = context.active_object
         props = chain_obj.lsd_pg_mech_props
         target = props.wrap_picker
         if not target:
-
             return {'CANCELLED'}
-
         # Reuse logic to ensure collection exists
         coll_name = f"LSD_Wraps_{chain_obj.name}"
         wrap_coll = bpy.data.collections.get(coll_name)
         if not wrap_coll:
-
             wrap_coll = bpy.data.collections.new(coll_name)
             context.scene.collection.children.link(wrap_coll)
-
         props.chain_wrap_collection = wrap_coll
         # Add to collection and list if not present
         if target.name not in wrap_coll.objects:
-
             wrap_coll.objects.link(target)
-
-        
-
         if not any(item.target == target for item in props.chain_wrap_items):
-
             item = props.chain_wrap_items.add()
             item.target = target
-
-            
-
         # Update GN and clear picker
         setup_native_wrap_gn(chain_obj)
         props.wrap_picker = None
-
-        
-
         self.report({'INFO'}, f"Added '{target.name}' to wrap bundle.")
         return {'FINISHED'}
-
 class LSD_OT_ChainRemoveWrapObject(bpy.types.Operator):
-
     bl_idname = "lsd.chain_remove_wrap_object"
     bl_label = "Remove Wrap Object"
     bl_options = {'REGISTER', 'UNDO'}
-
-    
-
     index: bpy.props.IntProperty()
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         chain_obj = context.active_object
         if not chain_obj:
-
             return {'CANCELLED'}
-
         props = chain_obj.lsd_pg_mech_props
         if not props.chain_wrap_items or self.index >= len(props.chain_wrap_items):
-
             return {'CANCELLED'}
-
         item = props.chain_wrap_items[self.index]
         target = item.target
-
-        
-
         # Remove from collection
         if props.chain_wrap_collection and target and target.name in props.chain_wrap_collection.objects:
-
             props.chain_wrap_collection.objects.unlink(target)
-
         # Remove the item from the UI list.
         props.chain_wrap_items.remove(self.index)
         self.report({'INFO'}, f"Removed wrap object '{target.name if target else 'unknown'}'")
         return {'FINISHED'}
-
 class LSD_OT_CalculateRatio(bpy.types.Operator):
-
     bl_idname = "lsd.calculate_ratio"
     bl_label = "Calculate Ratio"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
-
-        
-
         count = 0
         for bone in bones_to_process:
-
             if not bone: continue
             props = bone.lsd_pg_kinematic_props
             target_name = props.ratio_ref_bone if props.ratio_ref_bone else props.ratio_target_bone
             if not target_name:
-
                 continue
-
             target = bone.id_data.pose.bones.get(target_name)
             if target:
-
                 is_rot_self = props.joint_type in ['revolute', 'continuous', 'spherical']
                 is_rot_tgt = target.lsd_pg_kinematic_props.joint_type in ['revolute', 'continuous', 'spherical']
-
-                
-
                 # --- NEW: Use joint_radius for rotational joints (gears) and bone length for linear joints (racks) ---
                 # This provides physically-based ratio calculation.
-
-                
-
                 # Determine the effective "length" or "radius" for the source (driver) bone
                 len_driver = target.length
                 if is_rot_tgt:
-
                     # For gears, the ratio is based on radius
                     len_driver = target.lsd_pg_kinematic_props.joint_radius if target.lsd_pg_kinematic_props.joint_radius > 0.001 else 1.0
-
                 # Determine the effective "length" or "radius" for the target (follower) bone
                 len_follower = bone.length
                 if is_rot_self:
-
                     # For gears, the ratio is based on radius
                     len_follower = bone.lsd_pg_kinematic_props.joint_radius if bone.lsd_pg_kinematic_props.joint_radius > 0.001 else 1.0
-
                 if len_follower < 0.0001:
-
                     len_follower = 0.0001
-
-                
-
                 # --- Logic for different joint type combinations ---
                 if is_rot_self and not is_rot_tgt: # Follower is ROT, Driver is LIN (e.g., Rack and Pinion)
-
-                    bone.lsd_pg_kinematic_props.ratio_value = 1.0 / len_follower 
-
+                    bone.lsd_pg_kinematic_props.ratio_value = 1.0 / len_follower
                 elif not is_rot_self and is_rot_tgt: # Follower is LIN, Driver is ROT (e.g., Pinion and Rack)
-
                     bone.lsd_pg_kinematic_props.ratio_value = len_driver
-
                 elif is_rot_self and is_rot_tgt: # Follower is ROT, Driver is ROT (e.g., two gears)
-
                     bone.lsd_pg_kinematic_props.ratio_value = len_driver / len_follower
-
                 else: # Both are LIN
-
                     bone.lsd_pg_kinematic_props.ratio_value = 1.0
-
                 count += 1
-
-                
-
         self.report({'INFO'}, f"Calculated ratio for {count} bone(s).")
         return {'FINISHED'}
-
 class LSD_OT_AddMimic(bpy.types.Operator):
-
     bl_idname = "lsd.add_mimic"
     bl_label = "Add / Update Driver"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
-
-        
-
         count = 0
         for bone in bones_to_process:
-
             if not bone: continue
             props = bone.lsd_pg_kinematic_props
             driver_name = props.ratio_target_bone
             if not driver_name:
-
                 continue
-
-                
-
             # 1. Update/Add to the persistent list first
             found = False
-            for m in props.mimic_drivers: 
+            for m in props.mimic_drivers:
                 if m.target_bone == driver_name:
                     m.ratio = props.ratio_value
                     m.invert = props.ratio_invert
@@ -6336,35 +4116,22 @@ class LSD_OT_AddMimic(bpy.types.Operator):
                 item.drive_x = props.ratio_drive_x
                 item.drive_y = props.ratio_drive_y
                 item.drive_z = props.ratio_drive_z
-
             # 2. Re-apply drivers based on the UPDATED list
             core.reapply_mimic_drivers(bone)
             count += 1
-
-            
-
         self.report({'INFO'}, f"Added mimic driver to {count} bone(s).")
         return {'FINISHED'}
-
 class LSD_OT_RemoveMimic(bpy.types.Operator):
-
     bl_idname = "lsd.remove_mimic"
     bl_label = "Remove Gear"
     bl_options = {'REGISTER', 'UNDO'}
     index: bpy.props.IntProperty()
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
-
-        
-
         count = 0
         for bone in bones_to_process:
-
-            if not bone or self.index >= len(bone.lsd_pg_kinematic_props.mimic_drivers): 
-
+            if not bone or self.index >= len(bone.lsd_pg_kinematic_props.mimic_drivers):
                 continue
-
             item = bone.lsd_pg_kinematic_props.mimic_drivers[self.index]
             if bone.id_data.animation_data and bone.id_data.animation_data.drivers:
                 drivers = bone.id_data.animation_data.drivers
@@ -6377,36 +4144,22 @@ class LSD_OT_RemoveMimic(bpy.types.Operator):
                            (target.data_path and f'["{item.target_bone}"]' in target.data_path):
                             drivers.remove(d)
                             break
-
             bone.lsd_pg_kinematic_props.mimic_drivers.remove(self.index)
             count += 1
-
-            
-
         self.report({'INFO'}, f"Removed mimic driver from {count} bone(s).")
         return {'FINISHED'}
-
 class LSD_OT_ClearConfig(bpy.types.Operator):
-
     bl_idname = "lsd.clear_config"
     bl_label = "Clear Config"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
-
-        
-
         count = 0
         for bone in bones_to_process:
-
             if not bone: continue
             props = bone.lsd_pg_kinematic_props
             # Setting joint_type to 'none' triggers update_gizmo_prop,
             # which handles gizmos, FK constraints, and IK limits.
             props.joint_type = 'none'
-
-            
-
             # Clear remaining properties manually
             props.lower_limit = -90.0
             props.upper_limit = 90.0
@@ -6419,82 +4172,55 @@ class LSD_OT_ClearConfig(bpy.types.Operator):
             props.ratio_target_bone = ""
             props.ratio_ref_bone = ""
             props.mimic_drivers.clear()
-            if bone.id_data.animation_data: 
-
+            if bone.id_data.animation_data:
                 drivers = bone.id_data.animation_data.drivers
                 for i in range(len(drivers)-1, -1, -1):
-
                     d = drivers[i]
                     if d.data_path.startswith(f"pose.bones[\"{bone.name}\"]"):
-
                         drivers.remove(d)
-
             count += 1
-
-            
-
         self.report({'INFO'}, f"Cleared configuration for {count} bone(s).")
         return {'FINISHED'}
-
 class LSD_OT_PickBone(bpy.types.Operator):
-
     bl_idname = "lsd.pick_bone"
     bl_label = "Pick Bone"
     mode: bpy.props.IntProperty(default=0)
     source_bone_name: bpy.props.StringProperty(name="Source Bone Name")
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event) -> Set[str]:
-
         if context.mode == 'POSE':
-
             self.source_bone_name = context.active_pose_bone.name
             context.window.cursor_set('EYEDROPPER')
             context.window_manager.modal_handler_add(self)
             return {'RUNNING_MODAL'}
-
         return {'CANCELLED'}
-
     def modal(self, context: bpy.types.Context, event: bpy.types.Event) -> Set[str]:
-
         if event.type in {'RIGHTMOUSE', 'ESC'}:
-
             context.window.cursor_set('DEFAULT')
             return {'CANCELLED'}
-
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
-
             bpy.ops.view3d.select(location=(event.mouse_region_x, event.mouse_region_y))
             if context.active_pose_bone and context.active_pose_bone.name != self.source_bone_name:
-
                 rig = context.object
                 src = rig.pose.bones.get(self.source_bone_name)
                 if self.mode == 0:
-
                     src.lsd_pg_kinematic_props.ratio_target_bone = context.active_pose_bone.name
-
                 else:
-
                     src.lsd_pg_kinematic_props.ratio_ref_bone = context.active_pose_bone.name
-
                 rig.data.bones.active = src.bone
                 context.window.cursor_set('DEFAULT')
                 return {'FINISHED'}
-
         return {'RUNNING_MODAL'}
-
 def write_urdf(context: bpy.types.Context, filepath: str, rig: bpy.types.Object, mesh_format: str) -> None:
-
     """
     Generates and writes the complete URDF file for the given armature.
     This function orchestrates the entire export process. It constructs the root
     <robot> XML element, adds required Gazebo plugins, finds the root(s) of the
     kinematic chain, and then recursively builds the URDF structure from there.
     Args:
-
         context: The current Blender context.
         filepath: The absolute path to write the URDF file to.
         rig: The armature object to export.
         mesh_format: The file format for the exported meshes (e.g., 'STL').
-
     """
     robot_name = rig.name
     robot = ET.Element('robot', name=robot_name)
@@ -6507,30 +4233,22 @@ def write_urdf(context: bpy.types.Context, filepath: str, rig: bpy.types.Object,
     # Find the root bone(s) of the armature. A robot can have multiple disconnected kinematic chains.
     root_bones = [b for b in rig.pose.bones if not b.parent]
     if not root_bones:
-
         print("URDF Export Error: No root bone found in the armature.")
         return
-
     # A set to keep track of links that have already been processed.
     # This is crucial for robots with multiple roots or complex branching.
     processed_links: Set[str] = set()
     for root_bone in root_bones:
-
         add_link_recursive(robot, root_bone, context, robot_name, mesh_format, processed_links)
-
     # --- Write the final XML file ---
     try:
-
         tree = ET.ElementTree(robot)
         ET.indent(tree, space="  ", level=0)
         tree.write(filepath, encoding='utf-8', xml_declaration=True)
-
     except IOError as e:
-
         print(f"Error writing URDF file to {filepath}: {e}")
         # It would be beneficial to report this error to the user via the UI.
         # self.report({'ERROR'}, f"File I/O Error: {e}") # (if in an operator)
-
 def add_link_recursive(
     robot: ET.Element,
     bone: bpy.types.PoseBone,
@@ -6539,7 +4257,6 @@ def add_link_recursive(
     mesh_format: str,
     processed_links: Set[str]
 ) -> None:
-
     """
     Recursively adds a <link> and its corresponding <joint> to the URDF tree.
     This function is the core of the export logic. For each bone, it:
@@ -6549,39 +4266,29 @@ def add_link_recursive(
     4. If the bone has a parent, it creates a <joint> element to connect it.
     5. Recursively calls itself for all child bones.
     Args:
-
         robot: The root <robot> XML element.
         bone: The current bone being processed.
         context: The current Blender context.
         robot_name: The name of the robot (used for package paths).
         mesh_format: The file format for exported meshes.
         processed_links: A set to track processed links to prevent duplicates in
-
                          complex or multi-root armatures.
-
     """
     if bone.name in processed_links:
-
         return
-
     processed_links.add(bone.name)
     link = ET.SubElement(robot, 'link', name=bone.name)
     child_meshes = get_all_children_objects(bone, context)
     # --- Add Visual and Collision Tags ---
     # A single link can be composed of multiple visual and collision meshes.
     if not child_meshes:
-
         # Add a dummy box to represent the link if no mesh is attached.
         # This can be useful for visualizing the kinematic chain.
         add_dummy_visual(link, bone)
-
     else:
-
         for mesh_obj in child_meshes:
-
             add_visual(link, bone, mesh_obj, robot_name, mesh_format)
             add_collision(link, bone, mesh_obj, robot_name, mesh_format)
-
     # --- Add Inertial Tag (once per link) ---
     # The inertial properties are defined for the link as a whole.
     add_inertial(link, bone)
@@ -6589,18 +4296,13 @@ def add_link_recursive(
     add_gazebo_tags(link, bone)
     # --- Add Joint connecting this link to its parent ---
     if bone.parent:
-
         add_joint(robot, parent_bone=bone.parent, child_bone=bone)
-
     # --- Add Transmission Tag (for ros2_control) ---
     add_transmission(robot, bone)
     # --- Recurse for all children ---
     for child_bone in bone.children:
-
         add_link_recursive(robot, child_bone, context, robot_name, mesh_format, processed_links)
-
 def add_dummy_visual(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
-
     """Adds a placeholder box visual for links with no associated mesh."""
     visual = ET.SubElement(link_element, 'visual')
     ET.SubElement(visual, 'origin', xyz="0 0 0", rpy="0 0 0")
@@ -6610,19 +4312,15 @@ def add_dummy_visual(link_element: ET.Element, bone: bpy.types.PoseBone) -> None
     box.set('size', f"{size} {size} {size}")
     material = ET.SubElement(visual, 'material', name=f"{bone.name}_dummy_mat")
     ET.SubElement(material, 'color', rgba="0.7 0.7 0.7 1.0")
-
 def add_visual(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: bpy.types.Object, robot_name: str, mesh_format: str) -> None:
-
     """
     Adds a <visual> tag to a link for a specific mesh object.
     Args:
-
         link_element: The <link> XML element to add to.
         bone: The bone that defines the link's frame of reference.
         mesh_obj: The mesh object to create the visual tag for.
         robot_name: The name of the robot package.
         mesh_format: The file format for the mesh.
-
     """
     visual = ET.SubElement(link_element, 'visual')
     # --- Origin Tag ---
@@ -6649,9 +4347,7 @@ def add_visual(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: bpy
     mesh_elem = ET.SubElement(geometry, 'mesh')
     mesh_ext = mesh_format.lower()
     if mesh_format == 'GLTF':
-
         mesh_ext = 'glb'
-
     mesh_filepath = os.path.join("meshes", f"{mesh_obj.name}.{mesh_ext}")
     mesh_elem.set('filename', f"package://{robot_name}/{mesh_filepath}")
     mesh_elem.set('scale', "1 1 1") # Scale is baked into the exported mesh.
@@ -6663,23 +4359,18 @@ def add_visual(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: bpy
     color = material_props.color
     ET.SubElement(material, 'color', rgba=f"{color[0]:.3f} {color[1]:.3f} {color[2]:.3f} {color[3]:.3f}")
     if material_props.texture and material_props.texture.name:
-
         ET.SubElement(material, 'texture', filename=f"package://{robot_name}/textures/{material_props.texture.name}")
-
 def add_collision(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: bpy.types.Object, robot_name: str, mesh_format: str) -> None:
-
     """
     Adds a <collision> tag to a link.
     It can use either the visual mesh itself or a dedicated collision object
     defined in the bone's properties.
     Args:
-
         link_element: The <link> XML element.
         bone: The bone defining the link's frame.
         mesh_obj: The primary visual mesh object (used as a fallback).
         robot_name: The name of the robot package.
         mesh_format: The file format for the mesh.
-
     """
     collision = ET.SubElement(link_element, 'collision')
     collision_props = bone.lsd_pg_kinematic_props.collision
@@ -6701,45 +4392,32 @@ def add_collision(link_element: ET.Element, bone: bpy.types.PoseBone, mesh_obj: 
     eval_coll_obj = collision_obj.evaluated_get(depsgraph)
     dims = eval_coll_obj.dimensions
     if shape == 'MESH':
-
         mesh_elem = ET.SubElement(geometry, 'mesh')
         mesh_ext = mesh_format.lower()
         if mesh_format == 'GLTF':
-
             mesh_ext = 'glb'
-
         mesh_filepath = os.path.join("meshes", f"{collision_obj.name}.{mesh_ext}")
         mesh_elem.set('filename', f"package://{robot_name}/{mesh_filepath}")
         mesh_elem.set('scale', "1 1 1")
-
     elif shape == 'BOX':
-
         box = ET.SubElement(geometry, 'box')
         box.set('size', f"{dims.x:.6f} {dims.y:.6f} {dims.z:.6f}")
-
     elif shape == 'CYLINDER':
-
         cylinder = ET.SubElement(geometry, 'cylinder')
         # URDF assumes Z is the cylinder's height axis.
         radius = (dims.x + dims.y) / 4.0
         cylinder.set('radius', f"{radius:.6f}")
         cylinder.set('length', f"{dims.z:.6f}")
-
     elif shape == 'SPHERE':
-
         sphere = ET.SubElement(geometry, 'sphere')
         radius = (dims.x + dims.y + dims.z) / 6.0
         sphere.set('radius', f"{radius:.6f}")
-
 def add_inertial(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
-
     """
     Adds the <inertial> tag to a link using properties from the bone.
     Args:
-
         link_element: The <link> XML element.
         bone: The bone containing the inertial properties.
-
     """
     inertial = ET.SubElement(link_element, 'inertial')
     inertial_props = bone.lsd_pg_kinematic_props.inertial
@@ -6750,16 +4428,12 @@ def add_inertial(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
     ET.SubElement(inertial, 'inertia',
                    ixx=f"{inertial_props.ixx:.6f}", iyy=f"{inertial_props.iyy:.6f}", izz=f"{inertial_props.izz:.6f}",
                    ixy=f"{inertial_props.ixy:.6f}", ixz=f"{inertial_props.ixz:.6f}", iyz=f"{inertial_props.iyz:.6f}")
-
 def add_gazebo_tags(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
-
     """
     Adds Gazebo-specific tags to a link, such as material for simulation.
     Args:
-
         link_element: The <link> XML element.
         bone: The bone containing the material properties.
-
     """
     material_props = bone.lsd_pg_kinematic_props.material
     color = material_props.color
@@ -6774,24 +4448,18 @@ def add_gazebo_tags(link_element: ET.Element, bone: bpy.types.PoseBone) -> None:
     ET.SubElement(material_tag, 'diffuse').text = f"{color[0]} {color[1]} {color[2]} {color[3]}"
     ET.SubElement(material_tag, 'specular').text = "0.1 0.1 0.1 1.0"
     ET.SubElement(material_tag, 'pbr') # Add empty PBR element for modern Gazebo versions
-
 def add_joint(robot: ET.Element, parent_bone: bpy.types.PoseBone, child_bone: bpy.types.PoseBone) -> None:
-
     """
     Adds a <joint> tag to the robot, connecting a child link to a parent link.
     Args:
-
         robot: The root <robot> XML element.
         parent_bone: The parent bone in the kinematic chain.
         child_bone: The child bone being connected.
-
     """
     props = child_bone.lsd_pg_kinematic_props
     joint_type = props.joint_type
     if joint_type == 'none': # 'none' means it's just a link in the chain, not a joint.
-
         return
-
     # AI Editor Note: Treat 'base' as 'fixed' for URDF export compatibility.
     # The 'base' type is a Blender-only concept for a freely movable root.
     # In URDF, if it has a parent, it must be rigidly attached.
@@ -6810,7 +4478,6 @@ def add_joint(robot: ET.Element, parent_bone: bpy.types.PoseBone, child_bone: bp
     origin.set('rpy', f"{rpy.x:.6f} {rpy.y:.6f} {rpy.z:.6f}")
     # --- Axis Tag (for non-fixed joints) ---
     if export_joint_type not in ['fixed']:
-
         axis_elem = ET.SubElement(joint, 'axis')
         axis_alignment = props.axis_alignment
         # Convert UI enum to a vector. The axis is defined in the joint's local frame.
@@ -6819,45 +4486,31 @@ def add_joint(robot: ET.Element, parent_bone: bpy.types.PoseBone, child_bone: bp
         else: axis_vec = mathutils.Vector((0, 0, 1)) # Z
         if '-' in axis_alignment: axis_vec *= -1.0
         axis_elem.set('xyz', f"{axis_vec.x} {axis_vec.y} {axis_vec.z}")
-
     # --- Limit Tag (for revolute and prismatic joints) ---
     if export_joint_type in ['revolute', 'prismatic']:
-
         limit = ET.SubElement(joint, 'limit', effort="1000.0", velocity="1.0")
         if export_joint_type == 'revolute':
-
             limit.set('lower', f"{math.radians(props.lower_limit):.6f}")
             limit.set('upper', f"{math.radians(props.upper_limit):.6f}")
-
         else: # prismatic
-
             limit.set('lower', f"{props.lower_limit:.6f}")
             limit.set('upper', f"{props.upper_limit:.6f}")
-
     # --- Mimic Tag ---
     for mimic in props.mimic_drivers:
-
         # Find the full joint name for the mimic target.
         mimic_target_bone = robot.find(f".//link[@name='{mimic.target_bone}']..../joint")
         if mimic_target_bone is not None:
-
              ET.SubElement(joint, 'mimic', joint=mimic_target_bone.get('name'), multiplier=f"{mimic.ratio:.6f}")
-
 def add_transmission(robot: ET.Element, bone: bpy.types.PoseBone) -> None:
-
     """
     Adds a <transmission> tag for a joint, required for ros2_control.
     Args:
-
         robot: The root <robot> XML element.
         bone: The bone whose joint needs a transmission.
-
     """
     props = bone.lsd_pg_kinematic_props
     if props.joint_type not in ['revolute', 'prismatic', 'continuous'] or not bone.parent:
-
         return
-
     joint_name = f"{bone.parent.name}_to_{bone.name}"
     trans_name = f"{joint_name}_transmission"
     trans_props = props.transmission
@@ -6868,9 +4521,7 @@ def add_transmission(robot: ET.Element, bone: bpy.types.PoseBone) -> None:
     actuator_elem = ET.SubElement(transmission, 'actuator', name=f"{joint_name}_motor")
     ET.SubElement(actuator_elem, 'hardwareInterface').text = trans_props.hardware_interface
     ET.SubElement(actuator_elem, 'mechanicalReduction').text = str(trans_props.mechanical_reduction)
-
 class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
-
     """Generates a standard ROS 2 workspace structure with a description package"""
     bl_idname = "lsd.generate_ros2_workspace"
     bl_label = "Generate ROS 2 Workspace"
@@ -6887,17 +4538,12 @@ class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
         subtype='DIR_PATH'
     )
     def invoke(self, context, event):
-
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
-
     def execute(self, context):
-
         if not self.directory:
-
             self.report({'ERROR'}, "Invalid directory path")
             return {'CANCELLED'}
-
         workspace_root = os.path.join(self.directory, self.workspace_name)
         rig = context.scene.lsd_active_rig
         robot_name = rig.name if rig else "my_robot"
@@ -6905,32 +4551,21 @@ class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
         pkg_name = re.sub(r'[^a-z0-9_]', '_', robot_name.lower()) + "_description"
         # --- Level 1: The Workspace ---
         for folder in ['src', 'build', 'install', 'log']:
-
             os.makedirs(os.path.join(workspace_root, folder), exist_ok=True)
-
         # --- Level 2: The Package ---
         pkg_root = os.path.join(workspace_root, 'src', pkg_name)
-
-        
-
         # --- Level 3: Functional Directories ---
         # Create standard folders
         for folder in ['launch', 'config', 'urdf', 'meshes', 'worlds', 'maps', 'include', 'src', 'test']:
-
             os.makedirs(os.path.join(pkg_root, folder), exist_ok=True)
-
-        
-
         # Create subfolders for meshes
         os.makedirs(os.path.join(pkg_root, 'meshes', 'visual'), exist_ok=True)
         os.makedirs(os.path.join(pkg_root, 'meshes', 'collision'), exist_ok=True)
         # 1. package.xml (The Manifest)
         package_xml_content = f"""<?xml version="1.0"?>
-
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 
 <package format="3">
-
   <name>{pkg_name}</name>
   <version>0.0.0</version>
   <description>The {pkg_name} package</description>
@@ -6946,28 +4581,19 @@ class LSD_OT_GenerateROS2Workspace(bpy.types.Operator):
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <export>
-
     <build_type>ament_cmake</build_type>
-
   </export>
-
 </package>
 
 """
-
         with open(os.path.join(pkg_root, 'package.xml'), 'w') as f:
-
             f.write(package_xml_content)
-
         # 2. CMakeLists.txt (Build Rules)
         cmake_content = f"""cmake_minimum_required(VERSION 3.8)
-
 project({pkg_name})
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-
   add_compile_options(-Wall -Wextra -Wpedantic)
-
 endif()
 
 find_package(ament_cmake REQUIRED)
@@ -6984,14 +4610,10 @@ install(
 ament_package()
 
 """
-
         with open(os.path.join(pkg_root, 'CMakeLists.txt'), 'w') as f:
-
             f.write(cmake_content)
-
         # 3. Dummy Launch File
         launch_content = f"""import os
-
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -6999,120 +4621,70 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-
     return LaunchDescription([
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('gazebo_ros'), 'launch', 'gazebo.launch.py')]),
-
         ),
-
     ])
-
 """
-
         # AI Editor Note: Renamed to gazebo.launch.py to match the functional requirement.
         # This ensures the template is ready for Gazebo simulation out of the box.
         with open(os.path.join(pkg_root, 'launch', 'gazebo.launch.py'), 'w') as f:
-
             f.write(launch_content)
-
         self.report({'INFO'}, f"Generated ROS 2 workspace at {workspace_root}")
         return {'FINISHED'}
-
 class LSD_OT_ExportList_Add(bpy.types.Operator):
-
     """Add selected armatures to the export list"""
     bl_idname = "lsd.export_list_add"
     bl_label = "Add Selected"
-
-    
-
     def execute(self, context):
-
         added = 0
         for obj in context.selected_objects:
-
             if obj.type == 'ARMATURE':
-
                 # Check if already in list
                 if not any(item.rig == obj for item in context.scene.lsd_export_list):
-
                     item = context.scene.lsd_export_list.add()
                     item.rig = obj
                     added += 1
-
         if added == 0 and context.scene.lsd_active_rig:
-
              if not any(item.rig == context.scene.lsd_active_rig for item in context.scene.lsd_export_list):
-
                 item = context.scene.lsd_export_list.add()
                 item.rig = context.scene.lsd_active_rig
                 added += 1
-
         return {'FINISHED'}
-
 class LSD_OT_ExportList_Remove(bpy.types.Operator):
-
     """Remove active item from export list"""
     bl_idname = "lsd.export_list_remove"
     bl_label = "Remove"
-
-    
-
     def execute(self, context):
-
         idx = context.scene.lsd_export_list_index
         try:
-
             context.scene.lsd_export_list.remove(idx)
             context.scene.lsd_export_list_index = min(max(0, idx - 1), len(context.scene.lsd_export_list) - 1)
-
         except:
-
             pass
-
         return {'FINISHED'}
-
 class LSD_OT_Export(bpy.types.Operator, ExportHelper):
-
     bl_idname = "lsd.export_general"
     bl_label = "Export Robot Package"
-
-    
-
     filename_ext = ".urdf"
-
-    
-
     filter_glob: bpy.props.StringProperty(
         default="*.urdf",
         options={'HIDDEN'},
         maxlen=255,
     )
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         scene = context.scene
-
-        
-
         # AI Editor Note: Determine which rigs to export (List vs Active)
         rigs_to_export = []
         if len(scene.lsd_export_list) > 0:
-
             rigs_to_export = [item.rig for item in scene.lsd_export_list if item.rig]
-
         elif scene.lsd_active_rig:
-
             rigs_to_export = [scene.lsd_active_rig]
-
-            
-
         if not rigs_to_export:
-
             self.report({'ERROR'}, "No rigs selected for export.")
             return {'CANCELLED'}
-
         # --- Base path and name from the file dialog ---
         base_dir = os.path.dirname(self.filepath)
         robot_name_from_file = os.path.splitext(os.path.basename(self.filepath))[0]
@@ -7121,37 +4693,22 @@ class LSD_OT_Export(bpy.types.Operator, ExportHelper):
         pkg_name = re.sub(r'[^a-z0-9_]', '_', robot_name_from_file.lower())
         # --- URDF Export Logic ---
         if scene.lsd_export_as_urdf:
-
             mesh_format = scene.lsd_export_mesh_format
-
-            
-
             # Export URDF for each rig
             for i, rig in enumerate(rigs_to_export):
-
                 # If exporting multiple, use rig name. If single, use filename.
                 if len(rigs_to_export) > 1:
-
                     lsd_name = f"{rig.name}.urdf"
-
                 else:
-
                     lsd_name = f"{robot_name_from_file}.urdf"
-
-                
-
                 lsd_filepath = os.path.join(base_dir, lsd_name)
                 write_urdf(context, lsd_filepath, rig, mesh_format)
-
             # --- Generate Package Config (package.xml, CMakeLists.txt) ---
             if scene.lsd_export_check_config:
-
                 package_xml_content = f"""<?xml version="1.0"?>
-
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 
 <package format="3">
-
   <name>{pkg_name}</name>
   <version>0.0.0</version>
   <description>The {pkg_name} package</description>
@@ -7167,25 +4724,16 @@ class LSD_OT_Export(bpy.types.Operator, ExportHelper):
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <export>
-
     <build_type>ament_cmake</build_type>
-
   </export>
-
 </package>"""
-
                 with open(os.path.join(base_dir, 'package.xml'), 'w') as f:
-
                     f.write(package_xml_content)
-
                 cmake_content = f"""cmake_minimum_required(VERSION 3.8)
-
 project({pkg_name})
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-
   add_compile_options(-Wall -Wextra -Wpedantic)
-
 endif()
 
 find_package(ament_cmake REQUIRED)
@@ -7200,36 +4748,21 @@ install(
 )
 
 ament_package()"""
-
                 with open(os.path.join(base_dir, 'CMakeLists.txt'), 'w') as f:
-
                     f.write(cmake_content)
-
             # --- Generate Launch Files ---
             if scene.lsd_export_check_launch:
-
                 launch_dir = os.path.join(base_dir, 'launch')
                 os.makedirs(launch_dir, exist_ok=True)
-
-                
-
                 # Generate launch file for each rig
                 for rig in rigs_to_export:
-
                     if len(rigs_to_export) > 1:
-
                         launch_filename = f"gazebo_{rig.name}.launch.py"
                         lsd_name = f"{rig.name}.urdf"
-
                     else:
-
                         launch_filename = "gazebo.launch.py"
                         lsd_name = f"{robot_name_from_file}.urdf"
-
-                        
-
                     launch_content = f"""import os
-
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -7237,17 +4770,13 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-
     lsd_file = '{os.path.join(base_dir, lsd_name)}'
     with open(lsd_file, 'r') as infp:
-
         robot_desc = infp.read()
-
     return LaunchDescription([
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('gazebo_ros'), 'launch', 'gazebo.launch.py')]),
-
         ),
         Node(
             package='robot_state_publisher',
@@ -7262,33 +4791,23 @@ def generate_launch_description():
             arguments=['-topic', 'robot_description', '-entity', '{rig.name}'],
             output='screen'
         )
-
     ])"""
-
-                    # Note: The launch file above uses a hardcoded path for simplicity in this context, 
+                    # Note: The launch file above uses a hardcoded path for simplicity in this context,
                     # but in a real installed package it would use get_package_share_directory.
                     # For a generated export, we provide a basic template.
                     with open(os.path.join(launch_dir, launch_filename), 'w') as f:
-
                         f.write(launch_content)
-
             meshes_to_export: Set[bpy.types.Object] = set()
             for rig in rigs_to_export:
-
                 for bone in rig.pose.bones:
-
                     visual_meshes = get_all_children_objects(bone, context)
                     meshes_to_export.update(visual_meshes)
                     collision_props = bone.lsd_pg_kinematic_props.collision
                     if collision_props.shape == 'MESH':
-
                         collision_obj = collision_props.collision_object
                         if collision_obj and collision_obj.type == 'MESH':
-
                             meshes_to_export.add(collision_obj)
-
             if meshes_to_export and scene.lsd_export_check_meshes:
-
                 meshes_dir = os.path.join(base_dir, "meshes")
                 textures_dir = os.path.join(base_dir, "textures")
                 os.makedirs(meshes_dir, exist_ok=True)
@@ -7296,100 +4815,54 @@ def generate_launch_description():
                 original_selection = context.selected_objects
                 original_active = context.view_layer.objects.active
                 for o in context.view_layer.objects:
-
                     o.select_set(False)
-
-                
-
                 wm = context.window_manager
                 wm.progress_begin(0, len(meshes_to_export))
-
-                
-
                 for i, obj in enumerate(meshes_to_export):
-
                     wm.progress_update(i)
                     context.view_layer.objects.active = obj
                     obj.select_set(True)
-
-                    
-
                     try:
-
                         if mesh_format == 'STL':
-
                             mesh_filepath = os.path.join(meshes_dir, f"{obj.name}.stl")
                             bpy.ops.export_mesh.stl(filepath=mesh_filepath, use_selection=True, global_scale=1.0, use_mesh_modifiers=True)
-
                         elif mesh_format == 'DAE':
-
                             mesh_filepath = os.path.join(meshes_dir, f"{obj.name}.dae")
                             bpy.ops.wm.collada_export(filepath=mesh_filepath, selected=True, apply_modifiers=True)
-
                         elif mesh_format == 'GLTF':
-
                             mesh_filepath = os.path.join(meshes_dir, f"{obj.name}.glb")
                             bpy.ops.export_scene.gltf(filepath=mesh_filepath, use_selection=True, export_format='GLB', export_apply=True, export_yup=True)
-
                     except Exception as e:
-
                         self.report({'WARNING'}, f"Could not export mesh '{obj.name}' for URDF: {e}")
-
-                    
-
                     obj.select_set(False)
                     if mesh_format in ['DAE', 'GLTF'] and scene.lsd_export_check_textures:
-
                         if obj.active_material and obj.active_material.use_nodes:
-
                             for node in obj.active_material.node_tree.nodes:
-
                                 if node.type == 'TEX_IMAGE' and node.image:
-
                                     try:
-
                                         texture_filepath = os.path.join(textures_dir, node.image.name)
                                         if not os.path.exists(texture_filepath) and node.image.has_data:
-
                                             node.image.save(filepath=texture_filepath)
-
                                     except Exception as e:
-
                                         self.report({'WARNING'}, f"Could not save texture '{node.image.name}': {e}")
-
-                
-
                 wm.progress_end()
                 for o in context.view_layer.objects:
-
                     o.select_set(False)
-
                 for obj in original_selection:
-
                     obj.select_set(True)
-
                 context.view_layer.objects.active = original_active
-
-            
-
             self.report({'INFO'}, f"Exported URDF package to {base_dir}")
-
         # --- glTF Export Logic ---
         if scene.lsd_export_as_gltf:
-
             gltf_filepath = os.path.join(base_dir, f"{robot_name_from_file}.glb")
             try:
-
                 # Select rig and all its children for export
                 # AI Editor Note: Select all rigs if multiple are present
                 bpy.ops.object.select_all(action='DESELECT')
                 for rig in rigs_to_export:
-
                     rig.select_set(True)
                     for child in rig.children_recursive:
-
                         child.select_set(True)
-
                 bpy.ops.export_scene.gltf(
                     filepath=gltf_filepath,
                     use_selection=True,
@@ -7401,35 +4874,24 @@ def generate_launch_description():
                     export_yup=True
                 )
                 self.report({'INFO'}, f"Exported scene as glTF to {gltf_filepath}")
-
             except Exception as e:
-
                 self.report({'ERROR'}, f"Failed to export glTF: {e}")
-
         if not scene.lsd_export_as_urdf and not scene.lsd_export_as_gltf:
-
             self.report({'WARNING'}, "No export format selected.")
             return {'CANCELLED'}
-
         return {'FINISHED'}
-
 class LSD_OT_ExportSelected(bpy.types.Operator, ExportHelper):
-
     """Export selected objects to a specific format with geometry and texture data"""
     bl_idname = "lsd.export_selected"
     bl_label = "Export Selected Mesh"
     bl_description = "Export selected objects to USD, glTF, OBJ, etc. for external software (Rhino, etc.)"
     bl_options = {'REGISTER', 'UNDO'}
     filename_ext: bpy.props.StringProperty(default="", options={'HIDDEN'})
-
-    
-
     filter_glob: bpy.props.StringProperty(
         default="*.usdc;*.usda;*.glb;*.gltf;*.obj;*.fbx;*.stl",
         options={'HIDDEN'},
     )
     def invoke(self, context, event):
-
         fmt = context.scene.lsd_quick_export_format
         if fmt == 'USD': self.filename_ext = ".usdc"
         elif fmt == 'GLTF': self.filename_ext = ".glb"
@@ -7437,85 +4899,47 @@ class LSD_OT_ExportSelected(bpy.types.Operator, ExportHelper):
         elif fmt == 'FBX': self.filename_ext = ".fbx"
         elif fmt == 'STL': self.filename_ext = ".stl"
         return ExportHelper.invoke(self, context, event)
-
     def execute(self, context):
-
         fmt = context.scene.lsd_quick_export_format
         fpath = self.filepath
-
-        
-
         if not fpath.lower().endswith(self.filename_ext):
-
             fpath += self.filename_ext
-
         try:
-
             if fmt == 'USD':
-
                 bpy.ops.wm.usd_export(filepath=fpath, selected_objects_only=True, export_materials=True, export_textures=True, export_uvmaps=True, export_normals=True)
-
             elif fmt == 'GLTF':
-
                 bpy.ops.export_scene.gltf(filepath=fpath, use_selection=True, export_format='GLB', export_apply=True, export_texcoords=True, export_normals=True)
-
             elif fmt == 'OBJ':
-
                 bpy.ops.wm.obj_export(filepath=fpath, export_selected_objects=True, export_materials=True, export_uv=True, export_normals=True, apply_modifiers=True)
-
             elif fmt == 'FBX':
-
                 bpy.ops.export_scene.fbx(filepath=fpath, use_selection=True, use_mesh_modifiers=True, mesh_smooth_type='FACE', path_mode='COPY', embed_textures=True)
-
             elif fmt == 'STL':
-
                 bpy.ops.export_mesh.stl(filepath=fpath, use_selection=True, use_mesh_modifiers=True)
-
-            
-
             self.report({'INFO'}, f"Exported selected to {fpath}")
             return {'FINISHED'}
-
         except Exception as e:
-
             self.report({'ERROR'}, f"Export failed: {e}")
             return {'CANCELLED'}
-
 class LSD_OT_TogglePlacement(bpy.types.Operator):
-
     bl_idname = "lsd.toggle_placement"
     bl_label = "Toggle Joint Placement Mode"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         rig = context.scene.lsd_active_rig
         if not rig:
-
             self.report({'WARNING'}, "No active rig selected.")
             return {'CANCELLED'}
-
         is_entering_placement = not context.scene.lsd_placement_mode
         if is_entering_placement:
-
             context.scene.lsd_placement_mode = True
-
-            
-
             if rig.animation_data:
-
                 for d in rig.animation_data.drivers:
-
                     d.mute = True
-
-            
-
             # --- AI Editor Note: Robust Context Management ---
             # To safely switch to Pose Mode, we must first ensure that the target
             # armature ('rig') is the active object in the view layer.
             # The following lines guarantee the correct context before calling the mode_set operator.
             if context.mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT') # Go to object mode first to be safe
-
             bpy.ops.object.select_all(action='DESELECT')
             context.view_layer.objects.active = rig
             rig.select_set(True)
@@ -7523,81 +4947,53 @@ class LSD_OT_TogglePlacement(bpy.types.Operator):
             bpy.ops.object.mode_set(mode='POSE')
             # This call will unlock the bones because lsd_placement_mode is now True
             for pb in rig.pose.bones:
-
-                apply_native_constraints(pb) 
-
-            
-
+                apply_native_constraints(pb)
             self.report({'INFO'}, "Joint placement mode enabled.")
-
         else: # Exiting placement mode
-
             context.scene.lsd_placement_mode = False
             # --- AI Editor Note: Robust Context Management ---
             # Ensure the rig is active before performing mode changes or pose operations.
             if context.view_layer.objects.active != rig or rig.mode != 'POSE':
-
                 # Go to object mode first to be safe, e.g. if in edit mode on another object
                 if context.mode != 'OBJECT':
-
                     bpy.ops.object.mode_set(mode='OBJECT')
-
                 bpy.ops.object.select_all(action='DESELECT')
                 context.view_layer.objects.active = rig
                 rig.select_set(True)
                 bpy.ops.object.mode_set(mode='POSE')
-
             # Apply the current pose as the new rest pose for the armature.
             bpy.ops.pose.armature_apply(selected=False)
-
-            
-
             # --- AI Editor Note: Update drivers AFTER applying pose to prevent snapping ---
             # When the rest pose is applied, the offsets in existing drivers become invalid.
             # We must iterate through all mimic relationships and re-apply the driver logic
             # to recalculate the offsets based on the new rest pose.
             for pb in rig.pose.bones:
-
                 if hasattr(pb, 'lsd_pg_kinematic_props') and pb.lsd_pg_kinematic_props.mimic_drivers:
-
                     for mimic in pb.lsd_pg_kinematic_props.mimic_drivers:
-
                         # Re-run the driver setup to update the expression with the new offset.
                         # The 'invert' setting is read from the bone's single 'ratio_invert' property,
                         # consistent with how new mimic drivers are created.
                         core.add_native_driver_relation(pb, mimic.target_bone, mimic.ratio, pb.lsd_pg_kinematic_props.ratio_invert)
-
             if rig.animation_data:
-
                 for d in rig.animation_data.drivers:
-
                     d.mute = False
-
             # --- RESTORE CONSTRAINTS ---
             # Now that placement mode is off, re-apply the constraints.
             for pb in rig.pose.bones:
-
                 apply_native_constraints(pb)
-
             self.report({'INFO'}, "Joint placement mode disabled.")
-
         context.view_layer.update()
         return {'FINISHED'}
-
 class LSD_OT_CreateRig(bpy.types.Operator):
-
     bl_idname = "lsd.create_rig"
     bl_label = "Create New Robot"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         base_name = "New_Kinematics"
         name = base_name
         count = 2
         while name in context.scene.objects:
-
             name = f"{count}_Kinematics"
             count += 1
-
         armature_data = bpy.data.armatures.new(name + "_Data")
         rig = bpy.data.objects.new(name, armature_data)
         rig.location = context.scene.cursor.location # AI Editor Note: Create rig at cursor location
@@ -7610,55 +5006,37 @@ class LSD_OT_CreateRig(bpy.types.Operator):
         rig.select_set(True)
         context.view_layer.objects.active = rig
         return {'FINISHED'}
-
 class LSD_OT_MergeArmatures(bpy.types.Operator):
-
     """Merge selected armatures into a new armature workspace"""
     bl_idname = "lsd.merge_armatures"
     bl_label = "Merge Armatures"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
-        return (context.mode == 'OBJECT' and 
-                context.active_object and 
-                context.active_object.type == 'ARMATURE' and 
+        return (context.mode == 'OBJECT' and
+                context.active_object and
+                context.active_object.type == 'ARMATURE' and
                 len([o for o in context.selected_objects if o.type == 'ARMATURE']) > 1)
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         old_target_rig = context.active_object
         # --- AI Editor Note: ReferenceError Fix ---
         # Store the name of the original rig before it gets deleted. The old_target_rig
         # object reference becomes invalid after the original objects are removed.
         old_target_rig_name = old_target_rig.name
         old_armatures = [o for o in context.selected_objects if o.type == 'ARMATURE']
-
-        
-
         # 1. Collect all objects to copy (Armatures + Recursive Children)
         # We use an iterative approach to find all descendants to ensure we get the full hierarchy.
         objects_to_copy = set(old_armatures)
         all_scene_objects = set(context.scene.objects)
-
-        
-
         while True:
-
             children = {o for o in all_scene_objects if o.parent in objects_to_copy and o not in objects_to_copy}
             if not children:
-
                 break
-
             objects_to_copy.update(children)
-
-            
-
         # 2. Duplicate into New Workspace
         bpy.ops.object.select_all(action='DESELECT')
         objects_to_delete = [] # Keep track of objects we successfully select for duplication
         for obj in objects_to_copy:
-
             # --- AI Editor Note: Fix for disappearing objects ---
             # Blender's duplicate operator ignores hidden objects. We must ensure
             # all parts of the hierarchy are visible and selectable before duplication.
@@ -7667,550 +5045,307 @@ class LSD_OT_MergeArmatures(bpy.types.Operator):
             obj.hide_set(False)
             obj.hide_select = False
             try:
-
                 obj.select_set(True)
                 objects_to_delete.append(obj)
-
             except RuntimeError:
-
                 # Object is likely not in the current View Layer (e.g. disabled collection).
                 # We cannot duplicate it, so we must NOT delete it later to prevent data loss.
                 continue
-
-            
-
         # Ensure the main rig is active so its copy becomes the new main rig
         context.view_layer.objects.active = old_target_rig
-
-        
-
         bpy.ops.object.duplicate(linked=False)
-
-        
-
         # The selection now contains the new copies.
         new_target_rig = context.active_object
         new_objects = context.selected_objects
-
-        
-
         # Identify the new armatures to be joined (excluding the target)
         new_armatures_to_join = [o for o in new_objects if o.type == 'ARMATURE' and o != new_target_rig]
         # --- AI Editor Note: Identify armatures for joining and remapping ---
         # This set is created before the join operation, so it holds valid references
         # to the armature copies that will be consumed.
         new_armatures_to_join_set = set(new_armatures_to_join)
-
-        
-
         # --- AI Editor Note: Pre-Join Bone Renaming ---
         # We must ensure unique bone names BEFORE joining to preserve Vertex Groups and parent relationships.
         # Blender's join operator renames colliding bones (e.g. "Bone" -> "Bone.001") but does NOT
         # update the Vertex Groups or parent_bone references on child meshes, causing them to detach or deform incorrectly.
-
-        
-
         existing_bone_names = {b.name for b in new_target_rig.data.bones}
-
-        
-
         for rig in new_armatures_to_join:
-
             # Snapshot of current rig's bone names to avoid collision within itself during renaming
             current_rig_bone_names = {b.name for b in rig.data.bones}
-
-            
-
             # Find dependent objects for this rig
             dependent_objects = []
             for obj in new_objects:
-
                 if obj.type == 'MESH':
-
                     if obj.parent == rig:
-
                         dependent_objects.append(obj)
-
                     elif any(m.type == 'ARMATURE' and m.object == rig for m in obj.modifiers):
-
                         dependent_objects.append(obj)
-
-            
-
             for bone in rig.data.bones:
-
                 if bone.name in existing_bone_names:
-
                     old_name = bone.name
                     new_name = old_name
                     counter = 1
                     while new_name in existing_bone_names or new_name in current_rig_bone_names:
-
                         new_name = f"{old_name}.{counter:03d}"
                         counter += 1
-
-                    
-
                     bone.name = new_name
                     existing_bone_names.add(new_name)
-
-                    
-
                     # Update references in dependent objects
                     for obj in dependent_objects:
-
                         # Update Vertex Groups
                         vg = obj.vertex_groups.get(old_name)
                         if vg: vg.name = new_name
-
-                        
-
                         # Update Parent Bone
                         if obj.parent == rig and obj.parent_type == 'BONE' and obj.parent_bone == old_name:
-
                             obj.parent_bone = new_name
-
-                            
-
                     # Update Constraints on any new object targeting this rig/bone
                     for obj in new_objects:
-
                         for con in obj.constraints:
-
                             if hasattr(con, 'target') and con.target == rig and hasattr(con, 'subtarget') and con.subtarget == old_name:
-
                                 con.subtarget = new_name
-
-                                
-
                     # Update Drivers
                     for obj in new_objects:
-
                         if obj.animation_data and obj.animation_data.drivers:
-
                             for d in obj.animation_data.drivers:
-
                                 for v in d.driver.variables:
-
                                     for t in v.targets:
-
                                         if t.id == rig:
-
                                             if hasattr(t, 'bone_target') and t.bone_target == old_name:
-
                                                 t.bone_target = new_name
-
                                             if hasattr(t, 'data_path') and f'["{old_name}"]' in t.data_path:
-
                                                 t.data_path = t.data_path.replace(f'["{old_name}"]', f'["{new_name}"]')
-
                 else:
-
                     existing_bone_names.add(bone.name)
-
-        
-
         # 3. Join Armatures
         # Select only the armatures for joining
         bpy.ops.object.select_all(action='DESELECT')
         new_target_rig.select_set(True)
         context.view_layer.objects.active = new_target_rig
-
-        
-
         for rig_to_join in new_armatures_to_join:
-
             rig_to_join.select_set(True)
-
-            
-
         bpy.ops.object.join()
-
-        
-
         # --- AI Editor Note: Post-Join Pointer Remapping ---
         # After joining, any Drivers or Geometry Nodes on the duplicated objects
         # that pointed to the now-deleted armatures are broken. This loop
         # iterates through all newly created objects and redirects those pointers
         # to the final merged armature, ensuring all procedural setups continue to function.
         for obj in new_objects:
-
             try:
-
                 # This check is the most robust way to see if the object reference
                 # from our list is still valid after the join operation.
                 if obj.name not in bpy.data.objects:
-
                     continue
-
             except ReferenceError:
-
                 # This handles the case where the object reference itself is invalid.
                 continue
-
-                
-
             # A. Remap Drivers
             if obj.animation_data and obj.animation_data.drivers:
-
                 for d in obj.animation_data.drivers:
-
                     for v in d.driver.variables:
-
                         for t in v.targets:
-
                             try:
-
                                 # Check if the driver target was one of the armatures we just joined.
                                 if t.id in new_armatures_to_join_set:
-
                                     t.id = new_target_rig
-
                             except ReferenceError:
-
                                 # The target ID might be an invalid reference itself. Safe to ignore.
                                 pass
-
             # B. Remap Geometry Node Inputs
             for mod in obj.modifiers:
-
                 if mod.type == 'NODES' and mod.node_group:
-
                     # Iterate through the modifier's interface sockets.
                     for item in mod.node_group.interface.items_tree:
-
                         if item.item_type == 'SOCKET' and item.socket_type == 'NodeSocketObject':
-
                             try:
-
                                 # Get the object currently assigned to this input.
                                 input_obj = mod[item.identifier]
                                 # If it was one of the joined armatures, re-point it.
                                 if input_obj in new_armatures_to_join_set:
-
                                     mod[item.identifier] = new_target_rig
-
                             except (KeyError, ReferenceError):
-
                                 # This can happen if the input isn't set or the object is gone.
                                 # It's safe to ignore these cases.
                                 pass
-
             # C. Remap Constraints
             # Constraints on the new objects might point to the armature copies that are about to be joined/deleted.
             # We redirect them to the new merged rig to prevent broken links.
             for con in obj.constraints:
-
                 if hasattr(con, 'target') and con.target in new_armatures_to_join_set:
-
                     con.target = new_target_rig
-
             # D. Remap Modifiers
             # Armature modifiers (and others like Hook, SimpleDeform) might point to the consumed armatures.
             # If these links break, the mesh might jump or disappear.
             for mod in obj.modifiers:
-
                 if hasattr(mod, 'object') and mod.object in new_armatures_to_join_set:
-
                     mod.object = new_target_rig
-
                 if mod.type == 'ARRAY' and mod.use_object_offset and mod.offset_object in new_armatures_to_join_set:
-
                     mod.offset_object = new_target_rig
-
-        
-
         # 5. Delete Old Data
         # Remove the original objects to complete the "move to workspace" effect
         for obj in objects_to_delete:
-
             if obj.name in context.scene.objects:
-
                  bpy.data.objects.remove(obj, do_unlink=True)
-
         # 6. Finalize
         new_target_rig.name = f"{old_target_rig_name}_Merged"
         context.scene.lsd_active_rig = new_target_rig
-
-        
-
         # AI Editor Note: Force a full update of gizmos and constraints on the new rig.
         # This ensures that the merged result is clean and fully functional.
         update_all_gizmos(context.scene, context)
-
-        
-
         self.report({'INFO'}, f"Merged into new workspace '{new_target_rig.name}'")
         return {'FINISHED'}
-
 class LSD_OT_PurgeBones(bpy.types.Operator):
-
     """Removes selected bones and unparents their associated meshes, cleaning up the rig."""
     bl_idname = "lsd.purge_bones"
     bl_label = "Purge Selected Bones / Joints"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         if context.mode == 'OBJECT':
-
             return len(context.selected_objects) > 0
-
         elif context.mode == 'POSE':
-
             return len(context.selected_pose_bones) > 0
-
         return False
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         rig = context.scene.lsd_active_rig
         bones_to_remove = set()
         objects_to_unparent = []
         # 1. Identify targets based on mode
         if context.mode == 'OBJECT':
-
             if not rig:
-
                 self.report({'WARNING'}, "No active rig set.")
                 return {'CANCELLED'}
-
-            
-
             for obj in context.selected_objects:
-
                 if obj.type == 'ARMATURE':
-
                     # If the armature itself is selected, look for bones selected in its data
                     for b in obj.data.bones:
-
                         if b.select:
-
                             bones_to_remove.add(b.name)
-
-                
-
                 if obj.parent == rig and obj.parent_type == 'BONE' and obj.parent_bone:
-
                     bones_to_remove.add(obj.parent_bone)
                     objects_to_unparent.append(obj)
-
-        
-
         elif context.mode == 'POSE':
-
             rig = context.object
             for pb in context.selected_pose_bones:
-
                 bones_to_remove.add(pb.name)
                 # Find children to unparent so they don't jump
                 children = get_all_children_objects(pb, context)
                 objects_to_unparent.extend(children)
-
         if not bones_to_remove:
-
             self.report({'WARNING'}, "No bones linked to selection found.")
             return {'CANCELLED'}
-
         # 2. Deletion Process (Simplified: No smart preservation)
         previous_mode = context.mode
-        
         # Switch to Object Mode to ensure clean selection handling
         if context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT')
-            
         bpy.ops.object.select_all(action='DESELECT')
         context.view_layer.objects.active = rig
         rig.select_set(True)
-
-        
-
         context.view_layer.objects.active = rig
         rig.select_set(True)
-
-        
-
         bpy.ops.object.mode_set(mode='EDIT')
-
-        
-
         armature = rig.data
         count = 0
         for bone_name in bones_to_remove:
-
             eb = armature.edit_bones.get(bone_name)
             if eb:
-
                 armature.edit_bones.remove(eb)
                 count += 1
-
-        
-
         # 4. Restore context
         if previous_mode == 'OBJECT':
-
             bpy.ops.object.mode_set(mode='OBJECT')
             # Reselect the objects that were unparented
             for obj in objects_to_unparent:
-
                 obj.select_set(True)
-
             if objects_to_unparent:
-
                 context.view_layer.objects.active = objects_to_unparent[0]
-
         else:
-
             bpy.ops.object.mode_set(mode='POSE')
-
         # --- 5. Cleanup unused gizmos ---
         # AI Editor Note: Garbage collect unused widget objects to keep the scene clean.
         # This ensures that when bones are purged, their visual widgets don't linger if unused.
         used_widgets = set()
         for obj in bpy.data.objects:
-
             if obj.type == 'ARMATURE':
-
                 for pb in obj.pose.bones:
-
                     if pb.custom_shape:
-
                         used_widgets.add(pb.custom_shape)
-
-        
-
         widgets_coll = bpy.data.collections.get(WIDGETS_COLLECTION_NAME)
         if widgets_coll:
-
             widgets_to_remove = [w for w in widgets_coll.objects if w not in used_widgets]
             for widget in widgets_to_remove:
-
                 bpy.data.objects.remove(widget, do_unlink=True)
-
         self.report({'INFO'}, f"Purged {count} bones and unparented {len(objects_to_unparent)} objects.")
         return {'FINISHED'}
-
 class LSD_OT_ParentToActive(bpy.types.Operator):
-
     bl_idname = "lsd.parent_to_active"
     bl_label = "Parent Selected to Active"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         active_obj = context.active_object
         if not active_obj:
-
             return {'CANCELLED'}
-
         rig = None
         parent_bone_name = None
         # Case 1: The active object is the armature itself. The active pose bone is the target parent.
         if active_obj.type == 'ARMATURE':
-
             rig = active_obj
             parent_bone_name = context.active_pose_bone.name if context.active_pose_bone else None
-
         # Case 2: The active object is a mesh, likely a custom bone shape.
         # We need to find which bone in which armature is using this mesh.
         elif active_obj.type == 'MESH':
-
             # Iterate through all armatures in the scene
             for r in [o for o in context.scene.objects if o.type == 'ARMATURE']:
-
                 for bone in r.pose.bones:
-
                     if bone.custom_shape == active_obj:
-
                         rig = r
                         parent_bone_name = bone.name
                         break # Found bone, stop searching in this armature
-
                 if rig:
-
                     break # Found armature, stop searching other armatures
-
         if not rig or not parent_bone_name:
-
             return {'CANCELLED'}
-
         # AI Editor Note: Support both bone-to-bone and mesh-to-bone parenting.
         # Find all selected/sub-selected bones and meshes to parent.
         selected_bones = []
         selected_meshes = set()
-
-        
-
         def gather_recursive(o):
-
             if o.type == 'MESH' and o != rig:
-
                 selected_meshes.add(o)
-
             for child in o.children:
-
                 gather_recursive(child)
-
         for obj in context.selected_objects:
-
             if obj.type == 'ARMATURE' and obj == rig:
-
                 # If armature is selected, use pose bone selection
                 for pbone in rig.pose.bones:
-
                     if pbone.bone.select and pbone.name != parent_bone_name:
-
                         selected_bones.append(pbone.name)
-
             else:
-
                 gather_recursive(obj)
-
-        
-
         if not selected_bones and not selected_meshes:
-
             return {'CANCELLED'}
-
-        
-
         # 1. Mesh Parenting
         if selected_meshes:
-
             for mesh in selected_meshes:
-
                 mesh.parent = rig
                 mesh.parent_type = 'BONE'
                 mesh.parent_bone = parent_bone_name
-
-                
-
         # 2. Bone Parenting (requires Edit Mode)
         if selected_bones:
-
             context.view_layer.objects.active = rig
             bpy.ops.object.mode_set(mode='EDIT')
             eb_parent = rig.data.edit_bones.get(parent_bone_name)
             for name in selected_bones:
-
                 eb_child = rig.data.edit_bones.get(name)
                 if eb_child:
-
                     eb_child.use_connect = False
                     eb_child.parent = eb_parent
-
             bpy.ops.object.mode_set(mode='POSE')
-
-            
-
         self.report({'INFO'}, f"Parented {len(selected_meshes)} meshes and {len(selected_bones)} bones to {parent_bone_name}")
         return {'FINISHED'}
-
 class LSD_OT_EnterPoseMode(bpy.types.Operator):
-
     bl_idname = "lsd.enter_pose_mode"
     bl_label = "Pose Mode to Set Gizmos"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # --- AI Editor Note: Context-Sensitive Rig Update ---
         # If the user has selected an armature (or a part of one), update the
         # active rig setting to match. This ensures the tool works on the
@@ -8218,148 +5353,84 @@ class LSD_OT_EnterPoseMode(bpy.types.Operator):
         target_rig = None
         active_obj = context.active_object
         if active_obj:
-
             if active_obj.type == 'ARMATURE':
-
                 target_rig = active_obj
-
             elif active_obj.parent and active_obj.parent.type == 'ARMATURE':
-
                 target_rig = active_obj.parent
-
-        
-
         if not target_rig:
-
              for obj in context.selected_objects:
-
                 if obj.type == 'ARMATURE':
-
                     target_rig = obj
                     break
-
-        
-
         if target_rig:
-
             context.scene.lsd_active_rig = target_rig
-
         # --- AI Editor Note: AttributeError Fix ---
         # Ensure a rig exists before proceeding. This prevents 'rig' from being None if no
         # armature has been created or set as active yet.
         rig = ensure_default_rig(context)
         if not rig:
-
             self.report({'ERROR'}, "Could not find or create an active rig.")
             return {'CANCELLED'}
-
-        
-
         # AI Editor Note: Smart bone selection.
         # If the active object is a mesh parented to a bone, select that bone upon entering Pose Mode.
         target_bone_name = None
         if active_obj and active_obj.parent == rig and active_obj.parent_type == 'BONE':
-
             target_bone_name = active_obj.parent_bone
-
         # AI Editor Note: Use manual deselection to avoid operator context errors.
         for o in context.view_layer.objects:
-
             o.select_set(False)
-
         context.view_layer.objects.active = rig
         rig.select_set(True)
         bpy.ops.object.mode_set(mode='POSE')
-
-        
-
         if target_bone_name:
-
             pbone = rig.pose.bones.get(target_bone_name)
             if pbone:
-
                 rig.data.bones.active = pbone.bone
                 pbone.bone.select = True
-
-                
-
         return {'FINISHED'}
-
 class LSD_OT_EnterObjectMode(bpy.types.Operator):
-
     bl_idname = "lsd.enter_object_mode"
     bl_label = "Object Mode"
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         bpy.ops.object.mode_set(mode='OBJECT')
         return {'FINISHED'}
-
 def _calculate_bone_geometry(objs: List[bpy.types.Object], axis_orient: str, reference_obj: bpy.types.Object = None, unit_scale: float = 1.0) -> Tuple[mathutils.Vector, mathutils.Vector, mathutils.Vector, float]:
-
     """
     Calculates the head, tail, and roll for a bone based on one or more mesh objects.
-
-    
-
-    AI Editor Note: Support for multiple objects ensures that complex links made of 
+    AI Editor Note: Support for multiple objects ensures that complex links made of
     several meshes (sub-selections) are correctly encompassed by a single bone.
     """
     if not isinstance(objs, (list, tuple, set)):
-
         objs = [objs]
-
-    
-
     if not reference_obj:
-
         reference_obj = objs[0]
-
-    
-
     mat = reference_obj.matrix_world
     inv_mat = mat.inverted()
-
-    
-
     # 1. Build a combined bounding box in the reference object's local space
     all_points_local = []
     for o in objs:
-
         o_mat = o.matrix_world
         # Include all bbox corners if available (Meshes)
         if hasattr(o, 'bound_box') and o.bound_box:
-
             for b in o.bound_box:
-
                 v_world = o_mat @ mathutils.Vector(b)
                 all_points_local.append(inv_mat @ v_world)
-
         else:
-
             # Fallback to origin for objects without geometry (Empties)
             all_points_local.append(inv_mat @ o_mat.translation)
-
-        
-
     if not all_points_local:
-
         return mat.translation, mat.translation + mathutils.Vector((0, 0.1, 0)), mathutils.Vector((0, 0, 1)), 0.1
-
     # 2. Extract head and orientation logic
     head_world = mat.translation
     tail_world: mathutils.Vector
     roll_vec_world: mathutils.Vector
     if axis_orient == 'AUTO':
-
         # --- Logic for Local Z-Axis Alignment ---
         y_vec_local = mathutils.Vector((0, 0, 1.0))
         z_vec_local = mathutils.Vector((1.0, 0, 0)) # Roll around local X
         # Calculate initial tail and roll in world space
         max_dist = max((p.dot(y_vec_local) for p in all_points_local), default=0.1)
         if max_dist < 0.001: max_dist = 0.1
-
-        
-
         tail_local = y_vec_local * max_dist
         initial_tail_world = mat @ tail_local
         initial_roll_vec_world = mat.to_3x3() @ z_vec_local
@@ -8377,35 +5448,22 @@ def _calculate_bone_geometry(objs: List[bpy.types.Object], axis_orient: str, ref
         bone_length = (initial_tail_world - head_world).length
         tail_world = head_world + bone_length * new_y_vec_world
         roll_vec_world = new_z_vec_world
-
     else:
-
         # --- Logic for Local X, Y, Z Alignment ---
         is_neg = axis_orient.startswith("-")
         axis_char = axis_orient.replace("-", "")
-
-        
-
         # Define bone's primary axis (Y) and roll axis (Z) in the REFERENCE's LOCAL space.
         if axis_char == 'X':
-
             y_vec_local = mathutils.Vector((1, 0, 0))
             roll_vec_local = mathutils.Vector((0, 0, 1))
-
         elif axis_char == 'Y':
-
             y_vec_local = mathutils.Vector((0, 1, 0))
             roll_vec_local = mathutils.Vector((1, 0, 0))
-
         else: # 'Z'
-
             y_vec_local = mathutils.Vector((0, 0, 1))
             roll_vec_local = mathutils.Vector((0, 1, 0))
-
         if is_neg:
-
             y_vec_local *= -1.0
-
         # Transform these local direction vectors into world space
         obj_rot_mat = mat.to_3x3()
         y_vec_world = (obj_rot_mat @ y_vec_local).normalized()
@@ -8414,58 +5472,37 @@ def _calculate_bone_geometry(objs: List[bpy.types.Object], axis_orient: str, ref
         # Project all world points onto the bone's direction vector
         origin_proj = head_world.dot(y_vec_world)
         projections = [(mat @ p).dot(y_vec_world) for p in all_points_local]
-
-        
-
         max_extent = max(p - origin_proj for p in projections)
         if max_extent < 0.001:
-
             length = max(projections) - min(projections)
-
         else:
-
             length = max_extent
-
-        
-
         if length < 0.001: length = 0.01
         tail_world = head_world + length * y_vec_world
-
     # --- Final Radius Calculation (common for all modes) ---
     bone_axis_world = (tail_world - head_world).normalized()
     max_radius = 0.0
     for p_local in all_points_local:
-
         v_world = mat @ p_local
         vec_to_point = v_world - head_world
         proj_len = vec_to_point.dot(bone_axis_world)
         proj_vec = proj_len * bone_axis_world
         dist = (vec_to_point - proj_vec).length
         if dist > max_radius:
-
             max_radius = dist
-
-            
-
-    if max_radius < 0.001: 
+    if max_radius < 0.001:
         max_radius = 0.05 / (unit_scale if unit_scale > 0 else 1.0) # Ensure 0.05m fallback
-
     return head_world, tail_world, roll_vec_world, max_radius * unit_scale
-
 def _process_bones_in_edit_mode(rig: bpy.types.Object, bones_to_create: List[Tuple[str, mathutils.Vector, mathutils.Vector, mathutils.Vector]]) -> None:
-
     """
     Creates or updates a batch of bones in a single Edit Mode session.
     :param rig: The armature object.
     :param bones_to_create: A list of tuples, each containing
-
                             (bone_name, head_world, tail_world, roll_vec_world).
-
     """
     bpy.ops.object.mode_set(mode='EDIT')
     rig_mat_inv = rig.matrix_world.inverted()
     for b_name, head, tail, roll_vec in bones_to_create:
-
         eb = rig.data.edit_bones.get(b_name) or rig.data.edit_bones.new(b_name)
         eb.head = rig_mat_inv @ head
         eb.tail = rig_mat_inv @ tail
@@ -8480,31 +5517,22 @@ def _process_bones_in_edit_mode(rig: bpy.types.Object, bones_to_create: List[Tup
         # from the calculated alignment (which matches the object's local axes).
         # By removing this, the bone's Y-axis will correctly align with the
         # object's local axis determined in `_calculate_bone_geometry`.
-
 def _process_bones_in_pose_mode(rig: bpy.types.Object, bones_to_process: list, context: bpy.types.Context) -> None:
-
     """
     Sets properties and parents meshes in a single Pose Mode session.
     :param rig: The armature object.
     :param bones_to_process: A list of dicts, each containing 'name', 'objs_data', 'radius', 'axis'.
-
                              'objs_data' is a list of (obj, original_matrix).
-
     :param context: The current Blender context.
     """
     bpy.ops.object.mode_set(mode='POSE')
     for b_info in bones_to_process:
-
         b_name = b_info['name']
         axis = b_info['axis']
         radius = b_info['radius']
         objs_data = b_info['objs_data']
-
-        
-
         pbone = rig.pose.bones.get(b_name)
         if pbone:
-
             # AI Editor Note: Set the bone's axis property to match the alignment axis.
             pbone.lsd_pg_kinematic_props.axis_alignment = 'Z' if axis == 'AUTO' else axis
             pbone.lsd_pg_kinematic_props.joint_type = 'none'
@@ -8512,19 +5540,15 @@ def _process_bones_in_pose_mode(rig: bpy.types.Object, bones_to_process: list, c
             update_single_bone_gizmo(pbone, context.scene.lsd_viz_gizmos, context.scene.lsd_gizmo_style)
             # Parent all meshes in the group to the bone while keeping their world transforms
             for obj, original_matrix in objs_data:
-
                 obj.parent = rig
                 obj.parent_type = 'BONE'
                 obj.parent_bone = b_name
                 obj.matrix_world = original_matrix
-
 class LSD_OT_AddBone(bpy.types.Operator):
-
     bl_idname = "lsd.add_bone"
     bl_label = "Set / Align Bones"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         """
         Creates or updates bones based on selected mesh objects.
         AI Editor Note:
@@ -8536,231 +5560,130 @@ class LSD_OT_AddBone(bpy.types.Operator):
             bone names, etc.) is collected in Object Mode *before* any changes
             are made. This avoids issues with accessing data that might become
             invalid after a mode change.
-
         2.  **Batch Edit Mode Operations**: The operator switches to Edit Mode
-
             *once*, creates or updates all bones in a single batch, and then
             switches out.
-
         3.  **Batch Pose Mode Operations**: It then switches to Pose Mode *once*
-
             to set all properties, constraints, and parenting relationships.
-
         4.  **Restore Context**: Finally, it restores the user's original selection
-
             and active object, providing a seamless user experience.
-
         """
         # Collect base targets from selection (excluding armatures)
         base_targets = [obj for obj in context.selected_objects if obj.type != 'ARMATURE']
-
-        
-
         # Helper to gather all descendants recursively
         def gather_recursive(o, obj_set):
-
             obj_set.add(o)
             for child in o.children:
-
                 gather_recursive(child, obj_set)
-
         rig = context.scene.lsd_active_rig
-
-        
-
         # Sub-selection Support: Check for meshes parented to selected pose bones if we are in Pose Mode.
         bone_to_mesh_map = {}
         if context.mode == 'POSE' and context.selected_pose_bones:
-
             for pbone in context.selected_pose_bones:
-
                 meshes = get_all_children_objects(pbone, context)
                 if meshes:
-
                     bone_to_mesh_map[pbone.name] = meshes
-
-        
-
         if not base_targets and not bone_to_mesh_map:
-
             self.report({'WARNING'}, "Select at least one object (or bone with meshes) and set an active rig.")
             return {'CANCELLED'}
-
-            
-
         if not rig or rig.name not in context.view_layer.objects:
-
             # Try to get rig from active object if scene property is not set or invalid
             if context.active_object and context.active_object.type == 'ARMATURE':
-
                 rig = context.active_object
-
             elif context.mode == 'POSE' and context.object and context.object.type == 'ARMATURE':
-
                 rig = context.object
-
-            
-
             # If still not found, search selected objects for an armature
             if not rig or rig.name not in context.view_layer.objects:
-
                 for obj in context.selected_objects:
-
                     if obj.type == 'ARMATURE':
-
                         rig = obj
                         break
-
-            
-
             # If still not found, search children of selected targets for their parent rig
             if not rig or rig.name not in context.view_layer.objects:
-
                 for obj in base_targets:
-
                     if obj.parent and obj.parent.type == 'ARMATURE' and obj.parent.name in context.view_layer.objects:
-
                         rig = obj.parent
                         break
-
             if not rig or rig.name not in context.view_layer.objects:
-
                 rig_name = rig.name if rig else "None"
                 self.report({'ERROR'}, f"Active rig '{rig_name}' not found in current ViewLayer. Select an armature or set it in the Kinematics panel.")
                 return {'CANCELLED'}
-
-            
-
             # Update the scene property to the valid one we found
             context.scene.lsd_active_rig = rig
-
         # AI Editor Note: Force update to ensure all object matrices are fresh before calculation.
         context.view_layer.update()
         # --- 1. Gather Geometry Data ---
         bones_to_process = []
         axis_for_alignment = context.scene.lsd_bone_axis
         unit_scale = context.scene.unit_settings.scale_length
-
-        
-
         if base_targets:
-
             mode = context.scene.lsd_bone_mode
             groups = [] # List of tuples: (reference_obj, [all_objs_in_group])
-
-            
-
             if mode == 'SINGLE':
-
                 # All selected objects and their descendants belong to one single group
                 all_objects = set()
                 for obj in base_targets:
-
                     gather_recursive(obj, all_objects)
-
-                
-
                 active_obj = context.active_object
                 reference = active_obj if active_obj in all_objects else list(all_objects)[0]
                 groups.append((reference, list(all_objects)))
-
             else: # 'INDIVIDUAL'
-
                 # Find top-level selected objects (ignore a selected object if its parent is also selected)
                 top_level_targets = []
                 for obj in base_targets:
-
                     curr = obj.parent
                     is_sub_selected = False
                     while curr:
-
                         if curr in base_targets:
-
                             is_sub_selected = True
                             break
-
                         curr = curr.parent
-
                     if not is_sub_selected:
-
                         top_level_targets.append(obj)
-
-                
-
                 # Each top-level selected object forms a group along with its full hierarchy
                 for root_obj in top_level_targets:
-
                     group_objs = set()
                     gather_recursive(root_obj, group_objs)
                     groups.append((root_obj, list(group_objs)))
-
-            
-
             for reference, group_objs in groups:
-
                 head, tail, roll, radius = _calculate_bone_geometry(group_objs, axis_for_alignment, reference, unit_scale)
                 # Reuse bone name if already parented
                 b_name = reference.parent_bone if reference.parent == rig and reference.parent_type == 'BONE' else f"Bone_{reference.name.replace('.', '_')}"
-
-                
-
                 objs_data = [(o, o.matrix_world.copy()) for o in group_objs]
                 bones_to_process.append({
-                    'name': b_name, 
-                    'head': head, 
-                    'tail': tail, 
-                    'roll': roll, 
-                    'objs_data': objs_data, 
-                    'radius': radius, 
+                    'name': b_name,
+                    'head': head,
+                    'tail': tail,
+                    'roll': roll,
+                    'objs_data': objs_data,
+                    'radius': radius,
                     'axis': axis_for_alignment
                 })
-
-        
-
         if bone_to_mesh_map:
-
             # Handle bone sub-selection: Align each selected bone to its respective meshes
             for b_name, meshes in bone_to_mesh_map.items():
-
                 if any(b['name'] == b_name for b in bones_to_process):
-
                     continue
-
-                
-
                 primary_obj = meshes[0]
                 head, tail, roll, radius = _calculate_bone_geometry(meshes, axis_for_alignment, primary_obj, unit_scale)
-
-                
-
                 objs_data = [(o, o.matrix_world.copy()) for o in meshes]
                 bones_to_process.append({
-                    'name': b_name, 
-                    'head': head, 
-                    'tail': tail, 
-                    'roll': roll, 
-                    'objs_data': objs_data, 
-                    'radius': radius, 
+                    'name': b_name,
+                    'head': head,
+                    'tail': tail,
+                    'roll': roll,
+                    'objs_data': objs_data,
+                    'radius': radius,
                     'axis': axis_for_alignment
                 })
-
         if not bones_to_process:
-
             return {'CANCELLED'}
-
         # --- 3. Perform Operations in Batches ---
         original_mode = rig.mode
         original_active = context.view_layer.objects.active
-
-        
-
         # AI Editor Note: Use manual de-selection to avoid operator 'poll' failures in certain contexts.
         for obj in context.view_layer.objects:
-
             obj.select_set(False)
-
-            
-
         context.view_layer.objects.active = rig
         rig.select_set(True)
         # Batch 1: Edit Mode
@@ -8770,14 +5693,10 @@ class LSD_OT_AddBone(bpy.types.Operator):
         # AI Editor Note: Force a mode switch to OBJECT and an update first.
         bpy.ops.object.mode_set(mode='OBJECT')
         context.view_layer.update()
-
-        
-
         _process_bones_in_pose_mode(rig, bones_to_process, context)
         # --- 4. Switch to Pose Mode and sync selection ---
         context.view_layer.objects.active = rig
         bpy.ops.object.mode_set(mode='POSE')
-        
         # AI Editor Note: Ensure the last bone added is both active and selected.
         # This allows the following read_joint_settings call to succeed and populate the UI.
         if bones_to_process:
@@ -8786,19 +5705,13 @@ class LSD_OT_AddBone(bpy.types.Operator):
             if pb:
                 rig.data.bones.active = pb.bone
                 pb.bone.select = True
-
-        
-
         # AI Editor Note: Sync tool settings with the newly created active bone.
         # This solves the 'initial radius not recognized' bug by ensuring the sidebar
         # immediately reflects the physical dimensions calculated from geometry.
         bpy.ops.lsd.read_joint_settings()
-
         self.report({'INFO'}, f"Processed {len(bones_to_process)} bones.")
         return {'FINISHED'}
-
 class LSD_OT_ApplyRestPose(bpy.types.Operator):
-
     """Applies the current pose as the new rest pose for the entire armature, updating all drivers to maintain relationships."""
     bl_idname = "lsd.apply_rest_pose"
     bl_label = "Apply as Rest Pose"
@@ -8806,92 +5719,55 @@ class LSD_OT_ApplyRestPose(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-
         return context.scene.lsd_active_rig is not None or len(context.selected_objects) > 0
-
     def execute(self, context: bpy.types.Context) -> Set[str]:
-
         # 1. Apply Scale & Rotation to selected Mesh objects (including sub-selected hierarchies)
         all_meshes = set()
         def gather_meshes(o):
-
             if o.type == 'MESH':
-
                 all_meshes.add(o)
-
             for child in o.children:
-
                 gather_meshes(child)
-
         for obj in context.selected_objects:
-
             gather_meshes(obj)
-
         selected_meshes = list(all_meshes)
         if selected_meshes:
-
             if context.mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT')
-
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
             self.report({'INFO'}, f"Applied transforms to {len(selected_meshes)} meshes.")
-
         # 2. Apply Rest Pose to Active Rig
         rig = context.scene.lsd_active_rig
         if rig and rig.name in context.view_layer.objects:
-
             prev_mode = context.mode
             prev_active = context.view_layer.objects.active
-
-            
-
             if context.mode != 'OBJECT':
-
                 bpy.ops.object.mode_set(mode='OBJECT')
-
             bpy.ops.object.select_all(action='DESELECT')
             context.view_layer.objects.active = rig
             rig.select_set(True)
             bpy.ops.object.mode_set(mode='POSE')
             bpy.ops.pose.armature_apply(selected=False)
             for bone in rig.pose.bones:
-
                 if hasattr(bone, 'lsd_pg_kinematic_props') and bone.lsd_pg_kinematic_props.mimic_drivers:
-
                     for mimic in bone.lsd_pg_kinematic_props.mimic_drivers:
-
                         core.add_native_driver_relation(bone, mimic.target_bone, mimic.ratio, bone.lsd_pg_kinematic_props.ratio_invert)
-
-            
-
             bpy.ops.object.mode_set(mode='OBJECT')
             if prev_active and prev_active.name in context.view_layer.objects:
-
                 context.view_layer.objects.active = prev_active
                 prev_active.select_set(True)
-
             for m in selected_meshes:
-
                 m.select_set(True)
-
             if prev_mode == 'POSE' and prev_active == rig:
-
                 bpy.ops.object.mode_set(mode='POSE')
-
             self.report({'INFO'}, "Applied Rest Pose to Armature.")
-
-            
-
         return {'FINISHED'}
-
 # ------------------------------------------------------------------------
 
 class LSD_OT_LightTarget(bpy.types.Operator):
-
     """
     Constrains selected lights to point specifically at the last selected object center.
-    AI Editor Note: This uses a Damped Track constraint to ensure the light follows 
+    AI Editor Note: This uses a Damped Track constraint to ensure the light follows
     the target dynamically as it moves.
     """
     bl_idname = "lsd.light_target"
@@ -8899,56 +5775,35 @@ class LSD_OT_LightTarget(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         props = context.scene.lsd_pg_lighting_props
         # Enabled if eyedropper has target OR anything is selected in viewport
-        return (props.selected_light_target is not None or 
+        return (props.selected_light_target is not None or
                 len(context.selected_objects) >= 1)
-
     def execute(self, context):
-
         props = context.scene.lsd_pg_lighting_props
         # Priority 1: Eyedropper target
         # Priority 2: Active object
         target = props.selected_light_target or context.active_object
-
-        
-
         if not target:
-
             self.report({'ERROR'}, "Select a target via eyedropper or pick one in the viewport.")
             return {'CANCELLED'}
-
         count = 0
         for obj in context.selected_objects:
-
             if obj == target or obj.type != 'LIGHT':
-
                 continue
-
-            
-
             # Remove existing tracking if any
             for c in obj.constraints:
-
                 if c.type in ['DAMPED_TRACK', 'TRACK_TO']:
-
                     obj.constraints.remove(c)
-
-            
-
             # Add Damped Track
             # -Z is the standard direction for Blender lights (Spot, Area, Sun)
             dt = obj.constraints.new('DAMPED_TRACK')
             dt.target = target
             dt.track_axis = 'TRACK_NEGATIVE_Z'
             count += 1
-
         self.report({'INFO'}, f"Targeted {count} lights to {target.name}")
         return {'FINISHED'}
-
 class LSD_OT_ApplyToonShader(bpy.types.Operator):
-
     """
     Applies a 'Shader to RGB' node setup to selected objects to remove light gradients.
     Note: Requires EEVEE renderer to work properly.
@@ -8958,147 +5813,79 @@ class LSD_OT_ApplyToonShader(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         return any(o.type == 'MESH' for o in context.selected_objects)
-
     def execute(self, context):
-
         count = 0
         for obj in context.selected_objects:
-
             if obj.type != 'MESH': continue
-
-            
-
             # Ensure at least one material slot exists
             if not obj.material_slots:
-
                 obj.data.materials.append(bpy.data.materials.new(name="Toon_Material"))
-
-            
-
             for slot in obj.material_slots:
-
                 mat = slot.material
                 if not mat:
-
                     mat = bpy.data.materials.new(name="Toon_Material")
                     slot.material = mat
-
-                
-
                 mat.use_nodes = True
                 nodes = mat.node_tree.nodes
                 links = mat.node_tree.links
-
-                
-
                 # Avoid duplicates
                 if any(n.name == "Toon_ColorRamp" for n in nodes):
-
                     count += 1
                     continue
-
-                
-
                 # Get Output or create one
                 output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
                 if not output_node:
-
                     output_node = nodes.new('ShaderNodeOutputMaterial')
                     output_node.location = (400, 0)
-
-                
-
                 # Find a shader to work with - find existing link or create Principled BSDF
                 source_socket = None
                 surface_input = output_node.inputs['Surface']
-
-                
-
                 if surface_input.links:
-
                     source_socket = surface_input.links[0].from_socket
-
                 else:
-
                     shader_node = next((n for n in nodes if n.type in {'BSDF_PRINCIPLED', 'BSDF_DIFFUSE'}), None)
                     if not shader_node:
-
                         shader_node = nodes.new('ShaderNodeBsdfPrincipled')
                         shader_node.location = (-800, 0)
-
                     source_socket = shader_node.outputs[0]
-
-                
-
                 if not source_socket: continue
-
-                
-
                 # --- TOON MASTER SETUP ---
                 # 1. Shader to RGB (Captures Light/Shadow Data)
                 s_to_rgb = nodes.new('ShaderNodeShaderToRGB')
                 s_to_rgb.location = (output_node.location.x - 700, output_node.location.y)
-
-                
-
                 # 2. Color Ramp (The Hard Terminator with 30% shadow floor)
                 ramp = nodes.new('ShaderNodeValToRGB')
                 ramp.name = "Toon_ColorRamp"
                 ramp.label = "Toon Mask"
                 ramp.location = (output_node.location.x - 450, output_node.location.y)
                 ramp.color_ramp.interpolation = 'CONSTANT'
-
-                
-
                 # First stop: 30% visibility for ambient detail
                 ramp.color_ramp.elements[0].color = (0.3, 0.3, 0.3, 1.0)
                 ramp.color_ramp.elements[0].position = 0.5
-
-                
-
                 # Second stop: 100% visibility for lit areas
                 ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1.0)
-
-                
-
                 # 3. Mix (Multiply Light Mask with Base Color)
                 mix = nodes.new('ShaderNodeMix')
                 mix.data_type = 'RGBA'
                 mix.blend_type = 'MULTIPLY'
                 mix.location = (output_node.location.x - 200, output_node.location.y)
                 mix.inputs[0].default_value = 1.0 # Factor 100%
-
-                
-
                 # Check for existing color nodes to plug into A
                 base_color_node = next((n for n in nodes if n.type == 'RGB' or n.name == "Base Color"), None)
                 if base_color_node:
-
                     links.new(base_color_node.outputs[0], mix.inputs[6])
-
                 else:
-
                     mix.inputs[6].default_value = (1.0, 1.0, 1.0, 1.0)
-
                 # --- Link the chain ---
                 links.new(source_socket, s_to_rgb.inputs[0])
                 links.new(s_to_rgb.outputs[0], ramp.inputs[0])
                 links.new(ramp.outputs[0], mix.inputs[7]) # Slot B
                 links.new(mix.outputs[2], surface_input)
-
-                
-
                 count += 1
-
-                
-
         self.report({'INFO'}, f"Applied Ambient-Friendly Toon setup to {count} materials.")
         return {'FINISHED'}
-
 class LSD_OT_GlobalToonSharpness(bpy.types.Operator):
-
     """
     Sets all lights in the scene to sharp shadows and zero specular for tooning.
     """
@@ -9107,40 +5894,28 @@ class LSD_OT_GlobalToonSharpness(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
     mode: bpy.props.EnumProperty(
         items=[('TOON', "Toon", ""), ('REALISTIC', "Realistic", "")]
-
     )
     def execute(self, context):
-
         count = 0
         for light in bpy.data.lights:
-
             if self.mode == 'TOON':
-
                 if hasattr(light, 'shadow_soft_size'): light.shadow_soft_size = 0.0
                 if hasattr(light, 'radius'): light.radius = 0.0
                 if hasattr(light, 'angle'): light.angle = 0.0
                 if hasattr(light, 'specular_factor'): light.specular_factor = 0.0
                 if hasattr(light, 'shadow_buffer_bias'): light.shadow_buffer_bias = 0.1
                 if hasattr(light, 'use_contact_shadow'): light.use_contact_shadow = True
-
             else:
-
                 if hasattr(light, 'shadow_soft_size'): light.shadow_soft_size = 0.1
                 if hasattr(light, 'radius'): light.radius = 0.2
                 if hasattr(light, 'angle'): light.angle = 0.1
                 if hasattr(light, 'specular_factor'): light.specular_factor = 1.0
                 if hasattr(light, 'shadow_buffer_bias'): light.shadow_buffer_bias = 0.05
                 if hasattr(light, 'use_contact_shadow'): light.use_contact_shadow = False
-
             count += 1
-
-            
-
         self.report({'INFO'}, f"Updated {count} lights to {self.mode.lower()} mode.")
         return {'FINISHED'}
-
 class LSD_OT_ToonifySelectedLights(bpy.types.Operator):
-
     """
     Sets selected light sources to sharp 'Toon' style lighting.
     """
@@ -9148,12 +5923,9 @@ class LSD_OT_ToonifySelectedLights(bpy.types.Operator):
     bl_label = "Toonify Selected Lights"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         count = 0
         for obj in context.selected_objects:
-
             if obj.type == 'LIGHT':
-
                 light = obj.data
                 if hasattr(light, 'shadow_soft_size'): light.shadow_soft_size = 0.0
                 if hasattr(light, 'radius'): light.radius = 0.0
@@ -9162,12 +5934,8 @@ class LSD_OT_ToonifySelectedLights(bpy.types.Operator):
                 if hasattr(light, 'use_contact_shadow'): light.use_contact_shadow = True
                 if hasattr(light, 'spot_blend'): light.spot_blend = 0.0
                 count += 1
-
-        
-
         self.report({'INFO'}, f"Toonified {count} light sources.")
         return {'FINISHED'}
-
 # ------------------------------------------------------------------------
 
 #   OPERATORS: CAMERA CINEMATOGRAPHY
@@ -9175,85 +5943,45 @@ class LSD_OT_ToonifySelectedLights(bpy.types.Operator):
 # ------------------------------------------------------------------------
 
 class LSD_OT_CreateCamera(bpy.types.Operator):
-
     """Creates a new Blueprint-ready camera based on selected preset."""
     bl_idname = "lsd.create_camera"
     bl_label = "Spawn Camera"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         scene = context.scene
         preset = scene.lsd_camera_preset
-
-        
-
         # Create camera data
         cam_data = bpy.data.cameras.new(name="LSD_Camera")
-
-        
-
         # Apply Preset
         if preset == '70MM':
-
             cam_data.lens = 70.0
-
         elif preset == '16MM':
-
             cam_data.lens = 16.0
-
         elif preset == '8MM':
-
             cam_data.lens = 8.0
-
         else: # 35MM
-
             cam_data.lens = 35.0
-
-            
-
         # Create object
         cam_obj = bpy.data.objects.new(name="Camera_Blueprint", object_data=cam_data)
         context.collection.objects.link(cam_obj)
-
-        
-
         # Position at cursor
         cam_obj.location = scene.cursor.location
         cam_obj.rotation_euler = (math.radians(90), 0, 0) # Level horizon
-
-        
-
         # Select and Activate
         for o in context.view_layer.objects.selected:
-
             o.select_set(False)
-
         cam_obj.select_set(True)
         context.view_layer.objects.active = cam_obj
-
-        
-
         # Initialize LSD properties
         cam_obj.lsd_pg_mech_props.is_part = True
         cam_obj.lsd_pg_mech_props.category = 'NONE' # It's a tool
-
-        
-
         # Synchronize LSD mirror props to camera data
         cam_obj.lsd_pg_mech_props.camera_focal_length = cam_data.lens
-
-        
-
         # Switch to the new camera immediately
         scene.camera = cam_obj
-
-        
-
         self.report({'INFO'}, f"Spawned {preset} Camera at cursor.")
         return {'FINISHED'}
-
 class LSD_OT_Browse_Library(bpy.types.Operator):
-
     """Browse for a library directory with accurate Draftsman tooltips."""
     bl_idname = "lsd.browse_library"
     bl_label = "Select Directory"
@@ -9261,69 +5989,40 @@ class LSD_OT_Browse_Library(bpy.types.Operator):
     directory: bpy.props.StringProperty(subtype='DIR_PATH')
     prop_name: bpy.props.StringProperty()
     def execute(self, context):
-
         asset_props = context.scene.lsd_pg_asset_props
         if hasattr(asset_props, self.prop_name):
-
             setattr(asset_props, self.prop_name, self.directory)
-
         return {'FINISHED'}
-
     def invoke(self, context, event):
-
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
-
 class LSD_OT_Camera_Setup(bpy.types.Operator):
-
     """Binds camera to targets and paths for high-fidelity simulation recording."""
     bl_label = "Apply Camera Setup"
     bl_idname = "lsd.camera_setup"
     bl_options = {'REGISTER', 'UNDO'}
     def execute(self, context):
-
         cam_obj = context.active_object
         if not cam_obj or cam_obj.type != 'CAMERA':
-
              self.report({'ERROR'}, "Invalid Camera Object Selection")
              return {'CANCELLED'}
-
-        
-
         props = cam_obj.lsd_pg_mech_props
-
-        
-
         # 1. Lens Properties Synchronization
         cam_obj.data.lens = props.camera_focal_length
         cam_obj.data.dof.use_dof = props.camera_dof_enabled
         if props.camera_dof_enabled:
-
             cam_obj.data.dof.aperture_fstop = props.camera_fstop
             if props.camera_target:
-
                 cam_obj.data.dof.focus_object = props.camera_target
-
-        
-
         # 2. Path Kinematics (Follow Path)
         if props.camera_path:
-
              c_path = next((c for c in cam_obj.constraints if c.type == 'FOLLOW_PATH'), None)
              if not c_path:
-
                   c_path = cam_obj.constraints.new('FOLLOW_PATH')
-
-             
-
              c_path.target = props.camera_path
              c_path.use_fixed_location = True # Essential for absolute path driving
-
-             
-
              # Driver Implementation: Connect custom offset to internal constraint factor
              if not c_path.driver_add("offset_factor").driver:
-
                   fcurve = c_path.driver_add("offset_factor")
                   driver = fcurve.driver
                   driver.type = 'AVERAGE'
@@ -9333,53 +6032,34 @@ class LSD_OT_Camera_Setup(bpy.types.Operator):
                   var.targets[0].id = cam_obj
                   var.targets[0].data_path = "lsd_pg_mech_props.camera_path_offset"
                   driver.expression = "offset"
-
-        
-
         # 3. Track To / Lock View (Look At Target)
         if props.camera_target:
-
              c_look = next((c for c in cam_obj.constraints if c.type == 'TRACK_TO'), None)
              if not c_look:
-
                   c_look = cam_obj.constraints.new('TRACK_TO')
-
              c_look.target = props.camera_target
              c_look.track_axis = 'TRACK_NEGATIVE_Z'
              c_look.up_axis = 'UP_Y'
              c_look.target_space = 'WORLD'
              c_look.owner_space = 'WORLD'
-
-        
-
         return {'FINISHED'}
-
 class LSD_OT_Camera_Look_Through(bpy.types.Operator):
-
     """Makes the active camera the primary scene viewport."""
     bl_label = "View Through Camera"
     bl_idname = "lsd.camera_look_through"
     def execute(self, context):
-
         if context.active_object and context.active_object.type == 'CAMERA':
-
             context.scene.camera = context.active_object
             # Switch the viewport perspective immediately
             for area in context.screen.areas:
-
                 if area.type == 'VIEW_3D':
-
                     area.spaces.active.region_3d.view_perspective = 'CAMERA'
-
         return {'FINISHED'}
-
 class LSD_OT_AccurateScale(bpy.types.Operator):
-
     """Accurately set the scale of the selected object on the chosen axes."""
     bl_idname = "lsd.accurate_scale"
     bl_label = "Apply Scale"
     bl_options = {'REGISTER', 'UNDO'}
-
     def execute(self, context):
         import mathutils
         scene = context.scene
@@ -9387,12 +6067,10 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
         target_dim = scene.lsd_scale_value
         scale_mode = getattr(scene, 'lsd_scale_mode', 'INDIVIDUAL')
         pivot_mode = getattr(scene, 'lsd_scale_pivot', 'ORIGIN')
-
         # Determine Center Point in World Space
         pivot_world = mathutils.Vector((0,0,0))
         if pivot_mode == 'CURSOR':
             pivot_world = scene.cursor.location
-
         if context.mode == 'EDIT_MESH':
             # --- EDIT MODE DRAFTING ---
             import bmesh
@@ -9401,7 +6079,6 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
                 bm = bmesh.from_edit_mesh(obj.data)
                 verts = [v for v in bm.verts if v.select]
                 if not verts: continue
-                
                 # Calculate Bounding Box of selected vertices in World Space
                 min_v = mathutils.Vector((float('inf'),)*3)
                 max_v = mathutils.Vector((float('-inf'),)*3)
@@ -9410,29 +6087,23 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
                     for i in range(3):
                         min_v[i] = min(min_v[i], world_co[i])
                         max_v[i] = max(max_v[i], world_co[i])
-                
                 current_dims = max_v - min_v
                 center_world = (min_v + max_v) / 2.0
-                
                 # Define Scale Center based on Pivot Mode
                 active_pivot = center_world if pivot_mode == 'ORIGIN' else pivot_world
                 local_pivot = obj.matrix_world.inverted() @ active_pivot
-                
                 scale_vec = mathutils.Vector((1.0, 1.0, 1.0))
                 for i in range(3):
                     if axes[i] and current_dims[i] > 1e-8:
                         scale_vec[i] = target_dim / current_dims[i]
-                
                 # Apply transformation around the local pivot
                 bmesh.ops.scale(bm, verts=verts, vec=scale_vec, space=mathutils.Matrix.Translation(-local_pivot))
                 bmesh.update_edit_mesh(obj.data)
-            
         else:
             # --- OBJECT MODE DRAFTING ---
             targets = context.selected_objects
             if not targets:
                 return {'CANCELLED'}
-
             if scale_mode == 'GROUP' and len(targets) > 0:
                 # Scale entire selection as a single mechatronic unit
                 min_v = mathutils.Vector((float('inf'),)*3)
@@ -9443,16 +6114,13 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
                         for i in range(3):
                             min_v[i] = min(min_v[i], world_corner[i])
                             max_v[i] = max(max_v[i], world_corner[i])
-                
                 total_dims = max_v - min_v
                 group_center = (min_v + max_v) / 2.0
                 active_pivot = group_center if pivot_mode == 'ORIGIN' else pivot_world
-                
                 scale_vec = mathutils.Vector((1.0, 1.0, 1.0))
                 for i in range(3):
                     if axes[i] and total_dims[i] > 1e-8:
                         scale_vec[i] = target_dim / total_dims[i]
-                
                 for o in targets:
                     # Translation relative to the pivot
                     rel_pos = o.matrix_world.translation - active_pivot
@@ -9460,7 +6128,6 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
                     rel_pos.y *= scale_vec.y
                     rel_pos.z *= scale_vec.z
                     o.matrix_world.translation = active_pivot + rel_pos
-                    
                     # Scale
                     o.scale.x *= scale_vec.x
                     o.scale.y *= scale_vec.y
@@ -9477,71 +6144,53 @@ class LSD_OT_AccurateScale(bpy.types.Operator):
                         if obj.dimensions.x > 0.00000001 and axes[0]: sv.x = target_dim / obj.dimensions.x
                         if obj.dimensions.y > 0.00000001 and axes[1]: sv.y = target_dim / obj.dimensions.y
                         if obj.dimensions.z > 0.00000001 and axes[2]: sv.z = target_dim / obj.dimensions.z
-                        
                         rel_pos.x *= sv.x; rel_pos.y *= sv.y; rel_pos.z *= sv.z
                         obj.matrix_world.translation = pivot_world + rel_pos
-                        
                         obj.scale.x *= sv.x; obj.scale.y *= sv.y; obj.scale.z *= sv.z
                     else:
                         # Pure origin-based scaling
                         if obj.dimensions.x > 0.00000001 and axes[0]: obj.scale.x *= (target_dim / obj.dimensions.x)
                         if obj.dimensions.y > 0.00000001 and axes[1]: obj.scale.y *= (target_dim / obj.dimensions.y)
                         if obj.dimensions.z > 0.00000001 and axes[2]: obj.scale.z *= (target_dim / obj.dimensions.z)
-
             # Bake to 1.0 (Applied Scale)
             bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
         return {'FINISHED'}
-
 class LSD_OT_Dimension_AutoScale(bpy.types.Operator):
-
     """Automatically scale arrowheads, text, line thickness and offset based on dimension length."""
     bl_idname = "lsd.dimension_auto_scale"
     bl_label = "Auto Size Components"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
-
         from . import core
         return core.get_dimension_host(context.active_object) is not None
-
     def execute(self, context):
-
         from . import core
         host = core.get_dimension_host(context.active_object)
         if not host: return {'CANCELLED'}
-
-        
-
         dim_props = host.lsd_pg_dim_props
         length = dim_props.length
-
-        
-
         scene = context.scene
         dim_props.arrow_scale = length * scene.lsd_dim_ratio_arrow
         dim_props.text_scale = length * scene.lsd_dim_ratio_text
         dim_props.line_thickness = length * scene.lsd_dim_ratio_thick
         dim_props.text_offset = length * scene.lsd_dim_ratio_text_off
         dim_props.offset = length * scene.lsd_dim_ratio_offset
-
         # Ensure minimum visibility guards
         if dim_props.arrow_scale < 0.001: dim_props.arrow_scale = 0.001
         if dim_props.text_scale < 0.001: dim_props.text_scale = 0.001
         core.update_arrow_settings(host)
         return {'FINISHED'}
-
 class LSD_OT_Register_Default_Proportions(bpy.types.Operator):
     """Saves the current dimension's ratios as the new session defaults."""
     bl_idname = "lsd.register_default_proportions"
     bl_label = "Register Custom Proportions"
     bl_description = "Saves the current proportions as the new baseline for Auto-Size"
     bl_options = {'REGISTER', 'UNDO'}
-
     @classmethod
     def poll(cls, context):
         from . import core
         return core.get_dimension_host(context.active_object) is not None
-
     def execute(self, context):
         from . import core
         scene = context.scene
@@ -9549,29 +6198,24 @@ class LSD_OT_Register_Default_Proportions(bpy.types.Operator):
         dim_props = host.lsd_pg_dim_props
         length = dim_props.length
         if length < 0.0001: return {'CANCELLED'}
-
         # Calculate and Save Ratios
         scene.lsd_dim_ratio_arrow = dim_props.arrow_scale / length
         scene.lsd_dim_ratio_text = dim_props.text_scale / length
         scene.lsd_dim_ratio_thick = dim_props.line_thickness / length
         scene.lsd_dim_ratio_text_off = dim_props.text_offset / length
         scene.lsd_dim_ratio_offset = dim_props.offset / length
-
         self.report({'INFO'}, "Registered custom drafting proportions as defaults")
         return {'FINISHED'}
-
 class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
     """Calculates optimal drafting sizes based on selection distance (for new assemblies)."""
     bl_idname = "lsd.dimension_auto_calculate_global"
     bl_label = "Auto Calculate"
     bl_description = "Inputs optimal dimension properties scale based on selection distance."
     bl_options = {'REGISTER', 'UNDO'}
-
     def execute(self, context):
         scene = context.scene
         import mathutils
         dist = 0.0
-        
         # 1. Harvesting reference points
         points = []
         if context.mode == 'EDIT_MESH':
@@ -9583,7 +6227,6 @@ class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
                 points = [obj.matrix_world @ v.co.copy() for v in bm.verts if v.select]
         else:
             points = [o.matrix_world.translation.copy() for o in context.selected_objects]
-
         if len(points) >= 2:
             dist = (points[0] - points[1]).length
         elif len(points) == 1:
@@ -9591,9 +6234,7 @@ class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
         else:
             self.report({'WARNING'}, "Select at least 2 points to calculate distance.")
             return {'CANCELLED'}
-
         if dist < 0.0001: dist = 1.0 # Absolute Minimal Fallback
-
         # 2. Update Global Scale Priorities (Scene Settings)
         # These use the established drafting ratios (set by Register Custom Proportions)
         scene.lsd_dim_arrow_scale = dist * scene.lsd_dim_ratio_arrow
@@ -9601,72 +6242,62 @@ class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
         scene.lsd_dim_line_thickness = dist * scene.lsd_dim_ratio_thick
         scene.lsd_dim_text_offset = dist * scene.lsd_dim_ratio_text_off
         scene.lsd_dim_offset = dist * scene.lsd_dim_ratio_offset
-
         self.report({'INFO'}, f"Pre-calculated preferences for distance: {dist:.3f}")
         return {'FINISHED'}
-
 def register():
-
     CLASSES = [
         LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
-        LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights, 
-        LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass, 
-        LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings, 
-        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture, 
-        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge, 
-        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush, 
-        LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor, 
-        LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor, 
-        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier, 
+        LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
+        LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
+        LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
+        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture,
+        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge,
+        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
+        LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
+        LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
+        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
         LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
-        LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath, 
-        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject, 
-        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject, 
-        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic, 
-        LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone, 
-        LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add, 
-        LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement, 
-        LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive, 
+        LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
+        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
+        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject,
+        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic,
+        LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone,
+        LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add,
+        LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement,
+        LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive,
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
         LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions
     ]
     for cls in CLASSES:
-
         if hasattr(cls, 'bl_rna'):
-
             try:
-
                 bpy.utils.register_class(cls)
-
             except Exception as e:
-
                 print(f"LSD Operator Register Warning: Could not register {cls.__name__}: {e}")
-
 def unregister():
-
     CLASSES = [
         LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
-        LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights, 
-        LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass, 
-        LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings, 
-        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture, 
-        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge, 
-        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush, 
-        LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor, 
-        LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor, 
-        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier, 
-        LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath, 
-        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject, 
-        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject, 
-        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic, 
-        LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone, 
-        LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add, 
-        LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement, 
-        LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive, 
+        LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
+        LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
+        LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
+        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture,
+        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge,
+        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
+        LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
+        LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
+        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
+        LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
+        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
+        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject,
+        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic,
+        LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone,
+        LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add,
+        LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement,
+        LSD_OT_CreateRig, LSD_OT_MergeArmatures, LSD_OT_PurgeBones, LSD_OT_ParentToActive,
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
@@ -9674,11 +6305,7 @@ def unregister():
         LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global
     ]
     for cls in reversed(CLASSES):
-
         try:
-
             bpy.utils.unregister_class(cls)
-
         except Exception:
-
             pass

@@ -230,6 +230,29 @@ def lsd_draw_mechanical_presets_content(box, context):
                 "UI_UL_WrapItems", "", props, "chain_wrap_items",
                 props, "chain_active_index"
             )
+            # --- NEW: Custom Rollers & Connectors Sub-Panel ---
+            comp_box = edit_box.box()
+            comp_box.label(text="Custom Components & Materials", icon='MOD_PARTICLES')
+            
+            # Rollers Section
+            row = comp_box.row(align=True)
+            row.prop(props, "chain_use_custom_roller", text="", icon='MESH_CYLINDER')
+            if props.chain_use_custom_roller:
+                row.prop(props, "chain_custom_roller_obj", text="")
+            else:
+                row.label(text="Procedural Rollers")
+            comp_box.prop(props, "chain_roller_color", text="Roller Color")
+            
+            comp_box.separator()
+            
+            # Connectors Section
+            row = comp_box.row(align=True)
+            row.prop(props, "chain_use_custom_connector", text="", icon='LINKED_DATA')
+            if props.chain_use_custom_connector:
+                row.prop(props, "chain_custom_connector_obj", text="")
+            else:
+                row.label(text="Procedural Connectors")
+            comp_box.prop(props, "chain_connector_color", text="Connector Color")
         elif props.category == 'WHEEL':
             base_box = edit_box.box()
             base_box.label(text="Wheel Base", icon='MESH_CYLINDER')
@@ -339,7 +362,8 @@ def lsd_draw_mechanical_presets_content(box, context):
                 edit_box.prop(props, "joint_pin_length", text="Stem Length")
         elif props.category == 'BASIC_SHAPE':
             if props.type_basic_shape == 'SHAPE_PLANE':
-                edit_box.prop(props, "shape_size")
+                edit_box.prop(props, "shape_length_x")
+                edit_box.prop(props, "shape_width_y")
             elif props.type_basic_shape == 'SHAPE_CUBE':
                 edit_box.prop(props, "shape_length_x")
                 edit_box.prop(props, "shape_width_y")

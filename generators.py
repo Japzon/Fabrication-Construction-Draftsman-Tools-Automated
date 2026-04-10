@@ -287,25 +287,63 @@ def generate_basic_shape_mesh(bm: bmesh.types.BMesh, props, obj):
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
     t = props.type_basic_shape
     if t == 'SHAPE_PLANE':
-        sz = props.shape_size * s
-        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=sz/2)
+        lx = props.shape_length_x * s; wy = props.shape_width_y * s
+        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=1.0, matrix=mathutils.Matrix.Scale(lx/2, 4, (1,0,0)) @ mathutils.Matrix.Scale(wy/2, 4, (0,1,0)))
     elif t == 'SHAPE_CUBE':
         lx = props.shape_length_x * s; wy = props.shape_width_y * s; hz = props.shape_height_z * s
-        bmesh.ops.create_cube(bm, size=1.0, matrix=mathutils.Matrix.Scale(lx, 4, (1,0,0)) @ mathutils.Matrix.Scale(wy, 4, (0,1,0)) @ mathutils.Matrix.Scale(hz, 4, (0,0,1)))
+        # Offset by hz/2 to place origin at bottom center
+        mat = mathutils.Matrix.Translation((0, 0, hz/2)) @ mathutils.Matrix.Scale(lx, 4, (1,0,0)) @ mathutils.Matrix.Scale(wy, 4, (0,1,0)) @ mathutils.Matrix.Scale(hz, 4, (0,0,1))
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mat)
     elif t == 'SHAPE_CIRCLE':
         bmesh.ops.create_circle(bm, cap_ends=True, radius=props.shape_radius*s, segments=props.shape_vertices)
     elif t == 'SHAPE_CYLINDER':
-        bmesh.ops.create_cone(bm, cap_ends=True, radius1=props.shape_radius*s, radius2=props.shape_radius*s, depth=props.shape_height*s, segments=props.shape_vertices)
+        h = props.shape_height * s; r = props.shape_radius * s
+        mat = mathutils.Matrix.Translation((0, 0, h/2))
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=h, segments=props.shape_vertices, matrix=mat)
     elif t == 'SHAPE_UVSPHERE':
-        bmesh.ops.create_uvsphere(bm, u_segments=props.shape_segments, v_segments=props.shape_segments//2, radius=props.shape_radius*s)
+        r = props.shape_radius * s
+        mat = mathutils.Matrix.Translation((0, 0, r))
+        bmesh.ops.create_uvsphere(bm, u_segments=props.shape_segments, v_segments=props.shape_segments//2, radius=r, matrix=mat)
     elif t == 'SHAPE_ICOSPHERE':
-        bmesh.ops.create_icosphere(bm, subdivisions=props.shape_subdivisions, radius=props.shape_radius*s)
+        r = props.shape_radius * s
+        mat = mathutils.Matrix.Translation((0, 0, r))
+        bmesh.ops.create_icosphere(bm, subdivisions=props.shape_subdivisions, radius=r, matrix=mat)
     elif t == 'SHAPE_CONE':
-        bmesh.ops.create_cone(bm, cap_ends=True, radius1=props.shape_radius*s, radius2=0, depth=props.shape_height*s, segments=props.shape_vertices)
+        h = props.shape_height * s; r = props.shape_radius * s
+        mat = mathutils.Matrix.Translation((0, 0, h/2))
+        bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=0, depth=h, segments=props.shape_vertices, matrix=mat)
     elif t == 'SHAPE_TORUS':
-        bmesh.ops.create_torus(bm, major_radius=props.shape_major_radius*s, minor_radius=props.shape_tube_radius*s, major_segments=props.shape_horizontal_segments, minor_segments=props.shape_vertical_segments)
+        major_rad = props.shape_major_radius * s
+        minor_rad = props.shape_tube_radius * s
+        major_seg = props.shape_horizontal_segments
+        minor_seg = props.shape_vertical_segments
+        # Custom BMesh Torus Builder (Parametric)
+        verts = []
+        for i in range(major_seg):
+            u = 2 * math.pi * i / major_seg
+            cos_u = math.cos(u); sin_u = math.sin(u)
+            for j in range(minor_seg):
+                v = 2 * math.pi * j / minor_seg
+                dist = major_rad + minor_rad * math.cos(v)
+                # Offset Z by minor_rad to place torus on the Z=0 plane
+                verts.append(bm.verts.new((dist * cos_u, dist * sin_u, minor_rad * (math.sin(v) + 1.0))))
+        for i in range(major_seg):
+            i_next = (i + 1) % major_seg
+            for j in range(minor_seg):
+                j_next = (j + 1) % minor_seg
+                v1 = verts[i * minor_seg + j]
+                v2 = verts[i_next * minor_seg + j]
+                v3 = verts[i_next * minor_seg + j_next]
+                v4 = verts[i * minor_seg + j_next]
+                try: bm.faces.new((v1, v2, v3, v4))
+                except Exception: pass # Skip if face already exists
     else:
         bmesh.ops.create_cube(bm, size=0.1*s)
+    # --- Origin Calibration: Bottom-Center (AI Refinement) ---
+    bm.verts.ensure_lookup_table()
+    if bm.verts:
+        min_z = min(v.co.z for v in bm.verts)
+        bmesh.ops.translate(bm, vec=(0, 0, -min_z), verts=bm.verts)
 def generate_architectural_mesh(bm: bmesh.types.BMesh, props, obj):
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
@@ -345,10 +383,30 @@ def generate_rope_mesh(bm, props):
     r = props.rope_radius * s; l = props.rope_length * s
     bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=l, segments=12, matrix=mathutils.Matrix.Rotation(math.radians(90), 4, 'Y'))
 def generate_chain_link_mesh(bm: bmesh.types.BMesh, props):
+    """Generates a procedural mechatronic roller chain segment."""
+    if props.type_chain == 'BELT':
+        return # Belts use direct 'Curve to Mesh' in GN
+    
     unit_scale = bpy.context.scene.unit_settings.scale_length
     s = 1.0 / unit_scale if unit_scale > 0 else 1.0
-    p = props.chain_pitch * s; r = props.chain_roller_radius * s
-    bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=props.chain_roller_length*s, segments=16)
+    p = props.chain_pitch * s
+    r = props.chain_roller_radius * s
+    rl = props.chain_roller_length * s
+    ph = props.chain_plate_height * s
+    pt = props.chain_plate_thickness * s
+    
+    # 1. Generate Roller Pin (Cylinder at 0,0,0)
+    bmesh.ops.create_cone(bm, cap_ends=True, radius1=r, radius2=r, depth=rl, segments=16)
+    
+    # 2. Generate Side Plates (Connectors)
+    # We create two capsules or rounded blocks representing the link plates.
+    for side in [-1, 1]:
+        # Plate offset along Y
+        y_off = side * (rl/2 + pt/2)
+        # Create a cube and scale it to look like a plate
+        # Length is slightly more than pitch to overlap if needed, but here we just do pitch.
+        mat = mathutils.Matrix.Translation((p/2, y_off, 0)) @ mathutils.Matrix.Scale(p, 4, (1,0,0)) @ mathutils.Matrix.Scale(pt, 4, (0,1,0)) @ mathutils.Matrix.Scale(ph, 4, (0,0,1))
+        bmesh.ops.create_cube(bm, size=1.0, matrix=mat)
 # ------------------------------------------------------------------------
 #   POST-GENERATION HELPERS
 # ------------------------------------------------------------------------

@@ -2027,24 +2027,17 @@ def update_viewport_material(self: 'LSD_MaterialProperties', context: bpy.types.
         objects_to_update.extend(get_all_children_objects(owner_datablock, context))
     for obj in objects_to_update:
         setup_and_update_material(obj, self.color)
-def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_name: str, modifier_input_identifier: str) -> None:
+def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_name: str, modifier_input_identifier: str, var_name: str = "var") -> None:
     """
     Creates a simple, robust, native driver to link a custom property to a
     modifier input.
-    This function is a key part of the addon's "native" philosophy. It uses
-    Blender's built-in driver system to create relationships, which means they
-    will continue to function perfectly even if the addon is disabled or uninstalled.
-    It uses the 'AVERAGE' driver type with a single variable as a simple and
-    efficient way to pass a value directly without needing a 'SCRIPTED' expression.
-    This is slightly more performant and is guaranteed to be safe, as it involves
-    no arbitrary code execution.
+    ...
     Args:
-        target_obj: The object containing the modifier to be driven.
-        source_data_path: The data path to the source custom property on the
-                          `target_obj` (e.g., '["my_prop"]').
-        modifier_name: The name of the modifier to drive.
-        modifier_input_identifier: The identifier of the modifier's input
-                                   socket (e.g., 'Input_2').
+        target_obj: ...
+        source_data_path: ...
+        modifier_name: ...
+        modifier_input_identifier: ...
+        var_name: The name of the variable inside the driver expression (default "var").
     """
     # Construct the full data path to the modifier's input property.
     driver_path = f'modifiers["{modifier_name}"]["{modifier_input_identifier}"]'
@@ -2062,14 +2055,14 @@ def create_driver(target_obj: bpy.types.Object, source_data_path: str, modifier_
     if driver.variables:
         driver.variables.remove(driver.variables[0])
     var = driver.variables.new()
-    var.name = "var"  # The name is arbitrary for a single-variable 'AVERAGE' driver.
+    var.name = var_name
     var.type = 'SINGLE_PROP'
     # Set the variable's target to the object itself and the specified data path.
     var.targets[0].id = target_obj
     var.targets[0].data_path = source_data_path
     # With an 'AVERAGE' driver and one variable, the expression is implicitly
-    # just the value of that variable. We set it explicitly for clarity.
-    driver.expression = "var"
+    # just the value of that variable.
+    driver.expression = var_name
 def get_unique_name(base_name: str) -> str:
     """
     Generates a unique object name in the current scene by appending a
@@ -2462,15 +2455,21 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
         links.new(p_start.outputs['Mesh'], join_pts.inputs['Geometry'])
         links.new(coll_info.outputs['Instances'], join_pts.inputs['Geometry'])
         links.new(p_end.outputs['Mesh'], join_pts.inputs['Geometry'])
-        p_to_c = nodes.new('GeometryNodePointsToCurve')
+        try:
+            p_to_c = nodes.new('GeometryNodePointsToCurves')
+        except Exception:
+            p_to_c = nodes.new('GeometryNodePointsToCurve')
         links.new(join_pts.outputs['Geometry'], p_to_c.inputs['Points'])
         resample = nodes.new('GeometryNodeResampleCurve')
-        links.new(p_to_c.outputs['Curve'], resample.inputs['Curve'])
+        # Handle socket naming changes in Blender 4.0+ (Points to Curves uses 'Curves' output)
+        p_to_c_out = p_to_c.outputs.get('Curves') or p_to_c.outputs.get('Curve')
+        resample_in = resample.inputs.get('Curve') or resample.inputs.get('Curves')
+        links.new(p_to_c_out, resample_in)
         links.new(g_in.outputs[res_sock.name], resample.inputs['Count'])
-        # --- 3. Spiral Offset Logic ---
         # We move each point of the resampled curve in a circle perpendicular to its tangent.
         set_pos = nodes.new('GeometryNodeSetPosition')
-        links.new(resample.outputs['Curve'], set_pos.inputs['Geometry'])
+        resample_out = resample.outputs.get('Curve') or resample.outputs.get('Curves')
+        links.new(resample_out, set_pos.inputs['Geometry'])
         # Rotation angle = 2 * PI * Turns * Curve Parameter
         param = nodes.new('GeometryNodeInputCurveHandleType') # Wait, I need Curve Parameter
         param = nodes.new('GeometryNodeSplineParameter')
@@ -2505,8 +2504,10 @@ def setup_native_slinky(slinky_obj, start_empty, end_empty):
         profile = nodes.new('GeometryNodeCurvePrimitiveCircle'); profile.inputs['Resolution'].default_value = 8
         links.new(g_in.outputs[wire_sock.name], profile.inputs['Radius'])
         to_mesh = nodes.new('GeometryNodeCurveToMesh')
-        links.new(set_pos.outputs['Geometry'], to_mesh.inputs['Curve'])
-        links.new(profile.outputs['Curve'], to_mesh.inputs['Profile Curve'])
+        to_mesh_in = to_mesh.inputs.get('Curve') or to_mesh.inputs.get('Curves')
+        links.new(set_pos.outputs['Geometry'], to_mesh_in)
+        profile_out = profile.outputs.get('Curve') or profile.outputs.get('Curves')
+        links.new(profile_out, to_mesh.inputs['Profile Curve'])
         # Material
         set_mat = nodes.new('GeometryNodeSetMaterial')
         links.new(to_mesh.outputs['Mesh'], set_mat.inputs['Geometry'])
@@ -2813,7 +2814,10 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     normal_node.location = (-400, 400)
     sep_z = nodes.new('ShaderNodeSeparateXYZ')
     sep_z.location = (-250, 400)
-    compare_z = nodes.new('FunctionNodeCompare'); compare_z.operation = 'LESS_THAN'; compare_z.location = (-100, 400); compare_z.inputs['B'].default_value = -0.1
+    # AI Editor Note: Using 0.0 instead of -0.1 to be more robust for perfectly horizontal loops.
+    # This ensures that we only keep the "top" faces, which allows the boundary extraction
+    # to find the outer rim of the hull.
+    compare_z = nodes.new('FunctionNodeCompare'); compare_z.operation = 'LESS_THAN'; compare_z.location = (-100, 400); compare_z.inputs['B'].default_value = 0.0
     # --- Node Logic: Boundary Extraction ---
     # The Convex Hull node outputs a filled mesh (often triangulated).
     # To get a clean path for the chain, we must delete internal edges
@@ -2822,8 +2826,10 @@ def setup_native_wrap_gn(path_obj: bpy.types.Object) -> None:
     edge_neighbors = nodes.new('GeometryNodeInputMeshEdgeNeighbors')
     edge_neighbors.location = (-400, 100)
     compare_edges = nodes.new('FunctionNodeCompare')
+    # AI Editor Note: Boundary extraction logic. Boundary edges have exactly 1 face neighbor.
+    # Interior edges have > 1. By deleting edges with > 1 neighbor, we isolate the loop.
     compare_edges.data_type = 'INT'
-    compare_edges.operation = 'GREATER_THAN' # Delete internal edges (shared by >1 faces)
+    compare_edges.operation = 'NOT_EQUAL' # Keep neighbor count == 1
     compare_edges.location = (-200, 100)
     compare_edges.inputs['B'].default_value = 1
     delete_geom = nodes.new('GeometryNodeDeleteGeometry')
@@ -2974,6 +2980,23 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     link_len_socket.default_value = 0.2
     link_len_socket.min_value = 0.01
     anim_socket = iface.new_socket(name="Animation Offset", in_out="INPUT", socket_type='NodeSocketFloat')
+    
+    # NEW: Belt & Custom Hardware Sockets
+    is_belt_socket = iface.new_socket(name="Is Belt", in_out="INPUT", socket_type='NodeSocketBool')
+    belt_w_socket = iface.new_socket(name="Belt Width", in_out="INPUT", socket_type='NodeSocketFloat')
+    belt_w_socket.default_value = 0.02
+    belt_t_socket = iface.new_socket(name="Belt Thickness", in_out="INPUT", socket_type='NodeSocketFloat')
+    belt_t_socket.default_value = 0.005
+    
+    use_custom_roller_socket = iface.new_socket(name="Use Custom Roller", in_out="INPUT", socket_type='NodeSocketBool')
+    custom_roller_socket = iface.new_socket(name="Custom Roller", in_out="INPUT", socket_type='NodeSocketObject')
+    use_custom_conn_socket = iface.new_socket(name="Use Custom Connector", in_out="INPUT", socket_type='NodeSocketBool')
+    custom_conn_socket = iface.new_socket(name="Custom Connector", in_out="INPUT", socket_type='NodeSocketObject')
+    
+    # Colors
+    roller_col_socket = iface.new_socket(name="Roller Color", in_out="INPUT", socket_type='NodeSocketColor')
+    conn_col_socket = iface.new_socket(name="Connector Color", in_out="INPUT", socket_type='NodeSocketColor')
+    
     iface.new_socket(name="Geometry", in_out="OUTPUT", socket_type='NodeSocketGeometry')
     # --- 2. Create Core Nodes ---
     nodes = gn_group.nodes
@@ -3043,6 +3066,7 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     # Base Points
     links.new(group_input.outputs['Geometry'], curve_to_points.inputs['Curve'])
     links.new(group_input.outputs['Link Length'], curve_to_points.inputs['Length'])
+    
     # Calculation Chain
     links.new(index_node.outputs['Index'], math_base_len.inputs[0])
     links.new(group_input.outputs['Link Length'], math_base_len.inputs[1])
@@ -3051,51 +3075,128 @@ def setup_native_chain_gn(path_obj: bpy.types.Object, link_obj: bpy.types.Object
     links.new(group_input.outputs['Geometry'], curve_length.inputs['Curve'])
     links.new(math_add_anim.outputs['Value'], math_mod.inputs[0])
     links.new(curve_length.outputs['Length'], math_mod.inputs[1])
+    
     # Sampling
-    # AI Editor Note: In Blender 4.x, the input socket for Sample Curve is named "Curves".
-    links.new(group_input.outputs['Geometry'], sample_curve.inputs['Curves'])
+    # AI Editor Note: Handle socket naming changes in Blender 4.0+ (Sample Curve uses 'Curves' input)
+    links.new(group_input.outputs['Geometry'], sample_curve.inputs.get('Curves') or sample_curve.inputs.get('Curve'))
     links.new(math_mod.outputs['Value'], sample_curve.inputs['Length'])
+    
     # Set Position & Rotation
     links.new(curve_to_points.outputs['Points'], set_position.inputs['Geometry'])
     links.new(sample_curve.outputs['Position'], set_position.inputs['Position'])
     links.new(sample_curve.outputs['Tangent'], align_euler.inputs['Vector'])
-    # Instancing
-    links.new(set_position.outputs['Geometry'], instance_on_points.inputs['Points'])
-    links.new(group_input.outputs['Link Object'], link_info.inputs['Object'])
-    links.new(link_info.outputs['Geometry'], instance_on_points.inputs['Instance'])
-    links.new(align_euler.outputs['Rotation'], instance_on_points.inputs['Rotation'])
-    # Scaling
-    links.new(group_input.outputs['Geometry'], sample_nearest.inputs['Geometry'])
-    links.new(sample_curve.outputs['Position'], sample_nearest.inputs['Sample Position'])
-    links.new(group_input.outputs['Geometry'], sample_index.inputs['Geometry'])
-    links.new(sample_nearest.outputs['Index'], sample_index.inputs['Index'])
-    links.new(radius_attr.outputs['Attribute'], sample_index.inputs['Value'])
-    links.new(sample_index.outputs['Value'], instance_on_points.inputs['Scale'])
-    # Output
-    links.new(instance_on_points.outputs['Instances'], group_output.inputs['Geometry'])
-    # --- Add/Update the Modifier on the Path Object ---
-    # The modifier name is kept constant for a given chain type. This is robust
-    # because even if the user renames the path object, the drivers that target
-    # the modifier by this name will not break.
+    
+    # --- 9. Node Logic: Split Logic (Belt vs Chain) ---
+    switch_geom = nodes.new('GeometryNodeSwitch')
+    switch_geom.input_type = 'GEOMETRY'
+    switch_geom.location = (600, 0)
+    
+    # Path A: Chain (Instancing - Dual Phase)
+    # Phase 1: Connectors (Links)
+    instance_links = nodes.new('GeometryNodeInstanceOnPoints')
+    instance_links.location = (200, 100)
+    links.new(set_position.outputs['Geometry'], instance_links.inputs['Points'])
+    links.new(align_euler.outputs['Rotation'], instance_links.inputs['Rotation'])
+    
+    # Selection for Link vs Custom
+    switch_conn = nodes.new('GeometryNodeSwitch')
+    switch_conn.input_type = 'OBJECT'
+    switch_conn.location = (0, 200)
+    links.new(group_input.outputs['Link Object'], switch_conn.inputs['False'])
+    links.new(group_input.outputs['Custom Connector'], switch_conn.inputs['True'])
+    links.new(group_input.outputs['Use Custom Connector'], switch_conn.inputs['Switch'])
+    
+    conn_info = nodes.new('GeometryNodeObjectInfo')
+    conn_info.location = (50, 200)
+    links.new(switch_conn.outputs['Output'], conn_info.inputs['Object'])
+    links.new(conn_info.outputs['Geometry'], instance_links.inputs['Instance'])
+    
+    # Phase 2: Rollers
+    instance_rollers = nodes.new('GeometryNodeInstanceOnPoints')
+    instance_rollers.location = (200, 300)
+    links.new(set_position.outputs['Geometry'], instance_rollers.inputs['Points'])
+    
+    switch_roller = nodes.new('GeometryNodeSwitch')
+    switch_roller.input_type = 'OBJECT'
+    switch_roller.location = (0, 400)
+    links.new(group_input.outputs['Custom Roller'], switch_roller.inputs['True'])
+    links.new(group_input.outputs['Use Custom Roller'], switch_roller.inputs['Switch'])
+    
+    roller_info = nodes.new('GeometryNodeObjectInfo')
+    roller_info.location = (50, 400)
+    links.new(switch_roller.outputs['Output'], roller_info.inputs['Object'])
+    links.new(roller_info.outputs['Geometry'], instance_rollers.inputs['Instance'])
+    
+    join_chain = nodes.new('GeometryNodeJoinGeometry')
+    join_chain.location = (400, 100)
+    links.new(instance_links.outputs['Instances'], join_chain.inputs['Geometry'])
+    links.new(instance_rollers.outputs['Instances'], join_chain.inputs['Geometry'])
+    
+    # --- Path B: Belt (Curve to Mesh) ---
+    curve_to_mesh = nodes.new('GeometryNodeCurveToMesh')
+    curve_to_mesh.location = (400, -200)
+    
+    # ATOMIC FIX: Use proper identifier for Quadrilateral (Curve Primitive)
+    try:
+        profile_rect = nodes.new('GeometryNodeCurvePrimitiveQuadrilateral')
+    except Exception:
+        profile_rect = nodes.new('GeometryNodeMeshQuadrilateral') # Legacy guess
+    
+    profile_rect.location = (200, -300)
+    links.new(profile_rect.outputs.get('Curve') or profile_rect.outputs.get('Mesh'), curve_to_mesh.inputs['Profile Curve'])
+    links.new(group_input.outputs['Belt Width'], profile_rect.inputs['Width'])
+    links.new(group_input.outputs['Belt Thickness'], profile_rect.inputs['Height'])
+    
+    # Animated points to curve for smooth belt
+    try:
+        points_to_curve = nodes.new('GeometryNodePointsToCurves')
+    except Exception:
+        points_to_curve = nodes.new('GeometryNodePointsToCurve')
+    
+    points_to_curve.location = (200, -100)
+    links.new(set_position.outputs['Geometry'], points_to_curve.inputs['Points'])
+    
+    # Socket fallback for Curves vs Curve
+    p_to_c_out = points_to_curve.outputs.get('Curves') or points_to_curve.outputs.get('Curve')
+    c_to_m_in = curve_to_mesh.inputs.get('Curve') or curve_to_mesh.inputs.get('Curves')
+    links.new(p_to_c_out, c_to_m_in)
+    
+    # Final Switching
+    links.new(group_input.outputs['Is Belt'], switch_geom.inputs['Switch'])
+    links.new(join_chain.outputs['Geometry'], switch_geom.inputs['False'])
+    links.new(curve_to_mesh.outputs['Mesh'], switch_geom.inputs['True'])
+    
+    links.new(switch_geom.outputs['Output'], group_output.inputs['Geometry'])
+    
+    # --- Add/Update the Modifier ---
     mod_name = f"{MOD_PREFIX}Native_{path_obj.lsd_pg_mech_props.type_chain.capitalize()}Chain"
     mod = path_obj.modifiers.get(mod_name)
     if not mod:
         mod = path_obj.modifiers.new(name=mod_name, type='NODES')
     mod.node_group = gn_group
-    # --- Connect Modifier Inputs to Properties/Objects ---
+    
+    # --- Connect Modifier Inputs ---
     iface = gn_group.interface
-    link_obj_socket = iface.items_tree.get("Link Object")
-    link_len_socket = iface.items_tree.get("Link Length")
-    anim_socket = iface.items_tree.get("Animation Offset")
-    if link_obj_socket:
-        mod[link_obj_socket.identifier] = link_obj
-    if link_len_socket:
-        # Create a native driver to link the modifier's input to a persistent, native
-        # custom property. This ensures the chain works even if the addon is disabled.
-        create_driver(path_obj, '["lsd_native_chain_pitch"]', mod.name, link_len_socket.identifier)
-    if anim_socket:
-        # Create a native driver for the animation offset.
-        create_driver(path_obj, '["lsd_native_anim_offset"]', mod.name, anim_socket.identifier)
+    mod[iface.items_tree.get("Link Object").identifier] = link_obj
+    mod[iface.items_tree.get("Is Belt").identifier] = (path_obj.lsd_pg_mech_props.type_chain == 'BELT')
+    
+    # Standard Drivers
+    create_driver(path_obj, '["lsd_native_chain_pitch"]', mod.name, iface.items_tree.get("Link Length").identifier)
+    create_driver(path_obj, '["lsd_native_anim_offset"]', mod.name, iface.items_tree.get("Animation Offset").identifier, var_name="rotation")
+    
+    # Belt properties drivers
+    create_driver(path_obj, 'lsd_pg_mech_props["belt_width"]', mod.name, iface.items_tree.get("Belt Width").identifier)
+    create_driver(path_obj, 'lsd_pg_mech_props["belt_thickness"]', mod.name, iface.items_tree.get("Belt Thickness").identifier)
+    
+    # Custom hardware toggles and objects
+    mod[iface.items_tree.get("Use Custom Roller").identifier] = path_obj.lsd_pg_mech_props.chain_use_custom_roller
+    mod[iface.items_tree.get("Custom Roller").identifier] = path_obj.lsd_pg_mech_props.chain_custom_roller_obj
+    mod[iface.items_tree.get("Use Custom Connector").identifier] = path_obj.lsd_pg_mech_props.chain_use_custom_connector
+    mod[iface.items_tree.get("Custom Connector").identifier] = path_obj.lsd_pg_mech_props.chain_custom_connector_obj
+    
+    # Final Material/Color pass (using drivers for live updates)
+    create_driver(path_obj, 'lsd_pg_mech_props["chain_roller_color"]', mod.name, iface.items_tree.get("Roller Color").identifier)
+    create_driver(path_obj, 'lsd_pg_mech_props["chain_connector_color"]', mod.name, iface.items_tree.get("Connector Color").identifier)
 def update_chain_driver_settings(self: 'LSD_PG_Mech_Props', context: bpy.types.Context) -> None:
     """
     Updates the chain driver expression based on radius, ratio, and invert settings.
@@ -3485,7 +3586,6 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         props.rotor_arm_height = 0.001 * multiplier
         # 3. Categorized Overrides for specific span requirements
         if type_sub == 'JOINT_REVOLUTE':
-            # Revolute pin length should scale with body width but doesn't define the vertical span
             props.joint_pin_length = props.joint_width * 1.5
         elif type_sub in ['JOINT_PRISMATIC_WHEELS', 'JOINT_PRISMATIC_WHEELS_ROT']:
             props.joint_radius = 0.012 * multiplier # Wheel Radius
@@ -3493,6 +3593,20 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
             props.rack_width = 0.04 * multiplier
             props.rack_length = scale_factor # Matches the cage directly
             props.joint_sub_size = 0.08 * multiplier # Carriage Length
+    elif category == 'BASIC_SHAPE':
+        # Default Basic Shape: Normalized to scale_factor (default 0.1m / 100mm)
+        props.shape_size = scale_factor
+        props.shape_length_x = scale_factor
+        props.shape_width_y = scale_factor
+        props.shape_height_z = scale_factor
+        props.shape_radius = scale_factor / 2.0
+        props.shape_height = scale_factor
+        props.shape_major_radius = scale_factor * 0.4
+        props.shape_tube_radius = scale_factor * 0.1
+        # Fallback props for legacy mesh calculation
+        props.radius = scale_factor / 2.0
+        props.length = scale_factor
+        props.height = scale_factor
     elif category == 'ARCHITECTURAL':
         props.length = scale_factor
         props.height = scale_factor
@@ -3504,24 +3618,6 @@ def create_parametric_part_object(context: bpy.types.Context, category: str, typ
         props.step_count = 10
         props.step_height = scale_factor / 10.0
         props.step_depth = scale_factor / 8.0
-    elif category == 'BASIC_SHAPE':
-        # Direct unit mapping for shapes
-        props.radius = scale_factor / 2.0
-        props.length = scale_factor
-        props.height = scale_factor
-        props.shape_size = scale_factor
-        props.shape_length_x = scale_factor
-        props.shape_width_y = scale_factor / 2.0
-        props.shape_height_z = scale_factor / 4.0
-        props.shape_radius = scale_factor / 2.0
-        props.shape_height = scale_factor
-        props.shape_major_radius = scale_factor / 2.0
-        props.shape_tube_radius = scale_factor / 10.0
-        props.tooth_depth = scale_factor / 4.0 # Torus minor radius
-        props.teeth = 32 # Default segments for smooth shapes
-        # AI Editor Note: Specific default for Cube Width (Y) per user request.
-        if type_sub == 'SHAPE_CUBE':
-            props.radius = 1.0 * scale_factor # Width (Y)
     elif category == 'CHAIN':
         # AI Editor Note: For chains, scale the object itself to fit the cage.
         # Default curve diameter is 0.4.

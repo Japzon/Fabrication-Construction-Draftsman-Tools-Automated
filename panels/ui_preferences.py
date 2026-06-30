@@ -95,13 +95,10 @@ class LSD_PT_Preferences:
             behavior_box.label(text="UI Behavior", icon='PREFERENCES')
             behavior_box.prop(scene, "lsd_auto_collapse_panels")
             # --- Panel Order & Visibility Data ---
-            names = {
+            top_level_names = {
                 "lsd_order_ai_factory": "Generate",
                 "lsd_order_assets": "Asset Library",
-                "lsd_order_parts": "Mechanical Presets",
-                "lsd_order_architectural": "Architectural Presets",
-                "lsd_order_vehicle": "Vehicle Presets",
-                "lsd_order_electronics": "Electronic Presets",
+                "lsd_order_presets": "Presets",
                 "lsd_order_dimensions": "Dimensions & Precision Transforms",
                 "lsd_order_procedural": "Procedural Toolkit",
                 "lsd_order_kinematics": "Kinematics Setup",
@@ -113,12 +110,10 @@ class LSD_PT_Preferences:
                 "lsd_order_export": "Export System",
                 "lsd_order_preferences": "Preferences",
             }
-            order_to_visibility = {
+            visibility_mapping = {
                 "lsd_order_ai_factory": "lsd_panel_enabled_ai_factory",
-                "lsd_order_parts": "lsd_panel_enabled_parts",
-                "lsd_order_architectural": "lsd_panel_enabled_architectural",
-                "lsd_order_vehicle": "lsd_panel_enabled_vehicle",
-                "lsd_order_electronics": "lsd_panel_enabled_electronics",
+                "lsd_order_assets": "lsd_panel_enabled_assets",
+                "lsd_order_presets": "lsd_panel_enabled_presets",
                 "lsd_order_procedural": "lsd_panel_enabled_procedural",
                 "lsd_order_dimensions": "lsd_panel_enabled_dimensions",
                 "lsd_order_materials": "lsd_panel_enabled_materials",
@@ -128,30 +123,34 @@ class LSD_PT_Preferences:
                 "lsd_order_physics": "lsd_panel_enabled_physics",
                 "lsd_order_transmission": "lsd_panel_enabled_transmission",
                 "lsd_order_export": "lsd_panel_enabled_export",
-                "lsd_order_assets": "lsd_panel_enabled_assets",
             }
-            props = {k: getattr(scene, k, 0) for k in names.keys()}
-            sorted_props = sorted(props.items(), key=lambda x: x[1])
+            
+            # Sort order keys based on current property values
+            order_keys = list(top_level_names.keys())
+            order_keys.sort(key=lambda k: getattr(scene, k, 0))
+            
             # --- Panel Visibility ---
             visibility_box = col_main.box()
-            visibility_box.label(text="Visible Panels", icon='HIDE_OFF')
-            col = visibility_box.column(align=True)
-            for prop_name, _ in sorted_props:
-                vis_prop = order_to_visibility.get(prop_name)
+            visibility_box.label(text="Panel Visibility (Main)", icon='HIDE_OFF')
+            grid = visibility_box.grid_flow(row_major=True, columns=2, even_columns=True, even_rows=False, align=True)
+            for k in order_keys:
+                vis_prop = visibility_mapping.get(k)
                 if vis_prop:
-                    col.prop(scene, vis_prop, text=names[prop_name])
+                    grid.prop(scene, vis_prop, text=top_level_names[k])
+            
+            
             # --- Panel Order ---
             order_box = col_main.box()
-            order_box.label(text="Panel Order", icon='SORTSIZE')
-            for prop_name, _ in sorted_props:
+            order_box.label(text="Panel Reordering", icon='SORTSIZE')
+            for k in order_keys:
                 row = order_box.row(align=True)
-                row.label(text=names[prop_name])
+                row.label(text=top_level_names[k])
                 op_up = row.operator("lsd.move_panel", text="", icon='TRIA_UP')
                 op_up.direction = 'UP'
-                op_up.prop_name = prop_name
+                op_up.prop_name = k
                 op_down = row.operator("lsd.move_panel", text="", icon='TRIA_DOWN')
                 op_down.direction = 'DOWN'
-                op_down.prop_name = prop_name
+                op_down.prop_name = k
             row = order_box.row(align=True)
             row.operator("lsd.reset_panel_order", icon='LOOP_BACK', text="Reset")
 def register():

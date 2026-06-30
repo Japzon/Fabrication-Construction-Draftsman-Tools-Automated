@@ -64,6 +64,7 @@ from .ui_export import LSD_PT_Import_Export_System
 
 from .ui_preferences import LSD_PT_Preferences
 from .ui_camera import LSD_PT_Camera_Cinematography
+from .ui_sdf_booleans import LSD_PT_SDF_Booleans
 
 class LSD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
     """
@@ -83,6 +84,7 @@ class LSD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
             (LSD_PT_Presets, "lsd_order_presets"),
             (LSD_PT_Procedural_Toolkit, "lsd_order_procedural"),
             (LSD_PT_Dimensions_And_Precision_Transforms, "lsd_order_dimensions"),
+            (LSD_PT_SDF_Booleans, "lsd_order_sdf_booleans"),
             (LSD_PT_Materials_And_Textures, "lsd_order_materials"),
             (LSD_PT_Lighting_And_Atmosphere, "lsd_order_lighting"),
             (LSD_PT_Kinematics_Setup, "lsd_order_kinematics"),

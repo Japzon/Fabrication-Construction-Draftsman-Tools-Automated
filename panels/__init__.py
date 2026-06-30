@@ -26,6 +26,8 @@ from . import ui_export
 from . import ui_preferences
 from . import ui_main
 from . import ui_camera
+from . import ui_sdf_booleans
+from . import ui_workflow_optimizer
 
 modules = [
     ui_common,
@@ -45,6 +47,8 @@ modules = [
     ui_export,
     ui_preferences,
     ui_camera,
+    ui_sdf_booleans,
+    ui_workflow_optimizer,
     ui_main,
 ]
 

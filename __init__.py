@@ -36,6 +36,9 @@ from . import properties
 from . import operators
 from . import panels
 
+addon_keymaps = []
+
+
 def register():
     # 0. Hard Registry Cleanup - Clears the persistent 'Missing Add-ons' warning
     try:
@@ -54,13 +57,44 @@ def register():
     operators.register()
     # 3. Core - Handlers and logic
     core.register()
-    # 4. Panels - UI
     panels.register()
+    
+    # 5. Keymaps
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    if kc:
+        km = kc.keymaps.new(name='Object Mode', space_type='EMPTY')
+        kmi = km.keymap_items.new("lsd.directional_translate", 'G', 'PRESS')
+        addon_keymaps.append((km, kmi))
+        
+        km = kc.keymaps.new(name='Mesh', space_type='EMPTY')
+        kmi = km.keymap_items.new("lsd.directional_translate", 'G', 'PRESS')
+        addon_keymaps.append((km, kmi))
 def unregister():
-    # Unregister in reverse order
-    panels.unregister()
-    core.unregister()
-    operators.unregister()
-    properties.unregister()
+    # Unregister in reverse order with broad exception handling
+    # to prevent "ghost" entries in the addon list if one module fails.
+    try:
+        panels.unregister()
+    except Exception as e:
+        print(f"[LSD] Unregister Warning (Panels): {e}")
+    
+    try:
+        core.unregister()
+    except Exception as e:
+        print(f"[LSD] Unregister Warning (Core): {e}")
+        
+    try:
+        operators.unregister()
+    except Exception as e:
+        print(f"[LSD] Unregister Warning (Operators): {e}")
+        
+    try:
+        properties.unregister()
+    except Exception as e:
+        print(f"[LSD] Unregister Warning (Properties): {e}")
+        
+    for km, kmi in addon_keymaps:
+        km.keymap_items.remove(kmi)
+    addon_keymaps.clear()
 if __name__ == "__main__":
     register()

@@ -47,14 +47,55 @@ def draw_panel_header(layout: bpy.types.UILayout, context: bpy.types.Context, ti
     scene = context.scene
     is_expanded = getattr(scene, show_prop, False)
     icon = 'TRIA_DOWN' if is_expanded else 'TRIA_RIGHT'
+    
     # Toggle button for expansion
     op = row.operator("lsd.toggle_panel_visibility", text=title, icon=icon, emboss=False)
-    op.panel_property = show_prop
+    if op:
+        op.panel_property = show_prop
+    
     row.prop(scene, show_prop, text="", emboss=False, toggle=True)
+    
     # Close button to disable panel entirely
     close_op = row.operator("lsd.disable_panel", text="", icon='X')
-    close_op.prop_name = enabled_prop
+    if close_op:
+        close_op.prop_name = enabled_prop
+        
     return box, is_expanded
+
+class LSD_OT_TogglePanelVisibility(bpy.types.Operator):
+    """
+    Toggles the visibility of a specified UI panel.
+    This operator is used in panel headers to provide a clickable toggle
+    that explicitly controls the panel's expanded/collapsed state.
+    """
+    bl_idname = "lsd.toggle_panel_visibility"
+    bl_label = "Toggle Panel Visibility"
+    bl_description = "Expands or collapses a UI panel"
+    bl_options = {'INTERNAL'}
+
+    panel_property: bpy.props.StringProperty(
+        name="Panel Property",
+        description="The name of the boolean scene property to toggle (e.g., 'lsd_show_panel_parts')"
+    )
+
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        if not hasattr(context.scene, self.panel_property):
+            self.report({'ERROR'}, f"Scene property '{self.panel_property}' not found.")
+            return {'CANCELLED'}
+        
+        current_value = getattr(context.scene, self.panel_property)
+        new_value = not current_value
+        setattr(context.scene, self.panel_property, new_value)
+
+        # Handle auto-collapse logic
+        if new_value and context.scene.lsd_auto_collapse_panels:
+            panel_props = getattr(config, "LSD_PANEL_PROPS", [])
+            for prop_name in panel_props:
+                if prop_name != self.panel_property and prop_name.startswith("lsd_show_panel_"):
+                    if hasattr(context.scene, prop_name):
+                        setattr(context.scene, prop_name, False)
+        
+        return {'FINISHED'}
 class LSD_OT_UpdatePanelOrder(bpy.types.Operator):
     """Updates the order of panels in the UI based on the settings in Preferences"""
     bl_idname = "lsd.update_panel_order"
@@ -161,19 +202,16 @@ class LSD_OT_MovePanel(bpy.types.Operator):
         # Map of prop_name -> current_order
         props = {
             "lsd_order_ai_factory": scene.lsd_order_ai_factory,
-            "lsd_order_parts": scene.lsd_order_parts,
-            "lsd_order_architectural": scene.lsd_order_architectural,
-            "lsd_order_vehicle": scene.lsd_order_vehicle,
-            "lsd_order_electronics": scene.lsd_order_electronics,
+            "lsd_order_assets": scene.lsd_order_assets,
+            "lsd_order_presets": scene.lsd_order_presets,
             "lsd_order_procedural": scene.lsd_order_procedural,
             "lsd_order_dimensions": scene.lsd_order_dimensions,
             "lsd_order_materials": scene.lsd_order_materials,
             "lsd_order_lighting": scene.lsd_order_lighting,
-            "lsd_order_camera": scene.lsd_order_camera,
             "lsd_order_kinematics": scene.lsd_order_kinematics,
+            "lsd_order_camera": scene.lsd_order_camera,
             "lsd_order_physics": scene.lsd_order_physics,
             "lsd_order_transmission": scene.lsd_order_transmission,
-            "lsd_order_assets": scene.lsd_order_assets,
             "lsd_order_export": scene.lsd_order_export,
             "lsd_order_preferences": scene.lsd_order_preferences,
         }
@@ -205,22 +243,19 @@ class LSD_OT_ResetPanelOrder(bpy.types.Operator):
     bl_description = "Resets all panel order settings to their defaults"
     def execute(self, context):
         scene = context.scene
-        scene.lsd_order_ai_factory = 0     # 1: Generate
-        scene.lsd_order_assets = 1         # 2: Asset Library
-        scene.lsd_order_parts = 2          # 3: Mechanical Presets
-        scene.lsd_order_electronics = 3    # 4: Electronic Presets
-        scene.lsd_order_architectural = 4  # 5: Architectural Presets
-        scene.lsd_order_vehicle = 5        # 6: Vehicle Presets
-        scene.lsd_order_procedural = 6     # 7: Procedural Toolkit
-        scene.lsd_order_dimensions = 7     # 8: Dimensions & Precision Transforms
-        scene.lsd_order_materials = 8      # 9: Materials & Textures
-        scene.lsd_order_physics = 9        # 10: Physics
-        scene.lsd_order_kinematics = 10    # 11: Kinematics Setup
-        scene.lsd_order_transmission = 11  # 12: Transmission
-        scene.lsd_order_lighting = 12      # 13: Environment & Lighting
-        scene.lsd_order_camera = 13        # 14: Camera Studio & Pathing
-        scene.lsd_order_export = 14        # 15: Export System
-        scene.lsd_order_preferences = 15   # 16: Preferences
+        scene.lsd_order_ai_factory = 0
+        scene.lsd_order_assets = 1
+        scene.lsd_order_presets = 2
+        scene.lsd_order_procedural = 3
+        scene.lsd_order_dimensions = 4
+        scene.lsd_order_materials = 5
+        scene.lsd_order_physics = 6
+        scene.lsd_order_kinematics = 7
+        scene.lsd_order_transmission = 8
+        scene.lsd_order_lighting = 9
+        scene.lsd_order_camera = 10
+        scene.lsd_order_export = 11
+        scene.lsd_order_preferences = 12
         # Trigger the update to apply changes immediately
         bpy.ops.lsd.update_panel_order()
         return {'FINISHED'}
@@ -247,13 +282,24 @@ class UI_UL_WrapItems(bpy.types.UIList):
 # ------------------------------------------------------------------------
 
 def register():
-    for cls in [LSD_OT_UpdatePanelOrder, LSD_OT_ToggleTextPlacement, LSD_OT_MovePanel, LSD_OT_ResetPanelOrder, UI_UL_WrapItems]:
+    for cls in [
+        LSD_OT_UpdatePanelOrder, LSD_OT_ToggleTextPlacement, 
+        LSD_OT_MovePanel, LSD_OT_ResetPanelOrder, 
+        LSD_OT_TogglePanelVisibility, UI_UL_WrapItems
+    ]:
         if hasattr(cls, 'bl_rna'):
             try:
                 bpy.utils.register_class(cls)
             except Exception:
                 pass
 def unregister():
-    for cls in reversed([LSD_OT_UpdatePanelOrder, LSD_OT_ToggleTextPlacement, LSD_OT_MovePanel, LSD_OT_ResetPanelOrder, UI_UL_WrapItems]):
+    for cls in reversed([
+        LSD_OT_UpdatePanelOrder, LSD_OT_ToggleTextPlacement, 
+        LSD_OT_MovePanel, LSD_OT_ResetPanelOrder, 
+        LSD_OT_TogglePanelVisibility, UI_UL_WrapItems
+    ]):
         if hasattr(cls, 'bl_rna'):
-            bpy.utils.unregister_class(cls)
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception:
+                pass

@@ -308,6 +308,14 @@ def update_path_align_timer(self, context):
         core.apply_path_vertex_alignment(context)
         return None
     bpy.app.timers.register(dispatch, first_interval=0.01)
+def update_smart_skin_live(self, context):
+    """Live update for skin thickness on selected vertices."""
+    if context.mode != 'EDIT_MESH': return
+    # Timer-based dispatch to avoid "read-only" context errors during prop update
+    def dispatch():
+        bpy.ops.lsd.apply_smart_skin_thickness()
+        return None
+    bpy.app.timers.register(dispatch, first_interval=0.01)
 # AI Editor Note: Batch update guard to avoid infinite property feedback loops
 # between grouped dimension items.
 _lsd_is_batch_updating = False
@@ -424,44 +432,89 @@ def update_dimension_length_timer(self, context):
     queue_batch_sync(obj.name)
 def update_dimension_driver_target(self, context):
     """Sets up a driver for the dimension to follow the target dimension's length."""
+    from . import core # Move to top of scope to avoid UnboundLocalError
     host = self.obj
     target = self.driver_target
     if not host or not hasattr(host, "lsd_pg_dim_props"):
         return
+    
+    # Selection & Group Propagation (Batch Sync)
+    # If the user is editing an item in a group, we apply the change to everyone in the group.
+    global _lsd_is_batch_updating
+    if not _lsd_is_batch_updating and context:
+         _lsd_is_batch_updating = True
+         try:
+             # Find groups containing this dimension
+             for g_set in context.scene.lsd_dimensions_grouped_sets:
+                  if any(item.obj == host for item in g_set.items):
+                       for item in g_set.items:
+                            if item.obj and item.obj != host:
+                                 item.driver_target = target
+                                 item.ratio = self.ratio
+                                 # This recursively calls the update, but the guard blocks it.
+         finally:
+             _lsd_is_batch_updating = False
+
     target_path = 'lsd_pg_dim_props.length'
-    host.driver_remove(target_path)
+    
+    # Clear existing driver first
+    if host.animation_data:
+        for drv in list(host.animation_data.drivers):
+            if drv.data_path == target_path:
+                host.driver_remove(target_path)
+
     if target:
-        # 1. Self-Link Guard (Prevents Dependency Cycles)
-        if host == target or (host.parent and host.parent == target):
+        # 1. Resolve actual Dimension Host (Label Object)
+        target_host = core.get_dimension_host(target)
+        if not target_host or not hasattr(target_host, "lsd_pg_dim_props"):
+            # If it's not a dimension component, we can't link it.
             self.driver_target = None
             return
-        # Find the actual label object if target is a root
-        target_obj = target
-        if target.get("lsd_is_dimension_root"):
-            for child in target.children:
-                if child.get("lsd_is_dimension"):
-                    target_obj = child
-                    break
-        # 2. Immediate Sync (Copy length once)
-        if hasattr(target_obj, "lsd_pg_dim_props"):
-             host.lsd_pg_dim_props.is_manual = True # AI Editor Note: Must be manual to prevent sync fighting
-             host.lsd_pg_dim_props.length = target_obj.lsd_pg_dim_props.length * self.ratio
-        # 3. Establish Persistent Driver
-        drv = host.driver_add(target_path).driver
+
+        # 2. Self-Link Guard (Prevents Dependency Cycles)
+        if host == target_host:
+            self.driver_target = None
+            return
+
+        # 3. Immediate Sync (Copy length once)
+        target_eval = target_host
+        if context:
+            try: target_eval = context.evaluated_depsgraph_get().id_eval_get(target_host)
+            except: pass
+        
+        if hasattr(target_eval, "lsd_pg_dim_props"):
+             host.lsd_pg_dim_props.is_manual = True # Required for driven mode
+             host.lsd_pg_dim_props.length = target_eval.lsd_pg_dim_props.length * self.ratio
+
+        # 4. Establish Persistent Driver
+        drv_info = host.driver_add(target_path)
+        drv = drv_info.driver
+        drv.type = 'SCRIPTED'
+        drv.use_self = False
+
+        while drv.variables:
+             drv.variables.remove(drv.variables[0])
+
         var = drv.variables.new()
         var.name = 'target_len'
         var.type = 'SINGLE_PROP'
         v_target = var.targets[0]
-        v_target.id = target_obj
+        v_target.id_type = 'OBJECT'
+        v_target.id = target_host
         v_target.data_path = 'lsd_pg_dim_props.length'
+
         drv.expression = f'target_len * {self.ratio:.6f}'
-        # Force update
+
+        # 5. Mandatory Finalize
         host.update_tag()
+        root = core.get_dimension_root(host)
+        if root: root.update_tag()
     else:
-        # If unlinked, we can optionally return to dynamic mode
-        if host and hasattr(host, "lsd_pg_dim_props"):
-             host.lsd_pg_dim_props.is_manual = False
-             host.update_tag()
+        # If unlinked, return to dynamic mode
+        host.lsd_pg_dim_props.is_manual = False
+        host.update_tag()
+        root = core.get_dimension_root(host)
+        if root: root.update_tag()
 def update_collision_sync_all(self, context, prop_name: str, mod_name: str, mod_type: str, attr_name: str):
     """Generic helper to sync collision properties across multi-selection via a guard."""
     if context.window_manager.get("_lsd_coll_guard", False):
@@ -598,6 +651,16 @@ class LSD_PG_Dimensions_Master_Item(bpy.types.PropertyGroup):
         min=0.0001,
         precision=3,
         update=update_dimension_driver_target
+    )
+class LSD_PG_Smart_Skin_Props(bpy.types.PropertyGroup):
+    """Parametric controls for the Skin modifier thickness and transitions."""
+    thickness: bpy.props.FloatProperty(
+        name="Skin Thickness",
+        description="Base thickness for the selected vertices (Skin Modifier Radius)",
+        default=0.1,
+        min=0.0,
+        unit='LENGTH',
+        update=update_smart_skin_live
     )
 class LSD_PG_Dimension_Props(bpy.types.PropertyGroup):
     """
@@ -954,6 +1017,41 @@ class LSD_ExportItem(bpy.types.PropertyGroup):
     rig: bpy.props.PointerProperty(type=bpy.types.Object, name="Rig")
 # ------------------------------------------------------------------------
 
+def update_sdf_props(self, context):
+    bpy.app.timers.register(lambda: (bpy.ops.lsd.apply_sdf_booleans() and None), first_interval=0.01)
+
+class LSD_PG_SDF_Props(bpy.types.PropertyGroup):
+    target_object: bpy.props.PointerProperty(
+        name="Target Object",
+        type=bpy.types.Object,
+        description="The object to perform the boolean operation against",
+        update=update_sdf_props
+    )
+    operation: bpy.props.EnumProperty(
+        name="Operation",
+        items=[('UNION', "Union", ""), ('DIFFERENCE', "Difference", ""), ('INTERSECT', "Intersection", "")],
+        default='UNION',
+        update=update_sdf_props
+    )
+    blend_distance: bpy.props.FloatProperty(
+        name="Blend Distance",
+        description="Distance to smooth/weld the boolean seam",
+        default=0.02, min=0.0, unit='LENGTH',
+        update=update_sdf_props
+    )
+    voxel_size: bpy.props.FloatProperty(
+        name="Voxel Size",
+        description="Resolution of the SDF volume",
+        default=0.05, min=0.005, unit='LENGTH',
+        update=update_sdf_props
+    )
+    project_to_surface: bpy.props.BoolProperty(
+        name="Project to Surface",
+        description="Snaps boolean result strictly to original mesh surfaces",
+        default=False,
+        update=update_sdf_props
+    )
+
 #   Registration
 
 # ------------------------------------------------------------------------
@@ -962,7 +1060,7 @@ CLASSES = [
     LSD_PG_Transmission_Properties, LSD_PG_Material_Properties, LSD_PG_Collision_Properties,
     LSD_PG_Inertial_Properties, LSD_PG_Wrap_Item, LSD_PG_Dimensions_Master_Item, LSD_PG_Dimensions_Grouped_Set, LSD_PG_Slinky_Hook, LSD_PG_Mech_Props, LSD_PG_Mimic_Driver,
     LSD_PG_Kinematic_Props, LSD_PG_AI_Props, LSD_PG_Lighting_Props, LSD_PG_Asset_Props,
-    LSD_PG_Dimension_Props, LSD_ExportItem
+    LSD_PG_Dimension_Props, LSD_PG_Smart_Skin_Props, LSD_ExportItem, LSD_PG_SDF_Props
 ]
 
 def register():
@@ -980,6 +1078,7 @@ def register():
     bpy.types.Scene.lsd_pg_asset_props = bpy.props.PointerProperty(type=LSD_PG_Asset_Props)
     bpy.types.Scene.lsd_pg_joint_editor_settings = bpy.props.PointerProperty(type=LSD_PG_Kinematic_Props)
     bpy.types.Object.lsd_pg_dim_props = bpy.props.PointerProperty(type=LSD_PG_Dimension_Props)
+    bpy.types.Object.lsd_pg_sdf_props = bpy.props.PointerProperty(type=LSD_PG_SDF_Props)
     # Precision Scale State (Drafting)
     def update_accurate_scale(self, context):
         """Real-time drafting sync: Applying scale as parameters change."""
@@ -1216,6 +1315,15 @@ def register():
         default=False,
         update=update_path_align_timer
     )
+    bpy.types.Scene.lsd_spawn_type = bpy.props.EnumProperty(
+        name="Creation Type",
+        items=[
+            ('BEZIER', "Bezier Path", "Bezier control point"),
+            ('NURBS', "NURBS Path", "NURBS control point"),
+            ('POLY', "Mesh Vertex", "Single mesh vertex"),
+        ],
+        default='BEZIER'
+    )
     bpy.types.Scene.lsd_export_list_index = bpy.props.IntProperty(default=0)
     bpy.types.Scene.lsd_export_check_meshes = bpy.props.BoolProperty(name="Meshes", default=True)
     bpy.types.Scene.lsd_export_check_textures = bpy.props.BoolProperty(name="Textures", default=True)
@@ -1277,40 +1385,85 @@ def register():
         max=1.0,
         update=update_material_alpha
     )
+    def update_paint_bucket(self, context):
+        """Dispatcher for paint bucket updates."""
+        # Use a timer to ensure context safety during rapid property updates (e.g. dragging color wheel)
+        bpy.app.timers.register(lambda: (bpy.ops.lsd.apply_paint_bucket() and None), first_interval=0.01)
+
+    def update_paint_bucket_color_override(self, context):
+        """Overrides custom texture when color wheel is adjusted."""
+        # AI Editor Note: User requested that color wheel overrides texture as it's the 'latest change'.
+        if self.lsd_paint_bucket_image:
+             self.lsd_paint_bucket_image = None
+        update_paint_bucket(self, context)
+
+    bpy.types.Scene.lsd_paint_bucket_mode = bpy.props.BoolProperty(
+        name="Paint Bucket Mode", 
+        description="When enabled, selection changes or color changes immediately apply the material to selected faces", 
+        update=update_paint_bucket
+    )
+    bpy.types.Scene.lsd_paint_bucket_color = bpy.props.FloatVectorProperty(
+        name="Base Color", 
+        subtype='COLOR', 
+        default=(0.8, 0.8, 0.8, 1.0), 
+        size=4, 
+        min=0.0, 
+        max=1.0, 
+        update=update_paint_bucket_color_override
+    )
+    bpy.types.Scene.lsd_paint_bucket_image = bpy.props.PointerProperty(
+        name="Texture", 
+        type=bpy.types.Image, 
+        update=update_paint_bucket
+    )
+    bpy.types.Scene.lsd_paint_bucket_prevent_initial_fill = bpy.props.BoolProperty(
+        name="Prevent Initial Fill",
+        description="Avoid painting everything when first entering Edit Mode (where whole object is selected by default)",
+        default=True
+    )
     bpy.types.Scene.lsd_hook_placement_mode = bpy.props.BoolProperty(name="Hook Placement", default=False)
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
     # 3. Order Properties
     prop_names = [
         "lsd_order_ai_factory",    # 1: Generate
         "lsd_order_assets",        # 2: Asset Library
-        "lsd_order_presets",       # Consolidated Presets
-        "lsd_order_electronics",   # 4: Electronic Presets
-        "lsd_order_architectural", # 5: Architectural Presets
-        "lsd_order_vehicle",       # 6: Vehicle Presets
-        "lsd_order_procedural",    # 7: Procedural Toolkit
-        "lsd_order_dimensions",    # 8: Dimensions & Precision Transforms
-        "lsd_order_materials",     # 9: Materials & Textures
-        "lsd_order_physics",       # 10: Physics
-        "lsd_order_kinematics",    # 11: Kinematics Setup
-        "lsd_order_transmission",  # 12: Transmission
-        "lsd_order_lighting",      # 13: Environment & Lighting
-        "lsd_order_camera",        # 14: Camera Studio & Pathing
-        "lsd_order_export",        # 15: Export System
-        "lsd_order_preferences"    # 16: Preferences
+        "lsd_order_presets",       # 3: Consolidated Presets
+        "lsd_order_procedural",    # 4: Procedural Toolkit
+        "lsd_order_dimensions",    # 5: Dimensions & Precision Transforms
+        "lsd_order_sdf_booleans",  # SDF Booleans
+        "lsd_order_materials",     # 6: Materials & Textures
+        "lsd_order_physics",       # 7: Physics
+        "lsd_order_kinematics",    # 8: Kinematics Setup
+        "lsd_order_transmission",  # 9: Transmission
+        "lsd_order_lighting",      # 10: Environment & Lighting
+        "lsd_order_camera",        # 11: Camera Studio & Pathing
+        "lsd_order_export",        # 12: Export System
+        "lsd_order_preferences"    # 13: Preferences
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))
     # 4. Expansion Toggles
+    from .config import LSD_PANEL_PROPS
     for prop in LSD_PANEL_PROPS:
         try:
-            if hasattr(bpy.types.Scene, prop):
-                delattr(bpy.types.Scene, prop)
             # Start with all panels ENABLED (visible in list) but COLLAPSED (closed)
             is_show_prop = "show" in prop
             default_val = False if is_show_prop else True
+            # Use setattr directly; it will overwrite if exists, or create if not.
+            # No need to delattr first as it can cause temporary 'missing property' states.
             setattr(bpy.types.Scene, prop, bpy.props.BoolProperty(default=default_val))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[LSD] Failed to register UI property {prop}: {e}")
+    # 5. Smart Skin Properties
+    bpy.types.Scene.lsd_pg_smart_skin_props = bpy.props.PointerProperty(type=LSD_PG_Smart_Skin_Props)
+    
+    # 6. Workflow Optimizer
+    bpy.types.Scene.lsd_enable_directional_translate = bpy.props.BoolProperty(
+        name="Enable Directional Translate (G)",
+        description="Overrides the 'G' key to use Directional Translate instead of Blender's default grab",
+        default=False
+    )
+
 def unregister():
     """Systematic cleanup of all LSD properties and classes."""
     try:
@@ -1332,12 +1485,15 @@ def unregister():
             "lsd_hook_placement_mode", "lsd_camera_preset", "lsd_anchor_initial_size", "lsd_anchor_auto_size",
             "lsd_show_collisions", "lsd_dim_font_name", "lsd_dim_font_bold", "lsd_dim_font_italic",
             "lsd_dim_text_offset", "lsd_scale_mode", "lsd_scale_pivot", "lsd_scale_realtime",
-            "lsd_dimensions_master", "lsd_dim_tracker_group_name"
+            "lsd_dimensions_master", "lsd_dim_tracker_group_name",
+            "lsd_pg_smart_skin_props",
+            "lsd_paint_bucket_mode", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill",
+            "lsd_enable_directional_translate"
         ]
         # Add order props
         prop_names = [
             "lsd_order_ai_factory",            "lsd_order_presets", "lsd_order_procedural",
- "lsd_order_dimensions", "lsd_order_materials",
+            "lsd_order_dimensions", "lsd_order_sdf_booleans", "lsd_order_materials",
             "lsd_order_lighting", "lsd_order_kinematics", "lsd_order_physics",
             "lsd_order_transmission", "lsd_order_assets", "lsd_order_export", "lsd_order_preferences"
         ]
@@ -1345,11 +1501,16 @@ def unregister():
         for prop in all_scene_props:
             if hasattr(bpy.types.Scene, prop):
                 delattr(bpy.types.Scene, prop)
-        # 2. Clean up Object and Bone Pointers
-        if hasattr(bpy.types.Object, "lsd_pg_mech_props"):
-            del bpy.types.Object.lsd_pg_mech_props
-        if hasattr(bpy.types.PoseBone, "lsd_pg_kinematic_props"):
-            del bpy.types.PoseBone.lsd_pg_kinematic_props
+        # 2. Clean up Object, Bone, and ID Pointers (Bypasses 'Uninstall Twice' bug)
+        id_type_attrs = {
+            bpy.types.Object: ["lsd_pg_mech_props", "lsd_pg_dim_props", "lsd_pg_smart_skin_props", "lsd_pg_asset_props", "lsd_pg_lighting_props", "lsd_pg_sdf_props"],
+            bpy.types.PoseBone: ["lsd_pg_kinematic_props"],
+            bpy.types.Image: ["lsd_pg_ai_props"]
+        }
+        for id_type, attrs in id_type_attrs.items():
+            for attr in attrs:
+                if hasattr(id_type, attr):
+                    delattr(id_type, attr)
     except Exception as e:
         print(f"Error during LSD property cleanup: {e}")
     # 3. Unregister classes in reverse order

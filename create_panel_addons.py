@@ -40,8 +40,37 @@ def package_panel(panel_name, base_dir, output_dir):
     temp_panel_dir = os.path.join(output_dir, f"temp_{safe_name}")
     if os.path.exists(temp_panel_dir): shutil.rmtree(temp_panel_dir, ignore_errors=True)
     
-    # Exclude everything that might collide or isn't needed
-    shutil.copytree(base_dir, temp_panel_dir, ignore=lambda p, n: ['__pycache__', '.git', 'Panels as Add-ons', 'temp_', 'create_panel_addons.py'], dirs_exist_ok=True)
+    # Define files and folders to strictly ignore
+    ignored_patterns = [
+        '__pycache__', '.git', '.github', '.agents', '.vscode', '.gemini',
+        'Panels as Add-ons', 'temp_', 'create_panel_addons.py',
+        '*.zip', '*.md', '*.txt', '*.gitignore', 'LICENSE',
+        '.antigravityignore'
+    ]
+    
+    shutil.copytree(base_dir, temp_panel_dir, ignore=shutil.ignore_patterns(*ignored_patterns), dirs_exist_ok=True)
+    
+    # 0. Strict Whitelist Cleanup (Root Level)
+    approved_root_files = ["__init__.py", "properties.py", "core.py", "generators.py", "config.py", "operators.py", "panels"]
+    for item in os.listdir(temp_panel_dir):
+        if item not in approved_root_files:
+            item_path = os.path.join(temp_panel_dir, item)
+            if os.path.isfile(item_path):
+                os.remove(item_path)
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path, ignore_errors=True)
+    
+    # 0. Strip unrelated UI modules from panels directory
+    panels_dir = os.path.join(temp_panel_dir, "panels")
+    if os.path.exists(panels_dir):
+        for item in os.listdir(panels_dir):
+            if item.endswith(".py"):
+                # keep __init__.py, ui_common.py, and the specific module
+                if item not in ["__init__.py", "ui_common.py", f"{module_name}.py"]:
+                    os.remove(os.path.join(panels_dir, item))
+            elif os.path.isdir(os.path.join(panels_dir, item)):
+                 # Remove all subdirectories in panels folder (like __pycache__ or assets)
+                 shutil.rmtree(os.path.join(panels_dir, item), ignore_errors=True)
     
     # 1. Modify individual panel module
     module_path = os.path.join(temp_panel_dir, "panels", f"{module_name}.py")
@@ -99,9 +128,35 @@ def package_panel(panel_name, base_dir, output_dir):
     # Clean up panels logic
     panels_init_path = os.path.join(temp_panel_dir, "panels", "__init__.py")
     with open(panels_init_path, 'w') as f:
-        f.write(f"import bpy\nfrom . import ui_common\nfrom . import {module_name}\n")
-        f.write(f"def register():\n    ui_common.register()\n    try: bpy.utils.register_class({module_name}.{cls_name})\n    except: pass\n")
-        f.write(f"def unregister():\n    try: bpy.utils.unregister_class({module_name}.{cls_name})\n    except: pass\n    ui_common.unregister()\n")
+        f.write("import bpy\n")
+        f.write("from . import ui_common\n")
+        f.write(f"from . import {module_name}\n")
+        f.write("from .. import properties, core, operators\n\n")
+        
+        f.write("def register():\n")
+        f.write("    # Check if core toolkit is already registered (by another module or main addon)\n")
+        f.write("    # This prevents 'already registered' warnings and registration conflicts.\n")
+        f.write("    core_registered = hasattr(bpy.ops.lsd, 'select_object_by_name')\n")
+        f.write("    if not core_registered:\n")
+        f.write("        properties.register()\n")
+        f.write("        core.register()\n")
+        f.write("        operators.register()\n")
+        f.write("    \n")
+        f.write("    ui_common.register()\n")
+        f.write(f"    try: {module_name}.register()\n")
+        f.write("    except: pass\n")
+        f.write(f"    try: bpy.utils.register_class({module_name}.{cls_name})\n")
+        f.write("    except Exception as e: print(f'[LSD Standalone] Panel class registration failed: {e}')\n\n")
+        
+        f.write("def unregister():\n")
+        f.write(f"    try: bpy.utils.unregister_class({module_name}.{cls_name})\n")
+        f.write("    except: pass\n")
+        f.write(f"    try: {module_name}.unregister()\n")
+        f.write("    except: pass\n")
+        f.write("    ui_common.unregister()\n")
+        f.write("    # We don't unregister core/operators here because they might be in use\n")
+        f.write("    # by the main toolkit or other standalone panels. Blender handles cleanup\n")
+        f.write("    # on exit or when the last module that actually registered them is disabled.\n\n")
 
     if os.path.exists(os.path.join(temp_panel_dir, "panels", "ui_main.py")):
         os.remove(os.path.join(temp_panel_dir, "panels", "ui_main.py"))

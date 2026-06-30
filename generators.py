@@ -400,6 +400,8 @@ def generate_chain_link_mesh(bm: bmesh.types.BMesh, props):
     
     # 2. Generate Side Plates (Connectors)
     # We create two capsules or rounded blocks representing the link plates.
+    # 2. Generate Side Plates (Connectors)
+    # We create two capsules or rounded blocks representing the link plates.
     for side in [-1, 1]:
         # Plate offset along Y
         y_off = side * (rl/2 + pt/2)
@@ -407,6 +409,110 @@ def generate_chain_link_mesh(bm: bmesh.types.BMesh, props):
         # Length is slightly more than pitch to overlap if needed, but here we just do pitch.
         mat = mathutils.Matrix.Translation((p/2, y_off, 0)) @ mathutils.Matrix.Scale(p, 4, (1,0,0)) @ mathutils.Matrix.Scale(pt, 4, (0,1,0)) @ mathutils.Matrix.Scale(ph, 4, (0,0,1))
         bmesh.ops.create_cube(bm, size=1.0, matrix=mat)
+
+# ------------------------------------------------------------------------
+
+#   SMART SKIN MODIFIER LOGIC
+
+# ------------------------------------------------------------------------
+
+def apply_smart_skin_thickness(context: bpy.types.Context, thickness: float):
+    """Applies a uniform thickness to all selected vertices' skin radii."""
+    obj = context.active_object
+    if not obj or obj.type != 'MESH': return
+    
+    # We must be in Edit Mode to manipulate bmesh directly
+    if context.mode != 'EDIT_MESH':
+        return
+        
+    bm = bmesh.from_edit_mesh(obj.data)
+    # The Skin modifier stores its data in a special vertex layer
+    # Priority: Active layer -> 'skin_dist' by name -> Any skin layer
+    skin_layer = bm.verts.layers.skin.active or bm.verts.layers.skin.get("skin_dist")
+    if not skin_layer and bm.verts.layers.skin:
+        skin_layer = bm.verts.layers.skin[0]
+        
+    if not skin_layer:
+        # If the layer doesn't exist, it means the object likely doesn't have 
+        # a skin modifier or hasn't been initialized.
+        return
+        
+    for v in bm.verts:
+        if v.select:
+            # Skin radius is a 2D vector for X/Y. The third value is often 0.
+            # We apply it to both axes for uniform circular/square cross-sections.
+            v[skin_layer].radius = (thickness, thickness)
+            
+    bmesh.update_edit_mesh(obj.data)
+
+def apply_smart_skin_transition(context: bpy.types.Context, curve_mapping: bpy.types.CurveMapping):
+    """
+    Distributes skin thickness along a selected vertex path using a curve profile.
+    Uses the active vertex as the start point (distance 0.0).
+    """
+    obj = context.active_object
+    if not obj or obj.type != 'MESH': return
+    if context.mode != 'EDIT_MESH': return
+    
+    bm = bmesh.from_edit_mesh(obj.data)
+    skin_layer = bm.verts.layers.skin.active or bm.verts.layers.skin.get("skin_dist")
+    if not skin_layer and bm.verts.layers.skin:
+        skin_layer = bm.verts.layers.skin[0]
+    if not skin_layer: return
+        
+    selected_verts = [v for v in bm.verts if v.select]
+    if len(selected_verts) < 2:
+        return
+        
+    # 1. Identify Start Point (Active Vertex)
+    active_vert = bm.select_history.active if isinstance(bm.select_history.active, bmesh.types.BMVert) else selected_verts[0]
+    if active_vert not in selected_verts:
+        active_vert = selected_verts[0]
+        
+    # 2. Calculate Topological Distances along edges (BFS)
+    dists = {v: float('inf') for v in selected_verts}
+    dists[active_vert] = 0.0
+    queue = [active_vert]
+    
+    while queue:
+        curr = queue.pop(0)
+        for edge in curr.link_edges:
+            other = edge.other_vert(curr)
+            if other in dists:
+                new_dist = dists[curr] + edge.calc_length()
+                if new_dist < dists[other]:
+                    dists[other] = new_dist
+                    queue.append(other)
+    
+    # 3. Find Max Distance for Normalization
+    reachable = [d for d in dists.values() if d != float('inf')]
+    if not reachable: return
+    max_d = max(reachable)
+    if max_d < 0.0001: max_d = 1.0
+    
+    # 4. Apply Modulation
+    base_thickness = context.scene.lsd_pg_smart_skin_props.thickness
+    
+    # Must initialize mapping for .evaluate() to work in 4.5+
+    curve_mapping.initialize()
+    active_curve = curve_mapping.curves[0]
+    
+    bm.verts.ensure_lookup_table()
+    
+    for v in selected_verts:
+        d = dists[v]
+        if d == float('inf'): continue # Vertex is selected but not connected to start
+        
+        # Normalize distance T [0, 1]
+        t = d / max_d
+        # Evaluate profile from curve systematically
+        factor = curve_mapping.evaluate(active_curve, t)
+        
+        # Apply modulated thickness
+        target_r = base_thickness * factor
+        v[skin_layer].radius = (target_r, target_r)
+        
+    bmesh.update_edit_mesh(obj.data)
 # ------------------------------------------------------------------------
 #   POST-GENERATION HELPERS
 # ------------------------------------------------------------------------
@@ -817,8 +923,10 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
         return con
     if parent_a and parent_a[0]:
         apply_dim_constraint(parent_a[0], aa_master, "START")
+        root["lsd_hook_start"] = parent_a[0]
     if parent_b and parent_b[0]:
         apply_dim_constraint(parent_b[0], ab_master, "END")
+        root["lsd_hook_end"] = parent_b[0]
     # Pass 4: Final visual pass
     if hasattr(core, 'update_arrow_settings'):
          core.update_arrow_settings(txt_obj)
@@ -883,35 +991,126 @@ def group_dimension_master_list(context, dim_objs):
     name_val = scene.lsd_dim_tracker_group_name if scene.lsd_dim_tracker_group_name.strip() else f"Group {len(sets) + 1}"
     new_set = sets.add()
     new_set.name = name_val
-    for host in dim_objs:
-        new_item = new_set.items.add()
-        new_item.obj = host
-        # 1. Recover Metadata from Sidebar (Priority)
-        sidebar_item = next((m for m in master if m.obj == host), None)
-        if sidebar_item:
-             new_item.driver_target = sidebar_item.driver_target
-             new_item.ratio = sidebar_item.ratio
-        # 2. Heuristic Driver Recovery (Fallback for Viewport-only selection)
-        # If no sidebar entry exists, inspect the object's animation data to find the driver source.
-        elif host.animation_data:
-             for drv_info in host.animation_data.drivers:
-                  if 'lsd_pg_dim_props.length' in drv_info.data_path:
-                       # Find the first target object in the driver variables
-                       for var in drv_info.driver.variables:
-                            for target in var.targets:
-                                 if target.id and target.id.get("lsd_is_dimension"):
-                                      new_item.driver_target = target.id
-                                      break
-                            if new_item.driver_target: break
-                  if new_item.driver_target: break
+    
+    # AI Editor Note: Protect relationships during batch grouping to avoid
+    # the 'Group Propagation' overwrite bug in properties.py.
+    from . import properties
+    properties._lsd_is_batch_updating = True
+    
+    try:
+        for host in dim_objs:
+            new_item = new_set.items.add()
+            new_item.obj = host
+            
+            # 1. Recover Metadata from Sidebar (Priority)
+            sidebar_item = next((m for m in master if m.obj == host), None)
+            if sidebar_item:
+                 # Copy values BEFORE the clearing of master happen
+                 new_item.driver_target = sidebar_item.driver_target
+                 new_item.ratio = sidebar_item.ratio
+            
+            # 2. Heuristic Driver Recovery (Fallback for Viewport-only selection)
+            # If no sidebar entry exists, inspect the object's animation data to find the driver source.
+            elif host.animation_data:
+                 for drv_info in host.animation_data.drivers:
+                      if 'lsd_pg_dim_props.length' in drv_info.data_path:
+                           # Find the first target object in the driver variables
+                           for var in drv_info.driver.variables:
+                                for target in var.targets:
+                                     if target.id and (target.id.get("lsd_is_dimension") or target.id.get("lsd_is_dimension_root")):
+                                          new_item.driver_target = target.id
+                                          # Recover Ratio from Expression (e.g. 'target_len * 1.500')
+                                          expr = drv_info.driver.expression
+                                          match = re.search(r'\*\s*([\d\.]+)', expr)
+                                          if match:
+                                              try: new_item.ratio = float(match.group(1))
+                                              except: pass
+                                          break
+                                if new_item.driver_target: break
+                      if new_item.driver_target: break
+    finally:
+        properties._lsd_is_batch_updating = False
     # Always clear the workspace list as requested
     master.clear()
-    # Redirect user to the Scene Properties tab as requested
+    # 4. Workspace Sync: Redirect user to the Scene Properties tab for immediate group review
     for area in bpy.context.screen.areas:
         if area.type == 'PROPERTIES':
             try:
-                area.spaces.active.context = 'SCENE'
+                # Ensure we are in a valid state to switch context
+                if hasattr(area.spaces.active, "context"):
+                    area.spaces.active.context = 'SCENE'
+                    area.tag_redraw()
             except:
                 pass
             break
     return {'FINISHED'}
+
+def setup_sdf_booleans(obj: bpy.types.Object):
+    """
+    Sets up a Geometry Nodes modifier for SDF-based smooth booleans.
+    Emulates SDF by utilizing Mesh Boolean followed by Volume voxelization
+    for smooth, adjustable welding.
+    """
+    props = obj.lsd_pg_sdf_props
+    target = props.target_object
+    if not target:
+        return
+        
+    mod_name = "LSD_SDF_Boolean"
+    mod = obj.modifiers.get(mod_name) or obj.modifiers.new(mod_name, 'NODES')
+    
+    group_name = "LSD_SDF_Boolean_Group"
+    # To handle dynamic changes (UNION vs DIFFERENCE), we recreate or clear the group
+    group = bpy.data.node_groups.get(group_name)
+    if group:
+        bpy.data.node_groups.remove(group)
+        
+    group = bpy.data.node_groups.new(group_name, 'GeometryNodeTree')
+    group.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+    group.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+    
+    nodes = group.nodes
+    links = group.links
+    
+    input_node = nodes.new('NodeGroupInput')
+    output_node = nodes.new('NodeGroupOutput')
+    
+    obj_info = nodes.new('GeometryNodeObjectInfo')
+    obj_info.transform_space = 'RELATIVE'
+    obj_info.inputs['Object'].default_value = target
+    
+    mesh_vol = nodes.new('GeometryNodeMeshToVolume')
+    mesh_vol.resolution_mode = 'VOXEL_SIZE'
+    mesh_vol.inputs['Voxel Size'].default_value = props.voxel_size
+    mesh_vol.inputs['Interior Band Width'].default_value = 100.0
+    
+    vol_mesh = nodes.new('GeometryNodeVolumeToMesh')
+    vol_mesh.inputs['Adaptivity'].default_value = 0.025
+    
+    smooth = nodes.new('GeometryNodeSetShadeSmooth')
+    smooth.inputs['Shade Smooth'].default_value = True
+    
+    if props.operation == 'UNION':
+        # UNION: Bypass the slow Mesh Boolean node entirely! Use Join Geometry instead.
+        join = nodes.new('GeometryNodeJoinGeometry')
+        links.new(input_node.outputs['Geometry'], join.inputs['Geometry'])
+        links.new(obj_info.outputs['Geometry'], join.inputs['Geometry'])
+        links.new(join.outputs['Geometry'], mesh_vol.inputs['Mesh'])
+    else:
+        # DIFFERENCE / INTERSECT: Must use Exact Mesh Boolean to prevent vanishing on coplanar geometry
+        mesh_bool = nodes.new('GeometryNodeMeshBoolean')
+        mesh_bool.operation = props.operation
+        mesh_bool.solver = 'EXACT'
+        links.new(input_node.outputs['Geometry'], mesh_bool.inputs['Mesh 1'])
+        links.new(obj_info.outputs['Geometry'], mesh_bool.inputs['Mesh 2'])
+        links.new(mesh_bool.outputs['Mesh'], mesh_vol.inputs['Mesh'])
+        
+    links.new(mesh_vol.outputs['Volume'], vol_mesh.inputs['Volume'])
+    links.new(vol_mesh.outputs['Mesh'], smooth.inputs['Geometry'])
+    links.new(smooth.outputs['Geometry'], output_node.inputs['Geometry'])
+        
+    mod.node_group = group
+    
+    # Surface projection omitted for stability (Shrinkwrap collapses entire mesh)
+    sw = obj.modifiers.get("LSD_SDF_Project")
+    if sw: obj.modifiers.remove(sw)

@@ -119,6 +119,26 @@ class LSD_OT_AddToDimensionMaster(bpy.types.Operator):
                 continue
             item = master.add()
             item.obj = host
+            # AI Editor Note: Recover existing driver settings to prevent resetting to 1.0 ratio
+            if host.animation_data:
+                for drv_info in host.animation_data.drivers:
+                    if drv_info.data_path == 'lsd_pg_dim_props.length':
+                        drv = drv_info.driver
+                        # 1. Recover Ratio from Expression (e.g., 'target_len * 1.500')
+                        expr = drv.expression
+                        match = re.search(r'\*\s*([\d\.]+)', expr)
+                        if match:
+                            try: item.ratio = float(match.group(1))
+                            except: pass
+                        # 2. Recover Target from Variables
+                        for var in drv.variables:
+                            if var.name == 'target_len':
+                                for target in var.targets:
+                                    if target.id:
+                                        item.driver_target = target.id
+                                        break
+                                if item.driver_target: break
+                        break
             added_count += 1
         if added_count > 0:
             self.report({'INFO'}, f"Tracked {added_count} new dimension(s).")
@@ -199,18 +219,27 @@ class LSD_OT_ImportGroupedDimensionsBack(bpy.types.Operator):
         target_group = sets[self.group_index]
         # Restore Group Name to Tracker for Title Continuity
         scene.lsd_dim_tracker_group_name = target_group.name
+        
+        # AI Editor Note: Protect relationships during batch migration to avoid
+        # the 'Group Propagation' overwrite bug in properties.py.
+        from . import properties
+        properties._lsd_is_batch_updating = True
+        
         count = 0
-        for item in target_group.items:
-            host = item.obj
-            if not host: continue
-            # Avoid duplicates in workspace
-            if not any(m.obj == host for m in master):
-                new_item = master.add()
-                new_item.obj = host
-                # PERSISTENT LINK SOURCE: Ensure we copy the reference and ratio back
-                new_item.driver_target = item.driver_target
-                new_item.ratio = item.ratio
-                count += 1
+        try:
+            for item in target_group.items:
+                host = item.obj
+                if not host: continue
+                # Avoid duplicates in workspace
+                if not any(m.obj == host for m in master):
+                    new_item = master.add()
+                    new_item.obj = host
+                    # PERSISTENT LINK SOURCE: Ensure we copy the reference and ratio back
+                    new_item.driver_target = item.driver_target
+                    new_item.ratio = item.ratio
+                    count += 1
+        finally:
+            properties._lsd_is_batch_updating = False
         sets.remove(self.group_index)
         self.report({'INFO'}, f"Imported {count} dimensions back to Sidebar.")
         return {'FINISHED'}
@@ -727,6 +756,82 @@ class LSD_OT_SetJointType(bpy.types.Operator):
             core._prop_update_guard = False
             context.view_layer.update()
         self.report({'INFO'}, f"Set joint type to '{self.type}' for {len(bones_to_update)} bones.")
+        return {'FINISHED'}
+
+class LSD_OT_Apply_Smart_Skin_Thickness(bpy.types.Operator):
+    """Applies the current skin thickness to all selected vertices"""
+    bl_idname = "lsd.apply_smart_skin_thickness"
+    bl_label = "Apply Skin Thickness"
+    bl_description = "Applies the chosen thickness value to the skin radius of all selected vertices"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context) -> bool:
+        return context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        from . import generators
+        thickness = context.scene.lsd_pg_smart_skin_props.thickness
+        generators.apply_smart_skin_thickness(context, thickness)
+        return {'FINISHED'}
+
+class LSD_OT_Apply_Smart_Skin_Transition(bpy.types.Operator):
+    """Smooths the skin thickness transition using the defined curve mapping"""
+    bl_idname = "lsd.apply_smart_skin_transition"
+    bl_label = "Smooth Skin Transition"
+    bl_description = "Uses the 'Smooth Skin Profile' curve to distribute thickness along the selected vertex path"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context) -> bool:
+        return context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        from . import generators
+        from . import core
+        curve_node = core.ensure_smart_skin_data()
+        generators.apply_smart_skin_transition(context, curve_node.mapping)
+        return {'FINISHED'}
+
+class LSD_OT_Init_Smart_Skin_Data(bpy.types.Operator):
+    """Initializes the required data-blocks for Smart Skin curves"""
+    bl_idname = "lsd.init_smart_skin_data"
+    bl_label = "Initialize Smart Skin Data"
+    bl_description = "Creates the hidden NodeTree and Curve mapping required for Smart Skin transitions"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        from . import core
+        core.ensure_smart_skin_data()
+        return {'FINISHED'}
+
+class LSD_OT_Setup_Skin_Modifier(bpy.types.Operator):
+    """Adds a Skin modifier and initializes drafting data for the active object"""
+    bl_idname = "lsd.setup_skin_modifier"
+    bl_label = "Setup Smart Skin"
+    bl_description = "Adds a Skin modifier, marks a root vertex, and initializes the profile curve mapping"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        obj = context.active_object
+        
+        # 1. Add Skin Modifier
+        if not any(m.type == 'SKIN' for m in obj.modifiers):
+            mod = obj.modifiers.new(name="Smart Skin", type='SKIN')
+        
+        # 2. Initialize Data
+        from . import core
+        core.ensure_smart_skin_data()
+        
+        # 3. Ensure we are in Edit Mode (UX requirement for thickness adjustment)
+        if context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+        self.report({'INFO'}, "Smart Skin Modifier ready. Select vertices to adjust thickness.")
         return {'FINISHED'}
 class LSD_OT_CalculateCenterOfMass(bpy.types.Operator):
     """Calculates the center of mass for the link's visual meshes"""
@@ -1457,11 +1562,19 @@ class LSD_OT_SetOriginToCursor(bpy.types.Operator):
 
 # ------------------------------------------------------------------------
 
-def update_material_merge_trigger(self, context):
-    """Trigger a re-merge when layer settings change."""
-    # Use a timer to avoid context issues during property updates
-    if context.active_object:
         bpy.app.timers.register(lambda: (bpy.ops.lsd.material_merge() and None), first_interval=0.01)
+
+class LSD_OT_Apply_Paint_Bucket(bpy.types.Operator):
+    """Applies the current paint bucket settings to selected faces."""
+    bl_idname = "lsd.apply_paint_bucket"
+    bl_label = "Apply Paint Bucket"
+    bl_options = {'REGISTER', 'UNDO', 'INTERNAL'}
+    
+    def execute(self, context):
+        from . import core
+        core.apply_paint_bucket(context)
+        return {'FINISHED'}
+
 class LSD_OT_Material_AddSmart(bpy.types.Operator):
     """Add a new material slot with a pre-configured smart material preset"""
     bl_idname = "lsd.material_add_smart"
@@ -6244,16 +6357,233 @@ class LSD_OT_Dimension_Auto_Calculate_Global(bpy.types.Operator):
         scene.lsd_dim_offset = dist * scene.lsd_dim_ratio_offset
         self.report({'INFO'}, f"Pre-calculated preferences for distance: {dist:.3f}")
         return {'FINISHED'}
+class LSD_OT_Apply_SDF_Booleans(bpy.types.Operator):
+    """Sets up a Geometry Nodes modifier for SDF-based smooth booleans."""
+    bl_idname = "lsd.apply_sdf_booleans"
+    bl_label = "Setup SDF Booleans"
+    bl_description = "Creates/Updates Geometry Nodes SDF setup for smooth, seamless booleans."
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        from . import generators
+        obj = context.active_object
+        if not obj:
+            self.report({'WARNING'}, "No active object")
+            return {'CANCELLED'}
+        generators.setup_sdf_booleans(obj)
+        self.report({'INFO'}, "Applied SDF boolean setup.")
+        return {'FINISHED'}
+class LSD_OT_Quick_SDF_Boolean(bpy.types.Operator):
+    """Automatically assigns the cutter and executes the boolean."""
+    bl_idname = "lsd.quick_sdf_boolean"
+    bl_label = "Quick SDF Boolean"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    operation: bpy.props.StringProperty(name="Operation", default='UNION')
+    
+    def execute(self, context):
+        active = context.active_object
+        selected = [o for o in context.selected_objects if o != active]
+        if not active or not selected:
+            return {'CANCELLED'}
+        cutter = selected[0]
+        
+        # Prevent double triggering
+        from . import properties
+        properties._lsd_is_batch_updating = True
+        try:
+            active.lsd_pg_sdf_props.target_object = cutter
+            active.lsd_pg_sdf_props.operation = self.operation
+        finally:
+            properties._lsd_is_batch_updating = False
+            
+        cutter.display_type = 'TEXTURED'
+        
+        from . import generators
+        generators.setup_sdf_booleans(active)
+        return {'FINISHED'}
+
+class LSD_OT_Toggle_Cutter_Visibility(bpy.types.Operator):
+    """Toggles the viewport display type of the cutter object"""
+    bl_idname = "lsd.toggle_cutter_visibility"
+    bl_label = "Toggle Cutter Visibility"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        obj = context.active_object
+        if obj and obj.lsd_pg_sdf_props.target_object:
+            cutter = obj.lsd_pg_sdf_props.target_object
+            if cutter.display_type == 'BOUNDS':
+                cutter.display_type = 'TEXTURED'
+            else:
+                cutter.display_type = 'BOUNDS'
+        return {'FINISHED'}
+
+class LSD_OT_Directional_Translate(bpy.types.Operator):
+    """Directional Translate based on mouse vector"""
+    bl_idname = "lsd.directional_translate"
+    bl_label = "Directional Translate"
+    bl_options = {'REGISTER', 'UNDO', 'BLOCKING', 'GRAB_CURSOR'}
+    
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "lsd_enable_directional_translate", False)
+    
+    def invoke(self, context, event):
+        self.is_edit = context.mode == 'EDIT_MESH'
+        import mathutils
+        
+        if self.is_edit:
+            self.active_obj = context.active_object
+            if not self.active_obj or self.active_obj.type != 'MESH':
+                return {'CANCELLED'}
+                
+            import bmesh
+            self.bm = bmesh.from_edit_mesh(self.active_obj.data)
+            self.verts = [v for v in self.bm.verts if v.select]
+            if not self.verts:
+                return {'CANCELLED'}
+                
+            self.init_vert_locs = {v: v.co.copy() for v in self.verts}
+            center = mathutils.Vector((0,0,0))
+            for v in self.verts:
+                center += self.active_obj.matrix_world @ v.co
+            self.origin_world = center / len(self.verts)
+            self.init_world_matrix = self.active_obj.matrix_world.copy()
+            self.inv_world_matrix = self.active_obj.matrix_world.inverted()
+        else:
+            if not context.selected_objects:
+                return {'CANCELLED'}
+            self.active_obj = context.active_object
+            self.initial_locs = {obj.name: obj.location.copy() for obj in context.selected_objects}
+            self.origin_world = self.active_obj.location.copy()
+            
+        self.init_mouse_x = event.mouse_region_x
+        self.init_mouse_y = event.mouse_region_y
+        self.mouse_x = event.mouse_region_x
+        self.mouse_y = event.mouse_region_y
+        self.input_value = ""
+        self.last_valid_direction = None
+        
+        # Ensure we are in a 3D view to prevent region_data NoneType errors
+        if context.area.type != 'VIEW_3D' or context.region_data is None:
+            self.report({'WARNING'}, "Directional Translate must be used in the 3D Viewport (Assign it to a shortcut like G).")
+            return {'CANCELLED'}
+        
+        context.window_manager.modal_handler_add(self)
+        context.area.header_text_set("Directional Translate: move mouse and type distance. Esc/RMB to cancel, Enter/LMB to confirm.")
+        return {'RUNNING_MODAL'}
+        
+    def modal(self, context, event):
+        context.area.header_text_set(f"Directional Translate | Dist: {self.input_value if self.input_value else 'Freestyle'} | Enter to confirm")
+        
+        if event.type == 'MOUSEMOVE':
+            self.mouse_x = event.mouse_region_x
+            self.mouse_y = event.mouse_region_y
+            self.update_transform(context)
+            
+        elif event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            context.area.header_text_set(None)
+            return {'FINISHED'}
+            
+        elif event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS':
+            if self.is_edit:
+                import bmesh
+                for v in self.verts:
+                    v.co = self.init_vert_locs[v]
+                bmesh.update_edit_mesh(self.active_obj.data)
+            else:
+                for obj in context.selected_objects:
+                    obj.location = self.initial_locs[obj.name]
+            context.area.header_text_set(None)
+            return {'CANCELLED'}
+            
+        elif event.type in {'RET', 'NUMPAD_ENTER'}:
+            if event.value == 'PRESS':
+                context.area.header_text_set(None)
+                return {'FINISHED'}
+                
+        elif event.value == 'PRESS' and event.type in {
+            'ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE',
+            'NUMPAD_0', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4', 'NUMPAD_5', 'NUMPAD_6', 'NUMPAD_7', 'NUMPAD_8', 'NUMPAD_9',
+            'PERIOD', 'NUMPAD_PERIOD', 'MINUS', 'NUMPAD_MINUS', 'BACK_SPACE'}:
+            
+            if event.type == 'BACK_SPACE':
+                self.input_value = self.input_value[:-1]
+            elif event.type in {'MINUS', 'NUMPAD_MINUS'}:
+                if self.input_value.startswith('-'):
+                    self.input_value = self.input_value[1:]
+                else:
+                    self.input_value = '-' + self.input_value
+            elif event.type in {'PERIOD', 'NUMPAD_PERIOD'}:
+                if '.' not in self.input_value:
+                    self.input_value += '.'
+            else:
+                num = event.type[-1] if event.type.startswith('NUMPAD_') else (event.type[-1] if event.type[-1].isdigit() else str(
+                    ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE'].index(event.type)
+                ))
+                self.input_value += num
+                
+            self.update_transform(context)
+            
+        return {'RUNNING_MODAL'}
+        
+    def update_transform(self, context):
+        import mathutils
+        from bpy_extras import view3d_utils
+        region = context.region
+        rv3d = context.region_data
+        
+        if not self.active_obj: return
+        
+        view_vec = view3d_utils.region_2d_to_vector_3d(region, rv3d, (self.mouse_x, self.mouse_y))
+        ray_origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, (self.mouse_x, self.mouse_y))
+        
+        plane_normal = rv3d.view_matrix.row[2].xyz
+        
+        isect = mathutils.geometry.intersect_line_plane(ray_origin, ray_origin + view_vec, self.origin_world, plane_normal)
+        
+        if isect is None: return
+        
+        displacement = isect - self.origin_world
+        
+        if self.input_value:
+            try:
+                dist = float(self.input_value)
+            except ValueError:
+                dist = 0.0
+                
+            if displacement.length > 0.0001:
+                self.last_valid_direction = displacement.normalized()
+            
+            if self.last_valid_direction:
+                displacement = self.last_valid_direction * dist
+            else:
+                displacement = mathutils.Vector((0, 0, 0))
+                
+        if self.is_edit:
+            import bmesh
+            local_disp = self.inv_world_matrix.to_3x3() @ displacement
+            for v in self.verts:
+                v.co = self.init_vert_locs[v] + local_disp
+            bmesh.update_edit_mesh(self.active_obj.data)
+        else:
+            for obj in context.selected_objects:
+                obj.location = self.initial_locs[obj.name] + displacement
+                
+        # Force a viewport redraw to ensure the user sees the update instantly
+        context.area.tag_redraw()
+
 def register():
     CLASSES = [
+        LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
         LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
-        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture,
-        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge,
-        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
+        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Apply_Paint_Bucket,
+        LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
         LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
@@ -6269,7 +6599,10 @@ def register():
         LSD_OT_EnterPoseMode, LSD_OT_EnterObjectMode, LSD_OT_AddBone, LSD_OT_ApplyRestPose,
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
-        LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions
+        LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions,
+        LSD_OT_Apply_Smart_Skin_Thickness, LSD_OT_Apply_Smart_Skin_Transition,
+        LSD_OT_Init_Smart_Skin_Data, LSD_OT_Setup_Skin_Modifier,
+        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate
     ]
     for cls in CLASSES:
         if hasattr(cls, 'bl_rna'):
@@ -6279,14 +6612,14 @@ def register():
                 print(f"LSD Operator Register Warning: Could not register {cls.__name__}: {e}")
 def unregister():
     CLASSES = [
+        LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
         LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
-        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Material_AddSmart, LSD_OT_Material_LoadTexture,
-        LSD_OT_Material_FromImage, LSD_OT_AddMappingNodes, LSD_OT_UV_SmartUnwrap, LSD_OT_Material_Merge,
-        LSD_OT_Material_Add, LSD_UL_Mat_List, LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
+        LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Apply_Paint_Bucket,
+        LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
         LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
@@ -6302,7 +6635,10 @@ def unregister():
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
         LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions,
-        LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global
+        LSD_OT_Apply_Smart_Skin_Thickness, LSD_OT_Apply_Smart_Skin_Transition,
+        LSD_OT_Init_Smart_Skin_Data, LSD_OT_Setup_Skin_Modifier,
+        LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
+        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate
     ]
     for cls in reversed(CLASSES):
         try:

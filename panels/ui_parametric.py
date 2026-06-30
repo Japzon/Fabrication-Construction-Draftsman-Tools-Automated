@@ -99,6 +99,51 @@ class LSD_PT_Procedural_Toolkit:
             # Commit Alignment (Only useful if Live is on, or to clear the mask)
             if scene.lsd_path_live_align:
                 cal_row.operator("lsd.commit_path_alignment", text="Commit Alignment", icon='CHECKMARK')
+
+            # --- Dedicated Sub-Panel: Vertex Creator ---
+            create_box = col_main.box()
+            create_box.label(text="Vertex Creator", icon='ADD')
+            row = create_box.row(align=True)
+            row.scale_y = 1.2
+            # Dropdown for curve/mesh type
+            row.prop(scene, "lsd_spawn_type", text="")
+            # Single action button to spawn the selected type
+            spawn_op = row.operator("lsd.create_curve_for_path", text="Create Vertex", icon='PLUS')
+            spawn_op.type = scene.lsd_spawn_type
+
+            # --- Dedicated Sub-Panel: Smart Skin Modifier ---
+            skin_box = col_main.box()
+            skin_box.label(text="Smart Skin Modifier", icon='MOD_SKIN')
+            
+            obj = context.active_object
+            has_skin = obj and any(m.type == 'SKIN' for m in obj.modifiers)
+            
+            if not has_skin:
+                # Step 1: Put a skin modifier on the mesh
+                row = skin_box.row()
+                row.scale_y = 1.5
+                row.operator("lsd.setup_skin_modifier", text="Setup Skin Modifier", icon='ADD')
+            else:
+                skin_props = scene.lsd_pg_smart_skin_props
+                
+                # Step 2: Edit skin thickness property
+                skin_box.prop(skin_props, "thickness", text="Skin Thickness", slider=True)
+                
+                # Step 3: Change the transition profile
+                curve_node = core.get_smart_skin_data()
+                if curve_node:
+                    # Floating Curve UI as requested
+                    skin_box.label(text="Transition Profile (Start -> Selection):")
+                    skin_box.template_curve_mapping(curve_node, "mapping", type='NONE')
+                    
+                    row = skin_box.row()
+                    row.scale_y = 1.2
+                    row.operator("lsd.apply_smart_skin_transition", text="Apply Transition", icon='MOD_SMOOTH')
+                else:
+                    # Automatic invisible initialization for better UX
+                    row = skin_box.row()
+                    row.operator("lsd.init_smart_skin_data", text="Initialize Curve Mapping", icon='NODE_SEL')
+
             # Note: Over-simplistic modifiers and cleanup tools have been removed
 def register():
     for cls in [LSD_PT_Procedural_Toolkit]:

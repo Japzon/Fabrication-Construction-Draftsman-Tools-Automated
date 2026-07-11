@@ -1419,7 +1419,12 @@ def register():
     bpy.types.Scene.lsd_paint_bucket_prevent_initial_fill = bpy.props.BoolProperty(
         name="Prevent Initial Fill",
         description="Avoid painting everything when first entering Edit Mode (where whole object is selected by default)",
-        default=True
+        default=False
+    )
+    bpy.types.Scene.lsd_paint_bucket_purge_mode = bpy.props.BoolProperty(
+        name="Purge Textures & Materials",
+        description="When enabled, selecting objects or faces will REMOVE all materials and textures instead of applying the paint bucket color",
+        default=False
     )
     bpy.types.Scene.lsd_hook_placement_mode = bpy.props.BoolProperty(name="Hook Placement", default=False)
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
@@ -1463,6 +1468,11 @@ def register():
         description="Overrides the 'G' key to use Directional Translate instead of Blender's default grab",
         default=False
     )
+    bpy.types.Scene.lsd_enable_math_input = bpy.props.BoolProperty(
+        name="Enable Math Input (=)",
+        description="Allows typing math expressions like =5/2+1 when inputting distances in Directional Translate",
+        default=False
+    )
 
 def unregister():
     """Systematic cleanup of all LSD properties and classes."""
@@ -1487,8 +1497,8 @@ def unregister():
             "lsd_dim_text_offset", "lsd_scale_mode", "lsd_scale_pivot", "lsd_scale_realtime",
             "lsd_dimensions_master", "lsd_dim_tracker_group_name",
             "lsd_pg_smart_skin_props",
-            "lsd_paint_bucket_mode", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill",
-            "lsd_enable_directional_translate"
+            "lsd_paint_bucket_mode", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill", "lsd_paint_bucket_purge_mode",
+            "lsd_enable_directional_translate", "lsd_enable_math_input"
         ]
         # Add order props
         prop_names = [

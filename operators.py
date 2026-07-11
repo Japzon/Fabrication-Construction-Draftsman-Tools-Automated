@@ -6465,6 +6465,12 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
         self.input_value = ""
         self.last_valid_direction = None
         
+        self.lock_axis = None
+        self.lock_mode = 'GLOBAL'
+        self.is_middle_mouse_down = False
+        self.mm_start_pos = None
+        self.mm_dragged = False
+        
         # Ensure we are in a 3D view to prevent region_data NoneType errors
         if context.area.type != 'VIEW_3D' or context.region_data is None:
             self.report({'WARNING'}, "Directional Translate must be used in the 3D Viewport (Assign it to a shortcut like G).")
@@ -6480,21 +6486,57 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
         if event.type == 'MOUSEMOVE':
             self.mouse_x = event.mouse_region_x
             self.mouse_y = event.mouse_region_y
+            
+            if self.is_middle_mouse_down and self.mm_start_pos:
+                dx = self.mouse_x - self.mm_start_pos[0]
+                dy = self.mouse_y - self.mm_start_pos[1]
+                if (dx*dx + dy*dy) > 64: # ~8 pixels movement to confirm lock
+                    self.mm_dragged = True
+                    self.lock_axis = self._get_best_screen_axis(context, dx, dy)
+                    self.lock_mode = 'GLOBAL'
+                    
             self.update_transform(context)
             
+        elif event.value == 'PRESS' and hasattr(event, "unicode") and event.unicode and event.type not in {'X', 'Y', 'Z', 'G', 'O'}:
+            char = event.unicode
+            # If math input is enabled, we allow math characters. Otherwise just numbers and periods.
+            allow_math = getattr(context.scene, "lsd_enable_math_input", False)
+            valid_chars = "0123456789.-"
+            if allow_math:
+                valid_chars += "+*/()="
+                
+            if char in valid_chars:
+                if char == '=' and not allow_math:
+                    pass
+                else:
+                    self.input_value += char
+                    self.update_transform(context)
+                    
+        elif event.type == 'BACK_SPACE' and event.value == 'PRESS':
+            if self.input_value:
+                self.input_value = self.input_value[:-1]
+                self.update_transform(context)
+            
+        elif event.type == 'MIDDLEMOUSE':
+            if event.value == 'PRESS':
+                self.is_middle_mouse_down = True
+                self.mm_start_pos = (event.mouse_region_x, event.mouse_region_y)
+                self.mm_dragged = False
+            elif event.value == 'RELEASE':
+                if not self.mm_dragged:
+                    # Quick click, remove lock
+                    self.lock_axis = None
+                    self.lock_mode = 'GLOBAL'
+                    self.update_transform(context)
+                self.is_middle_mouse_down = False
+                self.mm_start_pos = None
+                
         elif event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             context.area.header_text_set(None)
             return {'FINISHED'}
             
         elif event.type in {'RIGHTMOUSE', 'ESC'} and event.value == 'PRESS':
-            if self.is_edit:
-                import bmesh
-                for v in self.verts:
-                    v.co = self.init_vert_locs[v]
-                bmesh.update_edit_mesh(self.active_obj.data)
-            else:
-                for obj in context.selected_objects:
-                    obj.location = self.initial_locs[obj.name]
+            self._revert_transform(context)
             context.area.header_text_set(None)
             return {'CANCELLED'}
             
@@ -6503,30 +6545,68 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
                 context.area.header_text_set(None)
                 return {'FINISHED'}
                 
-        elif event.value == 'PRESS' and event.type in {
-            'ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE',
-            'NUMPAD_0', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4', 'NUMPAD_5', 'NUMPAD_6', 'NUMPAD_7', 'NUMPAD_8', 'NUMPAD_9',
-            'PERIOD', 'NUMPAD_PERIOD', 'MINUS', 'NUMPAD_MINUS', 'BACK_SPACE'}:
-            
-            if event.type == 'BACK_SPACE':
-                self.input_value = self.input_value[:-1]
-            elif event.type in {'MINUS', 'NUMPAD_MINUS'}:
-                if self.input_value.startswith('-'):
-                    self.input_value = self.input_value[1:]
+        elif event.type in {'X', 'Y', 'Z'} and event.value == 'PRESS':
+            if self.lock_axis == event.type:
+                if self.lock_mode == 'GLOBAL':
+                    self.lock_mode = 'LOCAL'
                 else:
-                    self.input_value = '-' + self.input_value
-            elif event.type in {'PERIOD', 'NUMPAD_PERIOD'}:
-                if '.' not in self.input_value:
-                    self.input_value += '.'
+                    self.lock_axis = None
+                    self.lock_mode = 'GLOBAL'
             else:
-                num = event.type[-1] if event.type.startswith('NUMPAD_') else (event.type[-1] if event.type[-1].isdigit() else str(
-                    ['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE'].index(event.type)
-                ))
-                self.input_value += num
-                
+                self.lock_axis = event.type
+                self.lock_mode = 'GLOBAL'
             self.update_transform(context)
+                
+        # Smart Handoff for specific tools (Edge Slide, Prop Editing)
+        elif event.value == 'PRESS' and event.type in {'G', 'O', 'B'}:
+            self._revert_transform(context)
+            context.area.header_text_set(None)
+            if event.type == 'G':
+                if self.is_edit:
+                    if 'EDGE' in self.bm.select_mode:
+                        bpy.ops.transform.edge_slide('INVOKE_DEFAULT')
+                    else:
+                        bpy.ops.transform.vert_slide('INVOKE_DEFAULT')
+                else:
+                    bpy.ops.transform.translate('INVOKE_DEFAULT')
+            else:
+                bpy.ops.transform.translate('INVOKE_DEFAULT')
+            return {'CANCELLED'}
             
         return {'RUNNING_MODAL'}
+        
+    def _revert_transform(self, context):
+        if self.is_edit:
+            import bmesh
+            for v in self.verts:
+                v.co = self.init_vert_locs[v]
+            bmesh.update_edit_mesh(self.active_obj.data)
+        else:
+            for obj in context.selected_objects:
+                obj.location = self.initial_locs[obj.name]
+        context.area.tag_redraw()
+        
+    def _get_best_screen_axis(self, context, dx, dy):
+        from bpy_extras import view3d_utils
+        import mathutils
+        region = context.region
+        rv3d = context.region_data
+        origin_2d = view3d_utils.location_3d_to_region_2d(region, rv3d, self.origin_world)
+        if not origin_2d: return 'X'
+        axes = {'X': mathutils.Vector((1,0,0)), 'Y': mathutils.Vector((0,1,0)), 'Z': mathutils.Vector((0,0,1))}
+        best_axis = 'X'
+        max_dot = -1.0
+        mouse_vec = mathutils.Vector((dx, dy)).normalized()
+        for name, vec in axes.items():
+            p3d = self.origin_world + vec
+            p2d = view3d_utils.location_3d_to_region_2d(region, rv3d, p3d)
+            if p2d:
+                screen_vec = (p2d - origin_2d).normalized()
+                d = abs(screen_vec.dot(mouse_vec))
+                if d > max_dot:
+                    max_dot = d
+                    best_axis = name
+        return best_axis
         
     def update_transform(self, context):
         import mathutils
@@ -6547,12 +6627,45 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
         
         displacement = isect - self.origin_world
         
+        # Apply Axis Lock
+        if self.lock_axis:
+            if self.lock_mode == 'LOCAL' and not self.is_edit:
+                ori = self.active_obj.matrix_world.to_3x3()
+                if self.lock_axis == 'X': axis_vec = ori @ mathutils.Vector((1,0,0))
+                elif self.lock_axis == 'Y': axis_vec = ori @ mathutils.Vector((0,1,0))
+                else: axis_vec = ori @ mathutils.Vector((0,0,1))
+                axis_vec.normalize()
+                displacement = axis_vec * displacement.dot(axis_vec)
+            else:
+                dx, dy, dz = displacement.x, displacement.y, displacement.z
+                if self.lock_axis == 'X': displacement = mathutils.Vector((dx, 0, 0))
+                elif self.lock_axis == 'Y': displacement = mathutils.Vector((0, dy, 0))
+                elif self.lock_axis == 'Z': displacement = mathutils.Vector((0, 0, dz))
+        
         if self.input_value:
-            try:
-                dist = float(self.input_value)
-            except ValueError:
-                dist = 0.0
-                
+            dist_str = self.input_value
+            if dist_str.startswith('='):
+                dist_str = dist_str[1:]
+                # Safe math evaluation
+                try:
+                    # Sanitize input: only allow math chars
+                    if all(c in "0123456789.+-*/() " for c in dist_str) and len(dist_str) > 0:
+                        import re, warnings
+                        # Convert implicit multiplication e.g. 5(2) to 5*(2) and )( to )*(
+                        dist_str = re.sub(r'(\d|\))\s*\(', r'\1*(', dist_str)
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            dist = float(eval(dist_str))
+                    else:
+                        dist = 0.0
+                except:
+                    dist = 0.0
+            else:
+                try:
+                    dist = float(dist_str)
+                except ValueError:
+                    dist = 0.0
+            
             if displacement.length > 0.0001:
                 self.last_valid_direction = displacement.normalized()
             

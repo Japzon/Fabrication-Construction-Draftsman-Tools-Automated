@@ -72,6 +72,11 @@ class LSD_PT_Materials_And_Textures:
             col.prop(scene, "lsd_paint_bucket_mode", text="Enable Paint Bucket", icon='EVENT_P' if scene.lsd_paint_bucket_mode else 'MOUSE_MOVE')
             col.prop(scene, "lsd_paint_bucket_prevent_initial_fill", text="Prevent Initial Fill")
             
+            box2 = col.box()
+            box2.prop(scene, "lsd_paint_bucket_purge_mode", text="Purge Mode", icon='TRASH')
+            if scene.lsd_paint_bucket_purge_mode:
+                box2.label(text="WARNING: Clicking will strip materials!", icon='ERROR')
+            
             if scene.lsd_paint_bucket_mode:
                 col.label(text="Mode Active: Select faces to paint.", icon='INFO')
             

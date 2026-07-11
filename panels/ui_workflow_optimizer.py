@@ -12,6 +12,7 @@ class LSD_PT_Workflow_Optimizer(bpy.types.Panel):
         box = layout.box()
         
         box.prop(context.scene, "lsd_enable_directional_translate", text="Enable Directional Translate (G)", toggle=True, icon='CON_TRANSLIKE')
+        box.prop(context.scene, "lsd_enable_math_input", text="Enable Math Input (=)", toggle=True, icon='CON_SIZELIKE')
         
         if context.scene.lsd_enable_directional_translate:
             box.label(text="Select object > Press G > Move mouse > Type distance", icon='INFO')

@@ -5644,15 +5644,38 @@ def apply_paint_bucket(context):
         return
     
     obj = context.active_object
-    if not obj or obj.type != 'MESH' or obj.mode != 'EDIT':
+    if not obj or obj.type != 'MESH':
+        return
+        
+    # If in Object mode, only proceed if the toggle is disabled, UNLESS purge mode is on
+    if obj.mode != 'EDIT' and scene.lsd_paint_bucket_prevent_initial_fill and not scene.lsd_paint_bucket_purge_mode:
         return
 
     # 1. Capture Selection (Face level)
     try:
-        bm = bmesh.from_edit_mesh(obj.data)
-        bm.faces.ensure_lookup_table()
-        selected_faces = [f for f in bm.faces if f.select]
-        if not selected_faces:
+        bm = bmesh.from_edit_mesh(obj.data) if obj.mode == 'EDIT' else None
+        selected_faces = []
+        if bm:
+            bm.faces.ensure_lookup_table()
+            selected_faces = [f for f in bm.faces if f.select]
+            if not selected_faces and not scene.lsd_paint_bucket_purge_mode:
+                return
+                
+        # --- Purge Mode Check ---
+        if scene.lsd_paint_bucket_purge_mode:
+            if obj.mode == 'EDIT':
+                # If we have faces selected, we clear their materials by assigning them to 0, and we could clear unused.
+                # However, the user said "everything I selected gets purged of its textures and materials"
+                # For safety and completeness, we will clear ALL material slots of the object if they are purging in edit mode.
+                obj.data.materials.clear()
+            else:
+                for o in context.selected_objects:
+                    if o.type == 'MESH':
+                        o.data.materials.clear()
+            obj.data.update()
+            return
+            
+        if not selected_faces and obj.mode == 'EDIT':
             return
 
         # 2. Material Resolution
@@ -5712,20 +5735,41 @@ def apply_paint_bucket(context):
 
         # 3. Assign Material Slot
         slot_index = -1
-        for i, slot in enumerate(obj.material_slots):
-            if slot.material == mat:
-                slot_index = i
-                break
         
-        if slot_index == -1:
-            obj.data.materials.append(mat)
-            slot_index = len(obj.data.materials) - 1
+        if obj.mode == 'EDIT':
+            if len(obj.material_slots) == 0:
+                # Prevent Blender from applying the first material to the whole mesh
+                def_mat = bpy.data.materials.get("LSD_Default_Unpainted")
+                if not def_mat:
+                    def_mat = bpy.data.materials.new("LSD_Default_Unpainted")
+                    def_mat.use_nodes = True
+                obj.data.materials.append(def_mat)
+                
+            for i, slot in enumerate(obj.material_slots):
+                if slot.material == mat:
+                    slot_index = i
+                    break
+            
+            if slot_index == -1:
+                obj.data.materials.append(mat)
+                slot_index = len(obj.data.materials) - 1
 
-        # 4. Apply to BMesh (Selective Assignment)
-        for f in selected_faces:
-            f.material_index = slot_index
-        
-        bmesh.update_edit_mesh(obj.data)
+            # 4. Apply to BMesh (Selective Assignment)
+            for f in selected_faces:
+                f.material_index = slot_index
+            
+            bmesh.update_edit_mesh(obj.data)
+        else:
+            # Object Mode application
+            for o in context.selected_objects:
+                if o.type == 'MESH':
+                    if len(o.material_slots) == 0:
+                        o.data.materials.append(mat)
+                    else:
+                        # Override all material slots to the new color for a full object fill
+                        for i in range(len(o.material_slots)):
+                            o.material_slots[i].material = mat
+                            
         # Force a viewport refresh for material changes
         obj.data.update()
     except Exception as e:
@@ -5746,9 +5790,11 @@ def lsd_paint_bucket_timer_cb():
         context = bpy.context
         if not context or not hasattr(context, "mode"):
             return None
-            
-        if context.mode == 'EDIT_MESH' and context.scene.lsd_paint_bucket_mode:
-            bpy.ops.lsd.apply_paint_bucket()
+        if context.scene.lsd_paint_bucket_mode:
+            if context.mode == 'EDIT_MESH':
+                bpy.ops.lsd.apply_paint_bucket()
+            elif context.mode == 'OBJECT' and (not context.scene.lsd_paint_bucket_prevent_initial_fill or context.scene.lsd_paint_bucket_purge_mode):
+                bpy.ops.lsd.apply_paint_bucket()
     except:
         # Prevent background timer crashes if context is unstable
         pass
@@ -5813,6 +5859,13 @@ def lsd_paint_bucket_handler(scene, depsgraph=None):
         _paint_bucket_timer_active = True
         bpy.app.timers.register(lsd_paint_bucket_timer_cb, first_interval=0.01)
     else:
+        # Object mode handling
+        if curr_obj != _last_bucket_obj and (not scene.lsd_paint_bucket_prevent_initial_fill or scene.lsd_paint_bucket_purge_mode):
+            if _paint_bucket_timer_active:
+                return
+            _paint_bucket_timer_active = True
+            bpy.app.timers.register(lsd_paint_bucket_timer_cb, first_interval=0.01)
+            
         _last_bucket_mode = curr_mode
         _last_bucket_obj = curr_obj
         _paint_bucket_hold = False

@@ -493,7 +493,7 @@ def apply_smart_skin_transition(context: bpy.types.Context, curve_mapping: bpy.t
     # 4. Apply Modulation
     base_thickness = context.scene.lsd_pg_smart_skin_props.thickness
     
-    # Must initialize mapping for .evaluate() to work in 4.5+
+    # Must initialize mapping for .evaluate() to work in 5.1+
     curve_mapping.initialize()
     active_curve = curve_mapping.curves[0]
     
@@ -699,7 +699,7 @@ def setup_gn_for_rigid_array(path_obj: bpy.types.Object):
         links.new(input_node.outputs['Instance Object'], info_node.inputs['Object'])
         links.new(info_node.outputs['Geometry'], instance_node.inputs['Instance'])
         # 4. Rotation Alignment
-        # Standardize on 'GeometryNodeInputTangent' for 4.5+ path following
+        # Standardize on 'GeometryNodeInputTangent' for 5.1+ path following
         tangent_node = nodes.new('GeometryNodeInputTangent')
         align_node = nodes.new('FunctionNodeAlignEulerToVector')
         align_node.axis = 'X' # Assume +X is forward for the arrayed object
@@ -713,7 +713,7 @@ def setup_gn_for_rigid_array(path_obj: bpy.types.Object):
         links.new(join_output.outputs['Geometry'], output_node.inputs['Geometry'])
     return group
 def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", parent_a=None, parent_b=None):
-    # AI Editor Note: BLENDER 4.5+ ULTIMATE SYNC PASS
+    # AI Editor Note: BLENDER 5.1+ ULTIMATE SYNC PASS
     if context.mode != 'OBJECT':
          bpy.ops.object.mode_set(mode='OBJECT')
     # Pass 3: Hard flush in Object Mode
@@ -760,7 +760,7 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     rot_mat = rot_quat.to_matrix().to_4x4()
     rot_mat.translation = p1_v
     # AI Editor Note: DUAL LOCK - Set both matrix and properties to ensure stability
-    # across Blender 4.5's asynchronous evaluation frames.
+    # across Blender 5.1's asynchronous evaluation frames.
     root.matrix_world = rot_mat
     root.location = p1_v
     root.rotation_euler = rot_mat.to_euler()
@@ -871,11 +871,22 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     # both resolve dim_props from ROOT (obj.parent), NOT from txt_obj itself.
     # We must write all initial values to BOTH the label's dim_props (for UI) AND
     # the root's dim_props (which the layout/sync functions actually read from).
-    v_arrow = scene.lsd_dim_arrow_scale
-    v_text = scene.lsd_dim_text_scale
-    v_thick = scene.lsd_dim_line_thickness
-    v_offset = scene.lsd_dim_offset
-    v_text_offset = scene.lsd_dim_text_offset
+    
+    if getattr(scene, "lsd_dim_auto_scale_new", True):
+        v_arrow = initial_length * getattr(scene, "lsd_dim_ratio_arrow", 0.05)
+        v_text = initial_length * getattr(scene, "lsd_dim_ratio_text", 0.04)
+        v_thick = initial_length * getattr(scene, "lsd_dim_ratio_thick", 0.005)
+        v_offset = initial_length * getattr(scene, "lsd_dim_ratio_offset", 0.05)
+        v_text_offset = initial_length * getattr(scene, "lsd_dim_ratio_text_off", 0.01)
+        if v_arrow < 0.001: v_arrow = 0.001
+        if v_text < 0.001: v_text = 0.001
+    else:
+        v_arrow = scene.lsd_dim_arrow_scale
+        v_text = scene.lsd_dim_text_scale
+        v_thick = scene.lsd_dim_line_thickness
+        v_offset = scene.lsd_dim_offset
+        v_text_offset = scene.lsd_dim_text_offset
+        
     dim_props = txt_obj.lsd_pg_dim_props
     dim_props.length = initial_length
     dim_props.arrow_scale = v_arrow

@@ -50,7 +50,7 @@ from . import ui_common
 
 class LSD_PT_Materials_And_Textures:
     """
-    Drawing helper for the 'Materials & Texturing' panel.
+    Drawing helper for the 'Paint Tools' panel.
     Provides a clean, accessible interface for material management,
     smart presets, and texture painting tools.
     """
@@ -61,7 +61,7 @@ class LSD_PT_Materials_And_Textures:
     def draw(layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
         scene = context.scene
         # --- Header ---
-        box, is_expanded = ui_common.draw_panel_header(layout, context, "Materials & Textures", "lsd_show_panel_materials", "lsd_panel_enabled_materials")
+        box, is_expanded = ui_common.draw_panel_header(layout, context, "Paint Tools", "lsd_show_panel_materials", "lsd_panel_enabled_materials")
         if is_expanded:
             # --- Paint Bucket Tool Section ---
             bucket_box = box.box()

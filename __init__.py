@@ -12,7 +12,7 @@ bl_info = {
     "name": "Layouts & Systems Draftsman Toolkit",
     "author": "Greenlex Systems Services Incorporated",
     "version": (1, 4, 0),
-    "blender": (4, 0, 0),
+    "blender": (5, 1, 2),
     "location": "View3D > Sidebar > Layouts & Systems Toolkit",
     "description": "A comprehensive toolkit for native, non-destructive URDF creation and rigging for ROS/Gazebo.",
     "category": "Import-Export",

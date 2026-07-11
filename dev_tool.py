@@ -41,7 +41,7 @@ OLD_ADDON_NAMES = [
     "auto_robot_cnc_dev_kit"
 ]
 
-BLENDER_DEFAULT_PATH = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+BLENDER_DEFAULT_PATH = r"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe"
 
 def find_blender():
     # Priority 1: Default path
@@ -52,7 +52,7 @@ def find_blender():
     if os.path.exists(base_dir):
         folders = [f for f in os.listdir(base_dir) if f.startswith("Blender")]
         if folders:
-            # Sort by version number (naive but works for 4.x)
+            # Sort by version number (naive but works for 4.x/5.x)
             folders.sort(reverse=True)
             for folder in folders:
                 exe = os.path.join(base_dir, folder, "blender.exe")
@@ -71,7 +71,7 @@ def get_blender_version(path):
     match = re.search(r"Blender (\d+\.\d+)", path, re.I)
     if match:
         return match.group(1)
-    return "4.5" # Fallback
+    return "5.1" # Fallback
 def setup_dev():
     print("\n" + "="*50)
     print("  BLENDER DEVELOPMENT SETUP")

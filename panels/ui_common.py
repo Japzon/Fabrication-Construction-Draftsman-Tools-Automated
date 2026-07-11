@@ -201,17 +201,14 @@ class LSD_OT_MovePanel(bpy.types.Operator):
         scene = context.scene
         # Map of prop_name -> current_order
         props = {
-            "lsd_order_ai_factory": scene.lsd_order_ai_factory,
-            "lsd_order_assets": scene.lsd_order_assets,
-            "lsd_order_presets": scene.lsd_order_presets,
             "lsd_order_procedural": scene.lsd_order_procedural,
             "lsd_order_dimensions": scene.lsd_order_dimensions,
+            "lsd_order_sdf_booleans": scene.lsd_order_sdf_booleans,
             "lsd_order_materials": scene.lsd_order_materials,
-            "lsd_order_lighting": scene.lsd_order_lighting,
-            "lsd_order_kinematics": scene.lsd_order_kinematics,
-            "lsd_order_camera": scene.lsd_order_camera,
             "lsd_order_physics": scene.lsd_order_physics,
+            "lsd_order_kinematics": scene.lsd_order_kinematics,
             "lsd_order_transmission": scene.lsd_order_transmission,
+            "lsd_order_camera": scene.lsd_order_camera,
             "lsd_order_export": scene.lsd_order_export,
             "lsd_order_preferences": scene.lsd_order_preferences,
         }
@@ -243,19 +240,16 @@ class LSD_OT_ResetPanelOrder(bpy.types.Operator):
     bl_description = "Resets all panel order settings to their defaults"
     def execute(self, context):
         scene = context.scene
-        scene.lsd_order_ai_factory = 0
-        scene.lsd_order_assets = 1
-        scene.lsd_order_presets = 2
-        scene.lsd_order_procedural = 3
-        scene.lsd_order_dimensions = 4
-        scene.lsd_order_materials = 5
-        scene.lsd_order_physics = 6
-        scene.lsd_order_kinematics = 7
-        scene.lsd_order_transmission = 8
-        scene.lsd_order_lighting = 9
-        scene.lsd_order_camera = 10
-        scene.lsd_order_export = 11
-        scene.lsd_order_preferences = 12
+        scene.lsd_order_procedural = 0
+        scene.lsd_order_dimensions = 1
+        scene.lsd_order_sdf_booleans = 2
+        scene.lsd_order_materials = 3
+        scene.lsd_order_physics = 4
+        scene.lsd_order_kinematics = 5
+        scene.lsd_order_transmission = 6
+        scene.lsd_order_camera = 7
+        scene.lsd_order_export = 8
+        scene.lsd_order_preferences = 9
         # Trigger the update to apply changes immediately
         bpy.ops.lsd.update_panel_order()
         return {'FINISHED'}

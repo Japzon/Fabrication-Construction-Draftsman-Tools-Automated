@@ -997,16 +997,7 @@ class LSD_PG_Lighting_Props(bpy.types.PropertyGroup):
     selected_light_energy: bpy.props.FloatProperty(name="Power", default=100.0, min=0.0)
     selected_light_color: bpy.props.FloatVectorProperty(name="Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0))
     selected_light_target: bpy.props.PointerProperty(name="Target", type=bpy.types.Object)
-class LSD_PG_Asset_Props(bpy.types.PropertyGroup):
-    target_library: bpy.props.StringProperty(name="Library Path", description="Library folder used for marking and importing assets.")
-    selected_catalog: bpy.props.StringProperty(name="Catalog", description="Choose a catalog folder within the selected library.")
-    # Path/Management properties used in sidebars/popups
-    add_library_path: bpy.props.StringProperty(name="New Library Path", description="Path to a folder to be added as a new Asset Library.")
-    new_catalog_name: bpy.props.StringProperty(name="Catalog Name", description="Name for the new asset catalog folder.")
-    # Batch Import settings
-    import_source_filepath: bpy.props.StringProperty(name="Import File", description="Select a 3D file (.blend, .fbx, .glb) to import.", subtype='FILE_PATH')
-    import_target_library: bpy.props.StringProperty(name="Target Library", description="Library where the imported file will be registered.")
-    import_target_catalog: bpy.props.StringProperty(name="Target Catalog", description="Catalog folder where the imported file will be added.")
+
 class LSD_PG_Dimensions_Grouped_Set(bpy.types.PropertyGroup):
     """A persistent group of dimension controllers with its own name and items."""
     name: bpy.props.StringProperty(name="Set Name", default="Drafting Group")
@@ -1059,9 +1050,153 @@ class LSD_PG_SDF_Props(bpy.types.PropertyGroup):
 CLASSES = [
     LSD_PG_Transmission_Properties, LSD_PG_Material_Properties, LSD_PG_Collision_Properties,
     LSD_PG_Inertial_Properties, LSD_PG_Wrap_Item, LSD_PG_Dimensions_Master_Item, LSD_PG_Dimensions_Grouped_Set, LSD_PG_Slinky_Hook, LSD_PG_Mech_Props, LSD_PG_Mimic_Driver,
-    LSD_PG_Kinematic_Props, LSD_PG_AI_Props, LSD_PG_Lighting_Props, LSD_PG_Asset_Props,
+    LSD_PG_Kinematic_Props, LSD_PG_AI_Props, LSD_PG_Lighting_Props,
     LSD_PG_Dimension_Props, LSD_PG_Smart_Skin_Props, LSD_ExportItem, LSD_PG_SDF_Props
 ]
+
+
+
+
+_last_selected_asset_ref = None
+
+def lsd_asset_sync_timer():
+    try:
+        context = bpy.context
+        if not getattr(context.scene, "lsd_enable_asset_editor", False):
+            return 1.0
+            
+        wm = bpy.data.window_managers[0] if bpy.data.window_managers else None
+        if not wm: return 0.1
+        
+        asset = None
+        for window in wm.windows:
+            for area in window.screen.areas:
+                if area.type == 'FILE_BROWSER' and getattr(area, 'ui_type', '') == 'ASSETS':
+                    # Try to find the selected asset using space params or context
+                    with context.temp_override(window=window, area=area):
+                        if hasattr(context, 'selected_assets') and context.selected_assets:
+                            asset = context.selected_assets[0]
+                        elif hasattr(context, 'selected_asset_files') and context.selected_asset_files:
+                            asset = context.selected_asset_files[0]
+                        elif hasattr(context, 'asset_file_handle') and context.asset_file_handle:
+                            asset = context.asset_file_handle
+                    if not asset:
+                        space = area.spaces.active
+                        if space and hasattr(space, 'params') and space.params:
+                            asset = getattr(space.params, 'active_file', None)
+                    if asset: break
+            if asset: break
+            
+        global _last_selected_asset_ref
+        if asset:
+            is_local = getattr(asset, 'local_id', None) is not None
+            if not is_local:
+                # We only need to sync external assets since local ones are edited natively in the UI
+                cat = getattr(asset, "catalog_id", "")
+                if not cat and hasattr(asset, 'asset_data') and asset.asset_data:
+                    cat = getattr(asset.asset_data, "catalog_id", "")
+                    
+                if not cat:
+                    space = next((s for w in wm.windows for a in w.screen.areas if a.type == 'FILE_BROWSER' for s in a.spaces if s.type == 'FILE_BROWSER'), None)
+                    if space and hasattr(space, 'params'):
+                        cat = getattr(space.params, 'catalog_id', "")
+                        if cat in ("00000000-0000-0000-0000-000000000000", "ALL"):
+                            cat = ""
+                            
+                path_or_id = getattr(asset, 'relative_path', '')
+                asset_ref = f"{getattr(asset, 'name', '')}_{cat}_{path_or_id}"
+                
+                if asset_ref != _last_selected_asset_ref:
+                    context.scene.lsd_asset_new_name = asset.name
+                    
+                    cat_id = cat if cat else "NONE"
+                    
+                    if context.scene.get("lsd_asset_catalog_raw") != cat_id:
+                        context.scene["lsd_asset_catalog_raw"] = cat_id
+                        global _catalog_cache_time
+                        _catalog_cache_time = 0
+                        
+                    try:
+                        context.scene.lsd_asset_catalog = cat_id
+                    except TypeError:
+                        context.scene.lsd_asset_catalog = "NONE"
+                        
+                    _last_selected_asset_ref = asset_ref
+                    
+                    # Force redraw to eliminate latency!
+                    for w in wm.windows:
+                        for a in w.screen.areas:
+                            if a.type == 'VIEW_3D':
+                                a.tag_redraw()
+    except Exception:
+        pass
+    return 0.05
+
+_catalog_cache = []
+_catalog_cache_time = 0
+
+def get_catalogs_items(self, context):
+    global _catalog_cache, _catalog_cache_time
+    import time
+    if time.time() - _catalog_cache_time < 2.0 and _catalog_cache:
+        return _catalog_cache
+        
+    items = [("NONE", "None / Root", "")]
+    seen = {"NONE"}
+    
+    import os
+    # 1. Parse Current File Catalogs
+    if bpy.data.filepath:
+        curr_dir = os.path.dirname(bpy.data.filepath)
+        cat_file = os.path.join(curr_dir, "blender_assets.cats.txt")
+        if os.path.exists(cat_file):
+            try:
+                with open(cat_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and not line.startswith('VERSION'):
+                            parts = line.split(':')
+                            if len(parts) >= 3:
+                                uuid = parts[0].strip()
+                                path = parts[1].strip()
+                                name = parts[2].strip()
+                                if uuid not in seen:
+                                    items.append((uuid, f"[Current] {name}", path))
+                                    seen.add(uuid)
+            except Exception: pass
+                                
+    # 2. Parse External Library Catalogs
+    prefs = context.preferences
+    for lib in prefs.filepaths.asset_libraries:
+        lib_path = lib.path
+        cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
+        if os.path.exists(cat_file):
+            try:
+                with open(cat_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and not line.startswith('VERSION'):
+                            parts = line.split(':')
+                            if len(parts) >= 3:
+                                uuid = parts[0].strip()
+                                path = parts[1].strip()
+                                name = parts[2].strip()
+                                if uuid not in seen:
+                                    items.append((uuid, f"[{lib.name}] {name}", path))
+                                    seen.add(uuid)
+            except Exception: pass
+                                
+    if len(items) == 1:
+        items.append(("UNAVAILABLE", "No External Catalogs Found", ""))
+        
+    # Append the raw catalog ID if it's missing so the UI doesn't crash on assignment
+    raw_cat = context.scene.get("lsd_asset_catalog_raw")
+    if raw_cat and raw_cat not in seen:
+        items.append((raw_cat, f"[Unlinked] {raw_cat[:8]}...", ""))
+        
+    _catalog_cache = items
+    _catalog_cache_time = time.time()
+    return items
 
 def register():
     for cls in CLASSES:
@@ -1075,7 +1210,7 @@ def register():
     # Scene
     bpy.types.Scene.lsd_pg_ai_props = bpy.props.PointerProperty(type=LSD_PG_AI_Props)
     bpy.types.Scene.lsd_pg_lighting_props = bpy.props.PointerProperty(type=LSD_PG_Lighting_Props)
-    bpy.types.Scene.lsd_pg_asset_props = bpy.props.PointerProperty(type=LSD_PG_Asset_Props)
+
     bpy.types.Scene.lsd_pg_joint_editor_settings = bpy.props.PointerProperty(type=LSD_PG_Kinematic_Props)
     bpy.types.Object.lsd_pg_dim_props = bpy.props.PointerProperty(type=LSD_PG_Dimension_Props)
     bpy.types.Object.lsd_pg_sdf_props = bpy.props.PointerProperty(type=LSD_PG_SDF_Props)
@@ -1181,6 +1316,12 @@ def register():
     bpy.types.Scene.lsd_dim_ratio_thick = bpy.props.FloatProperty(name="Thick Ratio", default=0.004, min=0.0001)
     bpy.types.Scene.lsd_dim_ratio_text_off = bpy.props.FloatProperty(name="Text Off Ratio", default=0.06, min=0.001)
     bpy.types.Scene.lsd_dim_ratio_offset = bpy.props.FloatProperty(name="Offset Ratio", default=0.15, min=0.001)
+    
+    bpy.types.Scene.lsd_dim_auto_scale_new = bpy.props.BoolProperty(
+        name="Auto-Scale New Dimensions",
+        description="Automatically applies component ratios to newly generated dimensions based on their length",
+        default=True
+    )
     # 1.1.3 Global Color Sync Logic
     def update_dim_color_sync(self, context):
         from . import core
@@ -1430,20 +1571,16 @@ def register():
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
     # 3. Order Properties
     prop_names = [
-        "lsd_order_ai_factory",    # 1: Generate
-        "lsd_order_assets",        # 2: Asset Library
-        "lsd_order_presets",       # 3: Consolidated Presets
-        "lsd_order_procedural",    # 4: Procedural Toolkit
-        "lsd_order_dimensions",    # 5: Dimensions & Precision Transforms
-        "lsd_order_sdf_booleans",  # SDF Booleans
-        "lsd_order_materials",     # 6: Materials & Textures
-        "lsd_order_physics",       # 7: Physics
-        "lsd_order_kinematics",    # 8: Kinematics Setup
-        "lsd_order_transmission",  # 9: Transmission
-        "lsd_order_lighting",      # 10: Environment & Lighting
-        "lsd_order_camera",        # 11: Camera Studio & Pathing
-        "lsd_order_export",        # 12: Export System
-        "lsd_order_preferences"    # 13: Preferences
+        "lsd_order_procedural",    # 1: Procedural Toolkit
+        "lsd_order_dimensions",    # 2: Dimensions & Precision Transforms
+        "lsd_order_sdf_booleans",  # 3: SDF Booleans
+        "lsd_order_materials",     # 4: Paint Tools
+        "lsd_order_physics",       # 5: Physics
+        "lsd_order_kinematics",    # 6: Kinematics Setup
+        "lsd_order_transmission",  # 7: Transmission
+        "lsd_order_camera",        # 8: Camera Studio & Pathing
+        "lsd_order_export",        # 9: Import/Export System
+        "lsd_order_preferences"    # 10: Preferences
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))
@@ -1473,14 +1610,35 @@ def register():
         description="Allows typing math expressions like =5/2+1 when inputting distances in Directional Translate",
         default=False
     )
+    bpy.types.Scene.lsd_enable_asset_editor = bpy.props.BoolProperty(
+        name="Asset Browser Editor",
+        description="Safely allows for indirect editing/naming/clear assets without needing to open the .blend file directly",
+        default=False
+    )
+    bpy.types.Scene.lsd_asset_new_name = bpy.props.StringProperty(
+        name="New Asset Name",
+        description="Type the new name for the selected asset here",
+        default=""
+    )
+    bpy.types.Scene.lsd_asset_catalog = bpy.props.EnumProperty(
+        name="Catalog",
+        description="Select a catalog to move the asset to",
+        items=get_catalogs_items
+    )
+    
+    if not bpy.app.timers.is_registered(lsd_asset_sync_timer):
+        bpy.app.timers.register(lsd_asset_sync_timer)
 
 def unregister():
+    if bpy.app.timers.is_registered(lsd_asset_sync_timer):
+        bpy.app.timers.unregister(lsd_asset_sync_timer)
+        
     """Systematic cleanup of all LSD properties and classes."""
     try:
         # 1. Clean up Scene Properties
         from .config import LSD_PANEL_PROPS
         all_scene_props = LSD_PANEL_PROPS + [
-            "lsd_pg_ai_props", "lsd_pg_lighting_props", "lsd_pg_asset_props", "lsd_export_list",
+            "lsd_pg_ai_props", "lsd_pg_lighting_props", "lsd_export_list",
             "lsd_pg_joint_editor_settings",
             "lsd_active_rig", "lsd_viz_gizmos", "lsd_show_bones", "lsd_auto_collapse_panels",
             "lsd_text_placement_mode", "lsd_placement_mode", "lsd_part_category", "lsd_part_type",
@@ -1498,14 +1656,14 @@ def unregister():
             "lsd_dimensions_master", "lsd_dim_tracker_group_name",
             "lsd_pg_smart_skin_props",
             "lsd_paint_bucket_mode", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill", "lsd_paint_bucket_purge_mode",
-            "lsd_enable_directional_translate", "lsd_enable_math_input"
+            "lsd_enable_directional_translate", "lsd_enable_math_input", "lsd_enable_asset_editor", "lsd_asset_new_name", "lsd_asset_catalog"
         ]
         # Add order props
         prop_names = [
-            "lsd_order_ai_factory",            "lsd_order_presets", "lsd_order_procedural",
-            "lsd_order_dimensions", "lsd_order_sdf_booleans", "lsd_order_materials",
-            "lsd_order_lighting", "lsd_order_kinematics", "lsd_order_physics",
-            "lsd_order_transmission", "lsd_order_assets", "lsd_order_export", "lsd_order_preferences"
+            "lsd_order_procedural", "lsd_order_dimensions", "lsd_order_sdf_booleans",
+            "lsd_order_materials", "lsd_order_physics", "lsd_order_kinematics",
+            "lsd_order_transmission", "lsd_order_camera", "lsd_order_export",
+            "lsd_order_preferences"
         ]
         all_scene_props += prop_names
         for prop in all_scene_props:
@@ -1513,7 +1671,7 @@ def unregister():
                 delattr(bpy.types.Scene, prop)
         # 2. Clean up Object, Bone, and ID Pointers (Bypasses 'Uninstall Twice' bug)
         id_type_attrs = {
-            bpy.types.Object: ["lsd_pg_mech_props", "lsd_pg_dim_props", "lsd_pg_smart_skin_props", "lsd_pg_asset_props", "lsd_pg_lighting_props", "lsd_pg_sdf_props"],
+            bpy.types.Object: ["lsd_pg_mech_props", "lsd_pg_dim_props", "lsd_pg_smart_skin_props", "lsd_pg_lighting_props", "lsd_pg_sdf_props"],
             bpy.types.PoseBone: ["lsd_pg_kinematic_props"],
             bpy.types.Image: ["lsd_pg_ai_props"]
         }

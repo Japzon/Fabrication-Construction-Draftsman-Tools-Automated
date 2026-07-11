@@ -96,32 +96,26 @@ class LSD_PT_Preferences:
             behavior_box.prop(scene, "lsd_auto_collapse_panels")
             # --- Panel Order & Visibility Data ---
             top_level_names = {
-                "lsd_order_ai_factory": "Generate",
-                "lsd_order_assets": "Asset Library",
-                "lsd_order_presets": "Presets",
-                "lsd_order_dimensions": "Dimensions & Precision Transforms",
                 "lsd_order_procedural": "Procedural Toolkit",
-                "lsd_order_kinematics": "Kinematics Setup",
+                "lsd_order_dimensions": "Dimensions & Precision Transforms",
+                "lsd_order_sdf_booleans": "SDF Booleans",
+                "lsd_order_materials": "Paint Tools",
                 "lsd_order_physics": "Physics",
+                "lsd_order_kinematics": "Kinematics Setup",
                 "lsd_order_transmission": "Transmission",
-                "lsd_order_materials": "Materials & Textures",
-                "lsd_order_lighting": "Environment & Lighting",
                 "lsd_order_camera": "Camera Studio & Pathing",
-                "lsd_order_export": "Export System",
+                "lsd_order_export": "Import/Export System",
                 "lsd_order_preferences": "Preferences",
             }
             visibility_mapping = {
-                "lsd_order_ai_factory": "lsd_panel_enabled_ai_factory",
-                "lsd_order_assets": "lsd_panel_enabled_assets",
-                "lsd_order_presets": "lsd_panel_enabled_presets",
                 "lsd_order_procedural": "lsd_panel_enabled_procedural",
                 "lsd_order_dimensions": "lsd_panel_enabled_dimensions",
+                "lsd_order_sdf_booleans": "lsd_panel_enabled_sdf_booleans",
                 "lsd_order_materials": "lsd_panel_enabled_materials",
-                "lsd_order_lighting": "lsd_panel_enabled_lighting",
-                "lsd_order_camera": "lsd_panel_enabled_camera",
-                "lsd_order_kinematics": "lsd_panel_enabled_kinematics",
                 "lsd_order_physics": "lsd_panel_enabled_physics",
+                "lsd_order_kinematics": "lsd_panel_enabled_kinematics",
                 "lsd_order_transmission": "lsd_panel_enabled_transmission",
+                "lsd_order_camera": "lsd_panel_enabled_camera",
                 "lsd_order_export": "lsd_panel_enabled_export",
             }
             

@@ -266,42 +266,7 @@ class LSD_OT_ClearGroupedDimensions(bpy.types.Operator):
                      host.update_tag()
             sets.remove(self.group_index)
         return {'FINISHED'}
-class LSD_OT_Open_Asset_Browser(bpy.types.Operator):
-    """Opens the Blender Asset Browser window."""
-    bl_idname = "lsd.open_asset_browser"
-    bl_label = "Open Asset Browser"
-    bl_description = "Opens the Asset Browser editor in a new window"
-    def execute(self, context):
-        try:
-            bpy.ops.wm.window_new()
-            new_window = context.window_manager.windows[-1]
-            area = new_window.screen.areas[0]
-            area.type = 'FILE_BROWSER'
-            area.ui_type = 'ASSETS'
-        except Exception:
-            pass
-        return {'FINISHED'}
-class LSD_OT_Add_Asset_Library(bpy.types.Operator):
-    """Adds a new folder path to Blender's Asset Libraries."""
-    bl_idname = "lsd.add_asset_library"
-    bl_label = "Add Library"
-    bl_description = "Adds the chosen folder path to the asset library list"
-    bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context):
-        props = context.scene.lsd_pg_asset_props
-        path = props.add_library_path
-        if not path or not os.path.exists(path):
-            self.report({'ERROR'}, "Please select a valid directory path first.")
-            return {'CANCELLED'}
-        name = os.path.basename(os.path.normpath(path))
-        if not name:
-            name = "New_Library"
-        bpy.ops.preferences.asset_library_add(directory=path)
-        new_lib = context.preferences.filepaths.asset_libraries[-1]
-        new_lib.name = name
-        props.target_library = name
-        self.report({'INFO'}, f"Added and selected library: {name}")
-        return {'FINISHED'}
+
 class LSD_OT_Generate_Collision_Mesh(bpy.types.Operator):
     """
     Duplicates selected mesh objects, renames them with 'COLL_', and hides them.
@@ -436,216 +401,7 @@ class LSD_OT_Purge_Collision(bpy.types.Operator):
                 continue
         self.report({'INFO'}, f"Purged {count} collision mesh(es).")
         return {'FINISHED'}
-class LSD_OT_Register_Asset_Catalog(bpy.types.Operator):
-    """Creates a new catalog ID and folder in the selected library."""
-    bl_idname = "lsd.register_asset_catalog"
-    bl_label = "Register Catalog"
-    bl_description = "Defines a new catalog in the catalog definition file of the library"
-    bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context):
-        props = context.scene.lsd_pg_asset_props
-        cat_name = props.new_catalog_name
-        lib_name = props.target_library
-        if lib_name == 'LOCAL':
-            self.report({'WARNING'}, "Cannot create catalog in 'Current File'. Select a valid Library.")
-            return {'CANCELLED'}
-        if not cat_name.strip():
-            self.report({'WARNING'}, "Please enter a name for the new catalog.")
-            return {'CANCELLED'}
-        prefs = context.preferences
-        lib_path = ""
-        for lib in prefs.filepaths.asset_libraries:
-            if lib.name == lib_name:
-                lib_path = lib.path
-                break
-        if not lib_path:
-            self.report({'ERROR'}, f"Target library '{lib_name}' not found.")
-            return {'CANCELLED'}
-        cat_file = os.path.join(lib_path, "blender_assets.cats.txt")
-        new_uuid = str(uuid.uuid4())
-        try:
-            if not os.path.exists(cat_file):
-                with open(cat_file, "w", encoding='utf-8') as f:
-                    f.write("# This is an Asset Catalog Definition file for Blender.\n")
-                    f.write("VERSION 1\n\n")
-                    f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
-                self.report({'INFO'}, f"Created catalog '{cat_name}' in '{lib_name}'.")
-            else:
-                with open(cat_file, "r", encoding='utf-8') as f:
-                    content = f.read()
-                if f":{cat_name}:" not in content and f":{cat_name}\n" not in content:
-                    with open(cat_file, "a", encoding='utf-8') as f:
-                        f.write(f"{new_uuid}:{cat_name}:{cat_name}\n")
-                    self.report({'INFO'}, f"Added catalog '{cat_name}' to '{lib_name}'.")
-                else:
-                    self.report({'WARNING'}, f"Catalog '{cat_name}' already exists in '{lib_name}'.")
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to write catalog: {e}")
-            return {'CANCELLED'}
-        return {'FINISHED'}
-class LSD_OT_Mark_And_Upload_Asset(bpy.types.Operator):
-    """Marks selected items as assets and copies them to the chosen library folder."""
-    bl_idname = "lsd.mark_and_upload_asset"
-    bl_label = "Import Selected to Catalog"
-    bl_description = "Tags selection as assets and organizes them into library folders"
-    bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context):
-        if not context.selected_objects:
-            self.report({'WARNING'}, "No objects selected to mark as assets.")
-            return {'CANCELLED'}
-        props = context.scene.lsd_pg_asset_props
-        lib_name = props.target_library
-        # Use the selected catalog's UUID directly from the dropdown property
-        cat_uuid = props.selected_catalog if props.selected_catalog != 'NONE' else ""
-        lib_path = ""
-        if lib_name != 'LOCAL':
-            prefs = context.preferences
-            for lib in prefs.filepaths.asset_libraries:
-                if lib.name == lib_name:
-                    lib_path = lib.path
-                    break
-        for obj in context.selected_objects:
-            if not obj.asset_data:
-                obj.asset_mark()
-            if cat_uuid and obj.asset_data:
-                obj.asset_data.catalog_id = cat_uuid
-            self.report({'INFO'}, f"Marked: {obj.name}")
-        if lib_name == 'LOCAL' or not lib_path:
-            self.report({'INFO'}, "Saved to 'Current File' only. Note: For external saving, select a library.")
-            return {'FINISHED'}
-        category_path = os.path.join(lib_path, cat_name)
-        if not os.path.exists(category_path):
-            try:
-                 os.makedirs(category_path)
-            except Exception as e:
-                 self.report({'ERROR'}, f"Could not create catalog directory: {e}")
-                 return {'CANCELLED'}
-        exported = 0
-        for obj in context.selected_objects:
-            filepath = os.path.join(category_path, f"{obj.name}.blend")
-            try:
-                bpy.data.libraries.write(filepath, {obj})
-                exported += 1
-            except Exception as e:
-                self.report({'ERROR'}, f"Failed saving {obj.name}: {e}")
-        self.report({'INFO'}, f"Successfully exported {exported} objects to catalog OS directory.")
-        return {'FINISHED'}
-class LSD_OT_ImportToAssetCatalog(bpy.types.Operator):
-    """Imports a 3D file, marks it as an asset, and moves it to the chosen library."""
-    bl_idname = "lsd.import_to_asset_catalog"
-    bl_label = "Import to Catalog"
-    bl_description = "Imports an external file, marks it as an asset, and adds it to the library"
-    bl_options = {'REGISTER', 'UNDO'}
-    def _resolve_file(self, filepath, context):
-        """If filepath is a ZIP, extract it to a temp dir and return the first importable file path."""
-        import zipfile, tempfile
-        ext = os.path.splitext(filepath)[1].lower()
-        if ext != '.zip':
-            return filepath, None
-        tmp_dir = tempfile.mkdtemp(prefix="lsd_import_")
-        with zipfile.ZipFile(filepath, 'r') as zf:
-            zf.extractall(tmp_dir)
-        # Find best importable file
-        PRIO = ['.blend', '.gltf', '.glb', '.fbx', '.obj', '.dae', '.abc', '.usd', '.usda', '.usdc', '.usdz', '.x3d', '.wrl', '.ply', '.stl', '.3mf']
-        found = {}
-        for root, dirs, files in os.walk(tmp_dir):
-            for fname in files:
-                fe = os.path.splitext(fname)[1].lower()
-                if fe in PRIO and fe not in found:
-                    found[fe] = os.path.join(root, fname)
-        for p in PRIO:
-            if p in found:
-                return found[p], tmp_dir
-        return None, tmp_dir
-    def execute(self, context):
-        import shutil, zipfile
-        props = context.scene.lsd_pg_asset_props
-        filepath = props.import_source_filepath
-        lib_name = props.import_target_library
-        cat_uuid = props.import_target_catalog if props.import_target_catalog != 'NONE' else ""
-        if not filepath or not os.path.exists(filepath):
-            self.report({'ERROR'}, "Select a valid source file before importing.")
-            return {'CANCELLED'}
-        actual_filepath, tmp_dir = self._resolve_file(filepath, context)
-        if not actual_filepath:
-            self.report({'ERROR'}, "No importable file found inside ZIP.")
-            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
-            return {'CANCELLED'}
-        ext = os.path.splitext(actual_filepath)[1].lower()
-        bpy.ops.object.select_all(action='DESELECT')
-        try:
-            if ext == '.blend':
-                # Append all objects from the .blend file
-                with bpy.data.libraries.load(actual_filepath, link=False) as (src, dst):
-                    dst.objects = src.objects
-                for obj in dst.objects:
-                    if obj is not None:
-                        context.scene.collection.objects.link(obj)
-                        obj.select_set(True)
-            elif ext == '.obj':
-                bpy.ops.wm.obj_import(filepath=actual_filepath)
-            elif ext == '.fbx':
-                bpy.ops.import_scene.fbx(filepath=actual_filepath)
-            elif ext in ['.gltf', '.glb']:
-                bpy.ops.import_scene.gltf(filepath=actual_filepath)
-            elif ext == '.stl':
-                bpy.ops.wm.stl_import(filepath=actual_filepath)
-            elif ext == '.dae':
-                bpy.ops.wm.collada_import(filepath=actual_filepath)
-            elif ext == '.ply':
-                bpy.ops.wm.ply_import(filepath=actual_filepath)
-            elif ext in ['.abc']:
-                bpy.ops.wm.alembic_import(filepath=actual_filepath)
-            elif ext in ['.usd', '.usda', '.usdc', '.usdz']:
-                bpy.ops.wm.usd_import(filepath=actual_filepath)
-            elif ext in ['.x3d', '.wrl']:
-                bpy.ops.import_scene.x3d(filepath=actual_filepath)
-            elif ext == '.3mf':
-                bpy.ops.import_mesh.threemf(filepath=actual_filepath)
-            else:
-                self.report({'ERROR'}, f"Unsupported file format: {ext}")
-                if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
-                return {'CANCELLED'}
-        except Exception as e:
-            self.report({'ERROR'}, f"Import failed: {e}")
-            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
-            return {'CANCELLED'}
-        imported_objs = list(context.selected_objects)
-        if not imported_objs:
-            self.report({'WARNING'}, "No objects were imported.")
-            if tmp_dir: shutil.rmtree(tmp_dir, ignore_errors=True)
-            return {'CANCELLED'}
-        # Mark each imported object as asset and assign catalog UUID
-        for obj in imported_objs:
-            if not obj.asset_data:
-                obj.asset_mark()
-            if cat_uuid and obj.asset_data:
-                obj.asset_data.catalog_id = cat_uuid
-        # Optionally export .blend files into the catalog subfolder
-        if lib_name and lib_name != 'LOCAL':
-            lib_path = ""
-            for lib in context.preferences.filepaths.asset_libraries:
-                if lib.name == lib_name:
-                    lib_path = lib.path
-                    break
-            if lib_path:
-                base_name = os.path.splitext(os.path.basename(filepath))[0]
-                dest_dir = os.path.join(lib_path, base_name)
-                if not os.path.exists(dest_dir):
-                    try:
-                        os.makedirs(dest_dir)
-                    except Exception as e:
-                        self.report({'WARNING'}, f"Could not create folder: {e}")
-                for obj in imported_objs:
-                    dest_file = os.path.join(dest_dir, f"{obj.name}.blend")
-                    try:
-                        bpy.data.libraries.write(dest_file, {obj})
-                    except Exception as e:
-                        self.report({'WARNING'}, f"Export failed for {obj.name}: {e}")
-        if tmp_dir:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        self.report({'INFO'}, f"Imported {len(imported_objs)} object(s) from {os.path.basename(filepath)}.")
-        return {'FINISHED'}
+
 # --- MAIN OPERATORS ---
 
 class LSD_OT_Execute_AI_Prompt(bpy.types.Operator):
@@ -6094,21 +5850,7 @@ class LSD_OT_CreateCamera(bpy.types.Operator):
         scene.camera = cam_obj
         self.report({'INFO'}, f"Spawned {preset} Camera at cursor.")
         return {'FINISHED'}
-class LSD_OT_Browse_Library(bpy.types.Operator):
-    """Browse for a library directory with accurate Draftsman tooltips."""
-    bl_idname = "lsd.browse_library"
-    bl_label = "Select Directory"
-    bl_options = {'INTERNAL'}
-    directory: bpy.props.StringProperty(subtype='DIR_PATH')
-    prop_name: bpy.props.StringProperty()
-    def execute(self, context):
-        asset_props = context.scene.lsd_pg_asset_props
-        if hasattr(asset_props, self.prop_name):
-            setattr(asset_props, self.prop_name, self.directory)
-        return {'FINISHED'}
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
+
 class LSD_OT_Camera_Setup(bpy.types.Operator):
     """Binds camera to targets and paths for high-fidelity simulation recording."""
     bl_label = "Apply Camera Setup"
@@ -6687,11 +6429,189 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
         # Force a viewport redraw to ensure the user sees the update instantly
         context.area.tag_redraw()
 
+class LSD_OT_Asset_Edit_External(bpy.types.Operator):
+    """Directly saves the name and catalog edits to the external .blend file"""
+    bl_idname = "lsd.asset_edit_external"
+    bl_label = "Edit External Asset"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        asset = None
+        asset_window = None
+        asset_area = None
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'FILE_BROWSER' and getattr(area, 'ui_type', '') == 'ASSETS':
+                    with context.temp_override(window=window, area=area):
+                        if hasattr(context, 'selected_asset_files') and context.selected_asset_files:
+                            asset = context.selected_asset_files[0]
+                            asset_window, asset_area = window, area
+                        elif hasattr(context, 'selected_assets') and context.selected_assets:
+                            asset = context.selected_assets[0]
+                            asset_window, asset_area = window, area
+                    if asset: break
+            if asset: break
+            
+        if not asset:
+            self.report({'WARNING'}, "No asset selected.")
+            return {'CANCELLED'}
+            
+        is_local = getattr(asset, 'local_id', None) is not None
+        if is_local:
+            self.report({'WARNING'}, "This asset is local. Edit it directly above.")
+            return {'CANCELLED'}
+            
+        filepath = getattr(asset, 'full_library_path', '')
+        if not filepath and hasattr(asset, 'relative_path'):
+            import os
+            # Build absolute path from active library
+            prefs = context.preferences
+            area = next((a for w in context.window_manager.windows for a in w.screen.areas if a.type == 'FILE_BROWSER' and getattr(a, 'ui_type', '') == 'ASSETS'), None)
+            lib_id = None
+            if area:
+                space = area.spaces.active
+                if space and hasattr(space, 'params'):
+                    lib_id = getattr(space.params, 'asset_library_ref', None)
+            
+            base_dir = ""
+            if lib_id in ('ALL', 'LOCAL', 'CUSTOM'):
+                # Heuristic search
+                pass
+            else:
+                for lib in prefs.filepaths.asset_libraries:
+                    if lib.name == lib_id:
+                        base_dir = lib.path
+                        break
+            if not base_dir:
+                for lib in prefs.filepaths.asset_libraries:
+                    path = os.path.join(lib.path, asset.relative_path)
+                    if os.path.exists(path):
+                        base_dir = lib.path
+                        break
+                        
+            if base_dir:
+                filepath = os.path.join(base_dir, asset.relative_path)
+                
+        if not filepath or not __import__('os').path.exists(filepath):
+            self.report({'ERROR'}, "Could not resolve external file path.")
+            return {'CANCELLED'}
+            
+        new_name = context.scene.lsd_asset_new_name
+        target_cat = context.scene.lsd_asset_catalog
+        if target_cat in ('UNAVAILABLE', 'NONE'):
+            target_cat = ""
+            
+        # Write temporary script
+        import tempfile
+        import os
+        import subprocess
+        
+        script_content = f'''import bpy
+
+try:
+    obj_name = {repr(asset.name)}
+    new_name = {repr(new_name)}
+    target_cat = {repr(target_cat)}
+    
+    found = False
+    for attr in ('objects', 'collections', 'materials', 'node_groups'):
+        data_coll = getattr(bpy.data, attr)
+        for item in data_coll:
+            if item.name == obj_name and item.asset_data:
+                if new_name:
+                    item.name = new_name
+                if target_cat is not None:
+                    item.asset_data.catalog_id = target_cat
+                found = True
+                break
+        if found: break
+        
+    if found:
+        bpy.ops.wm.save_mainfile()
+        
+    bpy.ops.wm.quit_blender()
+except Exception as e:
+    print("Error:", e)
+    bpy.ops.wm.quit_blender()
+'''
+        fd, script_path = tempfile.mkstemp(suffix=".py")
+        with os.fdopen(fd, 'w') as f:
+            f.write(script_content)
+            
+        creation_flags = 0x08000000 # CREATE_NO_WINDOW
+        
+        self.report({'INFO'}, "Directly editing external file...")
+        
+        try:
+            res = subprocess.run([
+                bpy.app.binary_path,
+                "-b",
+                filepath,
+                "--factory-startup",
+                "-P",
+                script_path
+            ], creationflags=creation_flags, capture_output=True, timeout=15)
+            
+            if res.returncode == 0:
+                self.report({'INFO'}, "Successfully saved asset metadata directly.")
+                # Force UI reload
+                if asset_window and asset_area:
+                    with context.temp_override(window=asset_window, area=asset_area):
+                        bpy.ops.asset.library_refresh()
+            else:
+                self.report({'ERROR'}, "Failed to find or edit asset in external file.")
+        except Exception as e:
+            self.report({'ERROR'}, f"Edit failed: {e}")
+        finally:
+            if os.path.exists(script_path):
+                os.remove(script_path)
+                
+        return {'FINISHED'}
+
+
+class LSD_OT_Asset_Clear(bpy.types.Operator):
+    """Removes the asset metadata from the currently selected asset."""
+    bl_idname = "lsd.asset_clear"
+    bl_label = "Unmark Asset"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        asset = None
+        asset_area = None
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'FILE_BROWSER' and area.ui_type == 'ASSETS':
+                    with context.temp_override(window=window, area=area):
+                        if hasattr(context, 'selected_asset_files') and context.selected_asset_files:
+                            asset = context.selected_asset_files[0]
+                            asset_area = area
+                            break
+                        if hasattr(context, 'selected_assets') and context.selected_assets:
+                            asset = context.selected_assets[0]
+                            asset_area = area
+                            break
+            if asset: break
+            
+        if not asset:
+            self.report({'WARNING'}, "No asset selected in the Asset Browser")
+            return {'CANCELLED'}
+            
+        is_local = getattr(asset, 'local_id', None) is not None
+        
+        if is_local:
+            asset.local_id.asset_clear()
+            self.report({'INFO'}, "Cleared local asset metadata.")
+        else:
+            self.report({'WARNING'}, "Cannot edit external assets directly.")
+            return {'CANCELLED'}
+            
+        return {'FINISHED'}
+
 def register():
     CLASSES = [
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
-        LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
-        LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
+        LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
+        LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,
         LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
@@ -6726,8 +6646,8 @@ def register():
 def unregister():
     CLASSES = [
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
-        LSD_OT_Browse_Library, LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
-        LSD_OT_Open_Asset_Browser, LSD_OT_Register_Asset_Catalog, LSD_OT_Mark_And_Upload_Asset, LSD_OT_ImportToAssetCatalog, LSD_OT_Add_Asset_Library, LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision,
+        LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
+        LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,
         LSD_OT_LightTarget, LSD_OT_ApplyToonShader, LSD_OT_GlobalToonSharpness, LSD_OT_ToonifySelectedLights,
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,

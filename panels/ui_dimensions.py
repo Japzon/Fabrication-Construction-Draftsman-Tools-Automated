@@ -86,7 +86,7 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             # Row 0: Header + Auto Size Toggle
             row_header = pref_col.row(align=True)
             row_header.label(text="Default Preferences (New Assemblies):", icon='PREFERENCES')
-            row_header.operator("lsd.dimension_auto_calculate_global", text="Auto Calculate", icon='AUTO')
+            row_header.prop(scene, "lsd_dim_auto_scale_new", text="Auto Scale", icon='AUTO')
             # Row 1: Arrow + Txt Size
             row_size = pref_col.row(align=True)
             row_size.prop(scene, "lsd_dim_arrow_scale", text="Arrow")

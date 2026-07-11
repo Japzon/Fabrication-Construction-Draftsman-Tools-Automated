@@ -76,7 +76,6 @@ LSD_PANEL_PROPS: List[str] = [
     "lsd_panel_enabled_physics", "lsd_show_panel_physics",
     "lsd_panel_enabled_transmission", "lsd_show_panel_transmission",
     "lsd_panel_enabled_export", "lsd_show_panel_export",
-    "lsd_panel_enabled_assets", "lsd_show_panel_assets",
     "lsd_panel_enabled_camera", "lsd_show_panel_camera",
     "lsd_panel_enabled_architectural", "lsd_show_panel_architectural",
     "lsd_panel_enabled_vehicle", "lsd_show_panel_vehicle",

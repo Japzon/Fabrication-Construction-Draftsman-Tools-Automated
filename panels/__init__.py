@@ -9,10 +9,8 @@
 # --------------------------------------------------------------------------------
 
 from . import ui_common
-from . import ui_ai_factory
 from . import ui_parts
 from . import ui_materials
-from . import ui_lighting
 from . import ui_electronics
 from . import ui_dimensions
 from . import ui_architectural
@@ -21,7 +19,6 @@ from . import ui_parametric
 from . import ui_physics
 from . import ui_transmission
 from . import ui_kinematics
-from . import ui_assets
 from . import ui_export
 from . import ui_preferences
 from . import ui_main
@@ -31,10 +28,8 @@ from . import ui_workflow_optimizer
 
 modules = [
     ui_common,
-    ui_ai_factory,
     ui_parts,
     ui_materials,
-    ui_lighting,
     ui_electronics,
     ui_dimensions,
     ui_architectural,
@@ -43,7 +38,6 @@ modules = [
     ui_physics,
     ui_transmission,
     ui_kinematics,
-    ui_assets,
     ui_export,
     ui_preferences,
     ui_camera,

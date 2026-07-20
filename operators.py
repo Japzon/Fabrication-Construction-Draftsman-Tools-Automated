@@ -6607,8 +6607,385 @@ class LSD_OT_Asset_Clear(bpy.types.Operator):
             
         return {'FINISHED'}
 
+
+
+class LSD_OT_Sync_Active_Layer(bpy.types.Operator):
+    bl_idname = "lsd.sync_active_layer"
+    bl_label = "Sync Layers"
+    bl_options = {'INTERNAL'}
+    
+    _is_syncing = False
+    _timer = None
+    _state = 0
+    _original_area_type = 'VIEW_3D'
+    _target_area = None
+
+    def finish(self, context):
+        LSD_OT_Sync_Active_Layer._is_syncing = False
+        if getattr(self, '_timer', None):
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        if hasattr(self, "_original_area_type") and getattr(self, "_target_area", None):
+            try:
+                self._target_area.type = self._original_area_type
+            except: pass
+
+    def modal(self, context, event):
+        from . import anim_core
+        if event.type == 'TIMER':
+
+            if self._state == 0:
+                LSD_OT_Sync_Active_Layer._is_syncing = True
+                
+                # Step 1: We MUST exit Tweak Mode first, or Blender ignores track selection!
+                obj = anim_core.get_active_object(context)
+                if obj and obj.animation_data and obj.animation_data.use_tweak_mode:
+                    if not getattr(self, '_target_area', None):
+                        for window in context.window_manager.windows:
+                            for area in window.screen.areas:
+                                if area.type == 'NLA_EDITOR':
+                                    self._target_window = window
+                                    self._target_area = area
+                                    self._original_area_type = area.type
+                                    break
+                            if getattr(self, '_target_area', None):
+                                break
+                                
+                        if not getattr(self, '_target_area', None):
+                            for window in context.window_manager.windows:
+                                for area in window.screen.areas:
+                                    if area != context.area and area.type != 'PROPERTIES':
+                                        self._target_window = window
+                                        self._target_area = area
+                                        self._original_area_type = area.type
+                                        area.type = 'NLA_EDITOR'
+                                        break
+                                if getattr(self, '_target_area', None):
+                                    break
+                    
+                    if getattr(self, '_target_area', None):
+                        self._ticks = 0
+                        self._state = 1
+                        return {'PASS_THROUGH'}
+                else:
+                    self._state = 2
+                    return {'PASS_THROUGH'}
+                    
+            elif self._state == 1:
+                if getattr(self, '_target_area', None):
+                    self._ticks += 1
+                    if self._ticks < 3:
+                        return {'PASS_THROUGH'}
+                        
+                    if getattr(self._target_area.spaces.active, 'type', None) != 'NLA_EDITOR':
+                        return {'PASS_THROUGH'}
+                        
+                    self._target_region = None
+                    for region in self._target_area.regions:
+                        if region.type == 'WINDOW':
+                            self._target_region = region
+                            break
+                            
+                    if self._target_region:
+                        try:
+                            with context.temp_override(window=self._target_window, area=self._target_area, region=self._target_region):
+                                bpy.ops.nla.tweakmode_exit()
+                        except Exception as e:
+                            print("Tweakmode exit failed:", e)
+                
+                self._state = 2
+                return {'PASS_THROUGH'}
+
+            elif self._state == 2:
+                # Step 2: Now that Tweak Mode is off, we can safely sync the tracks!
+                obj = anim_core.get_active_object(context)
+                if obj and obj.animation_data:
+                    obj.animation_data.action = None  # CRITICAL: Prevent old layer action from leaking!
+                anim_core.execute_sync_logic(context)
+                self._state = 3
+                return {'PASS_THROUGH'}
+
+            elif self._state == 3:
+                # Step 3: Enter Tweak Mode for the newly selected layer!
+                if not getattr(self, '_target_area', None):
+                    for window in context.window_manager.windows:
+                        for area in window.screen.areas:
+                            if area.type == 'NLA_EDITOR':
+                                self._target_window = window
+                                self._target_area = area
+                                self._original_area_type = area.type
+                                break
+                        if getattr(self, '_target_area', None):
+                            break
+                            
+                    if not getattr(self, '_target_area', None):
+                        for window in context.window_manager.windows:
+                            for area in window.screen.areas:
+                                if area != context.area and area.type != 'PROPERTIES':
+                                    self._target_window = window
+                                    self._target_area = area
+                                    self._original_area_type = area.type
+                                    area.type = 'NLA_EDITOR'
+                                    break
+                            if getattr(self, '_target_area', None):
+                                break
+                    if getattr(self, '_target_area', None):
+                        self._ticks = 0
+                        self._state = 4
+                        return {'PASS_THROUGH'}
+                else:
+                    self._state = 4
+                    return {'PASS_THROUGH'}
+            
+            elif self._state == 4:
+                if getattr(self, '_target_area', None):
+                    self._ticks += 1
+                    if self._ticks < 3:
+                        return {'PASS_THROUGH'}
+                        
+                    if getattr(self._target_area.spaces.active, 'type', None) != 'NLA_EDITOR':
+                        return {'PASS_THROUGH'}
+                        
+                    self._target_region = None
+                    for region in self._target_area.regions:
+                        if region.type == 'WINDOW':
+                            self._target_region = region
+                            break
+                            
+                    if self._target_region:
+                        try:
+                            obj = anim_core.get_active_object(context)
+                            settings = context.scene.lsd_anim_settings
+                            active_layer = settings.layers[settings.active_layer_index] if settings.layers and settings.active_layer_index < len(settings.layers) else None
+                            
+                            if active_layer and (active_layer.is_locked or active_layer.is_muted):
+                                self.finish(context)
+                                return {'FINISHED'}
+                                
+                            with context.temp_override(window=self._target_window, area=self._target_area, region=self._target_region):
+                                bpy.ops.nla.tweakmode_enter()
+                        except Exception as e:
+                            print("Tweakmode enter failed:", e)
+                
+                self.finish(context)
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.01, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+
+class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
+    bl_idname = "lsd.anim_layer_add"
+    bl_label = "Add Animation Layer"
+    
+    def execute(self, context):
+        from . import anim_core
+        settings = context.scene.lsd_anim_settings
+        obj = anim_core.get_active_object(context)
+        
+        # Step 1: Force exit tweak mode invisibly so the old layer's action is safely deposited
+        if obj and obj.animation_data and obj.animation_data.use_tweak_mode:
+            anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
+            
+        if obj and obj.animation_data:
+            obj.animation_data.action = None  # CRITICAL: Prevent old layer action from leaking!
+            
+        # Step 2: Now it is mathematically safe to generate new tracks!
+        if len(settings.layers) == 0:
+            if not obj.animation_data:
+                obj.animation_data_create()
+                
+            if not obj.animation_data or not obj.animation_data.action:
+                base_action = bpy.data.actions.new(name=f"{obj.name}_Base_Layer")
+                obj.animation_data.action = base_action
+                anchor_frame = 1
+                
+                # CRITICAL: We MUST anchor the current pose into the Base Layer.
+                # If we don't, the Base Layer is empty, meaning it has no F-curves.
+                # When other layers are muted, Blender's evaluation engine would find no base F-curves,
+                # so it would just leave the mesh frozen in whatever pose Layer 2 left it in!
+                try:
+                    obj.keyframe_insert(data_path="location", frame=1)
+                    obj.keyframe_insert(data_path="rotation_euler", frame=1)
+                    obj.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                    obj.keyframe_insert(data_path="scale", frame=1)
+                    if obj.type == 'ARMATURE' and obj.pose:
+                        for pbone in obj.pose.bones:
+                            pbone.keyframe_insert(data_path="location", frame=1)
+                            pbone.keyframe_insert(data_path="rotation_euler", frame=1)
+                            pbone.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                            pbone.keyframe_insert(data_path="scale", frame=1)
+                except:
+                    pass
+            else:
+                base_action = obj.animation_data.action
+                if getattr(base_action, 'fcurves', None):
+                    anchor_frame = int(base_action.frame_range[0])
+                elif hasattr(base_action, 'frame_range') and (base_action.frame_range[0] != 0.0 or base_action.frame_range[1] != 0.0):
+                    anchor_frame = int(base_action.frame_range[0])
+                else:
+                    anchor_frame = 1
+                    
+            base_layer = settings.layers.add()
+            base_layer.name = "Base Layer"
+            base_layer.blend_type = 'REPLACE'
+            base_layer.is_muted = False
+            base_layer.is_locked = True
+            
+            base_track = obj.animation_data.nla_tracks.new()
+            base_track.name = base_layer.name
+            base_layer.track_name = base_track.name
+            base_track.mute = False
+            
+            base_strip = base_track.strips.new(name=base_layer.name, start=anchor_frame, action=base_action)
+            base_strip.blend_type = 'REPLACE'
+            base_strip.extrapolation = 'HOLD'
+            if hasattr(base_strip, 'use_sync_length'):
+                base_strip.use_sync_length = False
+            base_strip.frame_start = -100000
+            base_strip.frame_end = 100000
+            if base_strip.action:
+                base_strip.action_frame_start = -100000
+                base_strip.action_frame_end = 100000
+        
+        layer = settings.layers.add()
+        
+        layer_count = sum(1 for l in settings.layers if l.name != "Base Layer")
+        layer.name = f"Layer {layer_count}"
+        
+        if obj:
+            if not obj.animation_data:
+                obj.animation_data_create()
+            track = obj.animation_data.nla_tracks.new()
+            track.name = layer.name
+            layer.track_name = track.name
+            
+            new_action = bpy.data.actions.new(name=f"{obj.name}_{layer.name}")
+            
+            strip = track.strips.new(name=layer.name, start=1, action=new_action)
+            strip.blend_type = 'COMBINE'
+            strip.extrapolation = 'HOLD'
+            if hasattr(strip, 'use_sync_length'):
+                strip.use_sync_length = False
+            strip.frame_start = -100000
+            strip.frame_end = 100000
+            if strip.action:
+                strip.action_frame_start = -100000
+                strip.action_frame_end = 100000
+                
+        settings.active_layer_index = len(settings.layers) - 1
+        
+        if context.view_layer:
+            context.view_layer.update()
+            
+        anim_core.update_active_layer(settings, context)
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
+    bl_idname = "lsd.anim_layer_remove"
+    bl_label = "Remove Animation Layer"
+    def execute(self, context):
+        settings = context.scene.lsd_anim_settings
+        if settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
+            settings.layers.remove(settings.active_layer_index)
+            settings.active_layer_index = max(0, settings.active_layer_index - 1)
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Layer_Move(bpy.types.Operator):
+    bl_idname = "lsd.anim_layer_move"
+    bl_label = "Move Animation Layer"
+    direction: bpy.props.EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
+    def execute(self, context):
+        settings = context.scene.lsd_anim_settings
+        idx = settings.active_layer_index
+        if self.direction == 'UP' and idx > 0:
+            settings.layers.move(idx, idx - 1)
+            settings.active_layer_index -= 1
+        elif self.direction == 'DOWN' and idx < len(settings.layers) - 1:
+            settings.layers.move(idx, idx + 1)
+            settings.active_layer_index += 1
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Merge_Bake(bpy.types.Operator):
+    bl_idname = "lsd.anim_merge_bake"
+    bl_label = "Merge / Bake"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Duplicate_Layer(bpy.types.Operator):
+    bl_idname = "lsd.anim_duplicate_layer"
+    bl_label = "Duplicate Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Extract_Bones(bpy.types.Operator):
+    bl_idname = "lsd.anim_extract_bones"
+    bl_label = "Extract Selected Bones"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Extract_Keys(bpy.types.Operator):
+    bl_idname = "lsd.anim_extract_keys"
+    bl_label = "Extract Marked Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Select_Bones(bpy.types.Operator):
+    bl_idname = "lsd.anim_select_bones"
+    bl_label = "Select Bones in Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Reset_Key_Layer(bpy.types.Operator):
+    bl_idname = "lsd.anim_reset_key_layer"
+    bl_label = "Reset Key Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Multikey_Edit(bpy.types.Operator):
+    bl_idname = "lsd.anim_multikey_edit"
+    bl_label = "Edit Selected Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Cyclic_Fcurves(bpy.types.Operator):
+    bl_idname = "lsd.anim_cyclic_fcurves"
+    bl_label = "Cyclic Fcurves"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Remove_Fcurves(bpy.types.Operator):
+    bl_idname = "lsd.anim_remove_fcurves"
+    bl_label = "Remove Fcurves"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Custom_Frame_Range(bpy.types.Operator):
+    bl_idname = "lsd.anim_custom_frame_range"
+    bl_label = "Custom Frame Range"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Sync_To_Action(bpy.types.Operator):
+    bl_idname = "lsd.anim_sync_to_action"
+    bl_label = "Sync to Action"
+    def execute(self, context): return {'FINISHED'}
+
+
+
 def register():
     CLASSES = [
+
+    LSD_OT_Sync_Active_Layer,
+    LSD_OT_Anim_Layer_Add,
+    LSD_OT_Anim_Layer_Remove,
+    LSD_OT_Anim_Layer_Move,
+    LSD_OT_Anim_Merge_Bake,
+    LSD_OT_Anim_Duplicate_Layer,
+    LSD_OT_Anim_Extract_Bones,
+    LSD_OT_Anim_Extract_Keys,
+    LSD_OT_Anim_Select_Bones,
+    LSD_OT_Anim_Reset_Key_Layer,
+    LSD_OT_Anim_Multikey_Edit,
+    LSD_OT_Anim_Cyclic_Fcurves,
+    LSD_OT_Anim_Remove_Fcurves,
+    LSD_OT_Anim_Custom_Frame_Range,
+    LSD_OT_Anim_Sync_To_Action,
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,
@@ -6645,6 +7022,22 @@ def register():
                 print(f"LSD Operator Register Warning: Could not register {cls.__name__}: {e}")
 def unregister():
     CLASSES = [
+
+    LSD_OT_Sync_Active_Layer,
+    LSD_OT_Anim_Layer_Add,
+    LSD_OT_Anim_Layer_Remove,
+    LSD_OT_Anim_Layer_Move,
+    LSD_OT_Anim_Merge_Bake,
+    LSD_OT_Anim_Duplicate_Layer,
+    LSD_OT_Anim_Extract_Bones,
+    LSD_OT_Anim_Extract_Keys,
+    LSD_OT_Anim_Select_Bones,
+    LSD_OT_Anim_Reset_Key_Layer,
+    LSD_OT_Anim_Multikey_Edit,
+    LSD_OT_Anim_Cyclic_Fcurves,
+    LSD_OT_Anim_Remove_Fcurves,
+    LSD_OT_Anim_Custom_Frame_Range,
+    LSD_OT_Anim_Sync_To_Action,
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,

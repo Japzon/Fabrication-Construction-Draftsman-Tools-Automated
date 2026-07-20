@@ -1056,72 +1056,56 @@ def group_dimension_master_list(context, dim_objs):
             break
     return {'FINISHED'}
 
-def setup_sdf_booleans(obj: bpy.types.Object):
-    """
-    Sets up a Geometry Nodes modifier for SDF-based smooth booleans.
-    Emulates SDF by utilizing Mesh Boolean followed by Volume voxelization
-    for smooth, adjustable welding.
-    """
-    props = obj.lsd_pg_sdf_props
-    target = props.target_object
-    if not target:
-        return
+def apply_boolean_pro(obj: bpy.types.Object, cutter: bpy.types.Object, operation: str, transfer_normals: bool, outset: float, texture_blur: float = 0.0, bevel_weld_radius: float = 0.0):
+    if not cutter: return
+    
+    if outset > 0.0:
+        mod_solidify = cutter.modifiers.new("NM_Outset", 'SOLIDIFY')
+        mod_solidify.thickness = outset
+        mod_solidify.offset = 1.0
+        mod_solidify.use_even_offset = True
         
-    mod_name = "LSD_SDF_Boolean"
-    mod = obj.modifiers.get(mod_name) or obj.modifiers.new(mod_name, 'NODES')
-    
-    group_name = "LSD_SDF_Boolean_Group"
-    # To handle dynamic changes (UNION vs DIFFERENCE), we recreate or clear the group
-    group = bpy.data.node_groups.get(group_name)
-    if group:
-        bpy.data.node_groups.remove(group)
-        
-    group = bpy.data.node_groups.new(group_name, 'GeometryNodeTree')
-    group.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
-    group.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
-    
-    nodes = group.nodes
-    links = group.links
-    
-    input_node = nodes.new('NodeGroupInput')
-    output_node = nodes.new('NodeGroupOutput')
-    
-    obj_info = nodes.new('GeometryNodeObjectInfo')
-    obj_info.transform_space = 'RELATIVE'
-    obj_info.inputs['Object'].default_value = target
-    
-    mesh_vol = nodes.new('GeometryNodeMeshToVolume')
-    mesh_vol.resolution_mode = 'VOXEL_SIZE'
-    mesh_vol.inputs['Voxel Size'].default_value = props.voxel_size
-    mesh_vol.inputs['Interior Band Width'].default_value = 100.0
-    
-    vol_mesh = nodes.new('GeometryNodeVolumeToMesh')
-    vol_mesh.inputs['Adaptivity'].default_value = 0.025
-    
-    smooth = nodes.new('GeometryNodeSetShadeSmooth')
-    smooth.inputs['Shade Smooth'].default_value = True
-    
-    if props.operation == 'UNION':
-        # UNION: Bypass the slow Mesh Boolean node entirely! Use Join Geometry instead.
-        join = nodes.new('GeometryNodeJoinGeometry')
-        links.new(input_node.outputs['Geometry'], join.inputs['Geometry'])
-        links.new(obj_info.outputs['Geometry'], join.inputs['Geometry'])
-        links.new(join.outputs['Geometry'], mesh_vol.inputs['Mesh'])
+    mod_bool = obj.modifiers.new("NM_Boolean", 'BOOLEAN')
+    if operation == 'SLICE':
+        mod_bool.operation = 'DIFFERENCE'
     else:
-        # DIFFERENCE / INTERSECT: Must use Exact Mesh Boolean to prevent vanishing on coplanar geometry
-        mesh_bool = nodes.new('GeometryNodeMeshBoolean')
-        mesh_bool.operation = props.operation
-        mesh_bool.solver = 'EXACT'
-        links.new(input_node.outputs['Geometry'], mesh_bool.inputs['Mesh 1'])
-        links.new(obj_info.outputs['Geometry'], mesh_bool.inputs['Mesh 2'])
-        links.new(mesh_bool.outputs['Mesh'], mesh_vol.inputs['Mesh'])
-        
-    links.new(mesh_vol.outputs['Volume'], vol_mesh.inputs['Volume'])
-    links.new(vol_mesh.outputs['Mesh'], smooth.inputs['Geometry'])
-    links.new(smooth.outputs['Geometry'], output_node.inputs['Geometry'])
-        
-    mod.node_group = group
+        mod_bool.operation = operation
+    mod_bool.object = cutter
+    mod_bool.solver = 'EXACT'
     
-    # Surface projection omitted for stability (Shrinkwrap collapses entire mesh)
-    sw = obj.modifiers.get("LSD_SDF_Project")
-    if sw: obj.modifiers.remove(sw)
+    if bevel_weld_radius > 0.0:
+        mod_bevel = obj.modifiers.new("NM_Bevel_Weld", 'BEVEL')
+        mod_bevel.width = bevel_weld_radius
+        mod_bevel.segments = 3
+        mod_bevel.limit_method = 'ANGLE'
+        mod_bevel.profile = 0.5
+        
+    if texture_blur > 0.0:
+        mod_blur = obj.modifiers.new("NM_Texture_Blur", 'SMOOTH')
+        mod_blur.factor = texture_blur
+        mod_blur.iterations = 5
+        
+    if transfer_normals:
+        mod_dt = obj.modifiers.new("NM_Normal_Transfer", 'DATA_TRANSFER')
+        mod_dt.object = cutter
+        mod_dt.use_loop_data = True
+        mod_dt.data_types_loops = {'CUSTOM_NORMAL'}
+        mod_dt.loop_mapping = 'NEAREST_POLYNOR'
+def apply_surface_project(obj: bpy.types.Object, target: bpy.types.Object):
+    if not target: return
+    mod_sw = obj.modifiers.new("NM_Surface_Project", 'SHRINKWRAP')
+    mod_sw.target = target
+    mod_sw.wrap_method = 'PROJECT'
+    mod_sw.use_project_z = True
+def apply_surface_insert(obj: bpy.types.Object, target: bpy.types.Object):
+    if not target: return
+    mod_sw = obj.modifiers.new("NM_Surface_Insert", 'SHRINKWRAP')
+    mod_sw.target = target
+    mod_sw.wrap_method = 'PROJECT'
+    mod_sw.use_project_z = True
+    mod_bool = target.modifiers.new("NM_Insert_Cut", 'BOOLEAN')
+    mod_bool.operation = 'DIFFERENCE'
+    mod_bool.object = obj
+def apply_weighted_normal(obj: bpy.types.Object):
+    mod = obj.modifiers.new("NM_Weighted_Normal", 'WEIGHTED_NORMAL')
+    mod.keep_sharp = True

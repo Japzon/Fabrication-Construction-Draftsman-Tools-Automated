@@ -15,7 +15,6 @@ from . import ui_electronics
 from . import ui_dimensions
 from . import ui_architectural
 from . import ui_vehicle
-from . import ui_parametric
 from . import ui_physics
 from . import ui_transmission
 from . import ui_kinematics
@@ -25,6 +24,7 @@ from . import ui_main
 from . import ui_camera
 from . import ui_sdf_booleans
 from . import ui_workflow_optimizer
+from . import ui_animation
 
 modules = [
     ui_common,
@@ -34,9 +34,9 @@ modules = [
     ui_dimensions,
     ui_architectural,
     ui_vehicle,
-    ui_parametric,
     ui_physics,
     ui_transmission,
+    ui_animation,
     ui_kinematics,
     ui_export,
     ui_preferences,

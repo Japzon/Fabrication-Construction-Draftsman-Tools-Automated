@@ -5992,3 +5992,27 @@ def ensure_smart_skin_data():
         node = nt.nodes.new('ShaderNodeFloatCurve')
         node.name = "SkinCurve"
     return nt.nodes["SkinCurve"]
+
+
+@bpy.app.handlers.persistent
+def lsd_anim_layer_handler(scene, depsgraph=None):
+    settings = scene.lsd_anim_settings
+    if not settings.layers_enabled or not settings.layers or settings.active_layer_index < 0:
+        return
+    
+    obj = bpy.context.active_object
+    if not obj or not obj.animation_data or not obj.animation_data.nla_tracks:
+        return
+        
+    try:
+        active_layer = settings.layers[settings.active_layer_index]
+        active_track = obj.animation_data.nla_tracks.get(active_layer.track_name if active_layer.track_name else active_layer.name)
+        if active_track and active_track.strips:
+            strip = active_track.strips[0]
+            if strip.blend_type != active_layer.blend_type:
+                strip.blend_type = active_layer.blend_type
+            if not active_layer.is_muted and strip.influence != active_layer.influence:
+                strip.influence = active_layer.influence
+    except Exception:
+        pass
+

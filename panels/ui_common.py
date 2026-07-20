@@ -201,11 +201,11 @@ class LSD_OT_MovePanel(bpy.types.Operator):
         scene = context.scene
         # Map of prop_name -> current_order
         props = {
-            "lsd_order_procedural": scene.lsd_order_procedural,
             "lsd_order_dimensions": scene.lsd_order_dimensions,
             "lsd_order_sdf_booleans": scene.lsd_order_sdf_booleans,
             "lsd_order_materials": scene.lsd_order_materials,
             "lsd_order_physics": scene.lsd_order_physics,
+            "lsd_order_animation": scene.lsd_order_animation,
             "lsd_order_kinematics": scene.lsd_order_kinematics,
             "lsd_order_transmission": scene.lsd_order_transmission,
             "lsd_order_camera": scene.lsd_order_camera,
@@ -240,11 +240,11 @@ class LSD_OT_ResetPanelOrder(bpy.types.Operator):
     bl_description = "Resets all panel order settings to their defaults"
     def execute(self, context):
         scene = context.scene
-        scene.lsd_order_procedural = 0
-        scene.lsd_order_dimensions = 1
-        scene.lsd_order_sdf_booleans = 2
-        scene.lsd_order_materials = 3
-        scene.lsd_order_physics = 4
+        scene.lsd_order_dimensions = 0
+        scene.lsd_order_sdf_booleans = 1
+        scene.lsd_order_materials = 2
+        scene.lsd_order_physics = 3
+        scene.lsd_order_animation = 4
         scene.lsd_order_kinematics = 5
         scene.lsd_order_transmission = 6
         scene.lsd_order_camera = 7

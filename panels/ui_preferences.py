@@ -96,11 +96,11 @@ class LSD_PT_Preferences:
             behavior_box.prop(scene, "lsd_auto_collapse_panels")
             # --- Panel Order & Visibility Data ---
             top_level_names = {
-                "lsd_order_procedural": "Procedural Toolkit",
                 "lsd_order_dimensions": "Dimensions & Precision Transforms",
                 "lsd_order_sdf_booleans": "SDF Booleans",
                 "lsd_order_materials": "Paint Tools",
                 "lsd_order_physics": "Physics",
+                "lsd_order_animation": "Animation Layers System",
                 "lsd_order_kinematics": "Kinematics Setup",
                 "lsd_order_transmission": "Transmission",
                 "lsd_order_camera": "Camera Studio & Pathing",
@@ -108,11 +108,11 @@ class LSD_PT_Preferences:
                 "lsd_order_preferences": "Preferences",
             }
             visibility_mapping = {
-                "lsd_order_procedural": "lsd_panel_enabled_procedural",
                 "lsd_order_dimensions": "lsd_panel_enabled_dimensions",
                 "lsd_order_sdf_booleans": "lsd_panel_enabled_sdf_booleans",
                 "lsd_order_materials": "lsd_panel_enabled_materials",
                 "lsd_order_physics": "lsd_panel_enabled_physics",
+                "lsd_order_animation": "lsd_panel_enabled_animation",
                 "lsd_order_kinematics": "lsd_panel_enabled_kinematics",
                 "lsd_order_transmission": "lsd_panel_enabled_transmission",
                 "lsd_order_camera": "lsd_panel_enabled_camera",

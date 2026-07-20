@@ -174,7 +174,7 @@ def update_joint_type_live(self, context):
                 new_type = self.joint_type
                 new_axis = self.axis_alignment
                 # Identify batch: All selected bones in the same rig
-                selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
+                selected_bones = context.selected_pose_bones if (context and hasattr(context, "selected_pose_bones") and context.selected_pose_bones) else [bone]
                 for target in selected_bones:
                     props = target.lsd_pg_kinematic_props
                     # Sync the core properties
@@ -207,7 +207,7 @@ def update_joint_radius_live(self, context):
             core._joint_editor_update_guard = True
             try:
                 new_radius = self.joint_radius
-                selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
+                selected_bones = context.selected_pose_bones if (context and hasattr(context, "selected_pose_bones") and context.selected_pose_bones) else [bone]
                 for target in selected_bones:
                     props = target.lsd_pg_kinematic_props
                     props.joint_radius = new_radius
@@ -234,7 +234,7 @@ def update_joint_viz_scale_live(self, context):
             core._joint_editor_update_guard = True
             try:
                 new_scale = self.visual_gizmo_scale
-                selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
+                selected_bones = context.selected_pose_bones if (context and hasattr(context, "selected_pose_bones") and context.selected_pose_bones) else [bone]
                 for target in selected_bones:
                     target.lsd_pg_kinematic_props.visual_gizmo_scale = new_scale
                     core.update_single_bone_gizmo(target, context.scene.lsd_viz_gizmos, context.scene.lsd_gizmo_style)
@@ -253,7 +253,7 @@ def update_joint_limits_live(self, context):
             try:
                 new_lower = self.lower_limit
                 new_upper = self.upper_limit
-                selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
+                selected_bones = context.selected_pose_bones if (context and hasattr(context, "selected_pose_bones") and context.selected_pose_bones) else [bone]
                 for target in selected_bones:
                     target.lsd_pg_kinematic_props.lower_limit = new_lower
                     target.lsd_pg_kinematic_props.upper_limit = new_upper
@@ -272,7 +272,7 @@ def update_joint_ik_live(self, context):
             core._joint_editor_update_guard = True
             try:
                 new_len = self.ik_chain_length
-                selected_bones = [b for b in bone.id_data.pose.bones if b.bone.select]
+                selected_bones = context.selected_pose_bones if (context and hasattr(context, "selected_pose_bones") and context.selected_pose_bones) else [bone]
                 for target in selected_bones:
                     target.lsd_pg_kinematic_props.ik_chain_length = new_len
                     core.update_ik_chain_length(target, context)
@@ -1009,43 +1009,199 @@ class LSD_ExportItem(bpy.types.PropertyGroup):
 # ------------------------------------------------------------------------
 
 def update_sdf_props(self, context):
-    bpy.app.timers.register(lambda: (bpy.ops.lsd.apply_sdf_booleans() and None), first_interval=0.01)
+    obj = context.active_object
+    if not obj: return
+    mod_bool = obj.modifiers.get("NM_Boolean")
+    if not mod_bool: return
+    
+    if self.boolean_operation == 'SLICE': mod_bool.operation = 'DIFFERENCE'
+    else: mod_bool.operation = self.boolean_operation
+    
+    cutter = mod_bool.object
+    if cutter:
+        mod_outset = cutter.modifiers.get("NM_Outset")
+        if self.outset_thickness > 0.0:
+            if not mod_outset: mod_outset = cutter.modifiers.new("NM_Outset", 'SOLIDIFY')
+            mod_outset.thickness = self.outset_thickness
+            mod_outset.offset = 1.0
+            mod_outset.use_even_offset = True
+        elif mod_outset:
+            cutter.modifiers.remove(mod_outset)
+            
+    mod_bevel = obj.modifiers.get("NM_Bevel_Weld")
+    if self.bevel_weld_radius > 0.0:
+        if not mod_bevel: 
+            mod_bevel = obj.modifiers.new("NM_Bevel_Weld", 'BEVEL')
+        mod_bevel.width = self.bevel_weld_radius
+        mod_bevel.segments = 3
+        mod_bevel.limit_method = 'ANGLE'
+        mod_bevel.profile = 0.5
+    elif mod_bevel:
+        obj.modifiers.remove(mod_bevel)
+        
+    mod_blur = obj.modifiers.get("NM_Texture_Blur")
+    if self.texture_blur > 0.0:
+        if not mod_blur:
+            mod_blur = obj.modifiers.new("NM_Texture_Blur", 'SMOOTH')
+        mod_blur.factor = self.texture_blur
+        mod_blur.iterations = 5
+    elif mod_blur:
+        obj.modifiers.remove(mod_blur)
+        
+    mod_dt = obj.modifiers.get("NM_Normal_Transfer")
+    if self.transfer_normals:
+        if not mod_dt and cutter:
+            mod_dt = obj.modifiers.new("NM_Normal_Transfer", 'DATA_TRANSFER')
+            mod_dt.object = cutter
+            mod_dt.use_loop_data = True
+            mod_dt.data_types_loops = {'CUSTOM_NORMAL'}
+            mod_dt.loop_mapping = 'NEAREST_POLYNOR'
+    elif mod_dt:
+        obj.modifiers.remove(mod_dt)
 
 class LSD_PG_SDF_Props(bpy.types.PropertyGroup):
     target_object: bpy.props.PointerProperty(
         name="Target Object",
         type=bpy.types.Object,
-        description="The object to perform the boolean operation against",
+        description="Target for boolean or normal transfer",
         update=update_sdf_props
     )
-    operation: bpy.props.EnumProperty(
+    boolean_operation: bpy.props.EnumProperty(
         name="Operation",
-        items=[('UNION', "Union", ""), ('DIFFERENCE', "Difference", ""), ('INTERSECT', "Intersection", "")],
-        default='UNION',
+        items=[('UNION', "Union", ""), ('DIFFERENCE', "Difference", ""), ('INTERSECT', "Intersection", ""), ('SLICE', "Slice", "")],
+        default='DIFFERENCE',
         update=update_sdf_props
     )
-    blend_distance: bpy.props.FloatProperty(
-        name="Blend Distance",
-        description="Distance to smooth/weld the boolean seam",
-        default=0.02, min=0.0, unit='LENGTH',
+    transfer_normals: bpy.props.BoolProperty(
+        name="Transfer Normals",
+        description="Transfer normals from the target to hide the boolean seam",
+        default=True,
         update=update_sdf_props
     )
-    voxel_size: bpy.props.FloatProperty(
-        name="Voxel Size",
-        description="Resolution of the SDF volume",
-        default=0.05, min=0.005, unit='LENGTH',
+    outset_thickness: bpy.props.FloatProperty(
+        name="Outset",
+        description="Outset thickness",
+        default=0.0, min=0.0, unit='LENGTH',
         update=update_sdf_props
     )
-    project_to_surface: bpy.props.BoolProperty(
-        name="Project to Surface",
-        description="Snaps boolean result strictly to original mesh surfaces",
-        default=False,
+    texture_blur: bpy.props.FloatProperty(
+        name="Texture Blur",
+        description="Blurring between the textures of the two materials",
+        default=0.1, min=0.0,
+        update=update_sdf_props
+    )
+    bevel_weld_radius: bpy.props.FloatProperty(
+        name="Bevel Weld Radius",
+        description="Radius of the bevel weld at the boolean intersection",
+        default=0.0, min=0.0, unit='LENGTH',
         update=update_sdf_props
     )
 
 #   Registration
 
 # ------------------------------------------------------------------------
+
+class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Name", default="Anim_Layer")
+    track_name: bpy.props.StringProperty(name="Track Name", default="")
+    
+    def update_prop_light(self, context):
+        from . import anim_core
+        anim_core.update_layer_property_light(self, context)
+        
+    def update_prop_heavy(self, context):
+        from . import anim_core
+        anim_core.update_layer_property_heavy(self, context)
+        
+    def update_lock_mute(self, context):
+        from . import anim_core
+        anim_core.update_layer_property_light(self, context)
+        
+        settings = context.scene.lsd_anim_settings
+        active_layer = settings.layers[settings.active_layer_index] if settings.layers and settings.active_layer_index < len(settings.layers) else None
+        
+        # No deferred timers or UI hijacking is necessary. The light sync instantly mutes F-curves,
+        # perfectly snapping the pose without dropping Tweak Mode or flashing the UI.
+        
+    blend_type: bpy.props.EnumProperty(
+        name="Blend Type",
+        items=[('REPLACE', "Replace", ""), ('COMBINE', "Combine", "")],
+        default='COMBINE',
+        update=update_prop_light
+    )
+    influence: bpy.props.FloatProperty(name="Influence", default=1.0, min=0.0, max=1.0, update=update_prop_light)
+    is_muted: bpy.props.BoolProperty(name="Mute / Unmute Layer", default=False, update=update_lock_mute)
+    is_locked: bpy.props.BoolProperty(name="Lock / Unlock Layer", default=False, update=update_lock_mute)
+
+class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
+    def update_active_idx(self, context):
+        try:
+            from . import anim_core
+            anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
+        except:
+            pass
+    layers_enabled: bpy.props.BoolProperty(name="Turn Animation Layers On", default=False)
+    layers: bpy.props.CollectionProperty(type=LSD_PG_Animation_Layer)
+    active_layer_index: bpy.props.IntProperty(default=-1, update=update_active_idx)
+    show_bake_operators: bpy.props.BoolProperty(default=True)
+    
+    affect_selected_bones_only: bpy.props.BoolProperty(default=False)
+    inbetween_value: bpy.props.FloatProperty(default=0.8, min=0.0, max=1.0)
+    def update_share_keys(self, context):
+        if self.share_layer_keys_type == 'RUN':
+            from . import anim_core
+            settings = context.scene.lsd_anim_settings
+            obj = anim_core.get_active_object(context)
+            if not obj or not obj.animation_data: return
+            
+            # Find active action
+            if settings.active_layer_index < 0: return
+            active_layer = settings.layers[settings.active_layer_index]
+            active_track = obj.animation_data.nla_tracks.get(active_layer.track_name)
+            if not active_track or not active_track.strips: return
+            active_action = active_track.strips[0].action
+            if not active_action: return
+            
+            # Gather frame times from all other layers
+            frames = set()
+            for layer in settings.layers:
+                if layer == active_layer: continue
+                track = obj.animation_data.nla_tracks.get(layer.track_name)
+                if track and track.strips and track.strips[0].action:
+                    for fc in anim_core.get_action_fcurves(obj, track.strips[0].action):
+                        for kf in fc.keyframe_points:
+                            frames.add(int(kf.co.x))
+            
+            # Insert empty keyframes into active action
+            for fc in anim_core.get_action_fcurves(obj, active_action):
+                for f in frames:
+                    fc.keyframe_points.insert(f, fc.evaluate(f))
+            
+            # Reset enum to allow re-triggering (safe in update if handled carefully, but standard is to just let it sit or reset)
+            # Actually resetting an enum inside its update loop triggers it again, so we'd need a guard, let's just leave it at RUN.
+
+    share_layer_keys_type: bpy.props.EnumProperty(items=[('RUN', "Run", ""), ('IDLE', "Idle", "")], update=update_share_keys, default='IDLE')
+    
+    multikey_scale: bpy.props.FloatProperty(default=1.0)
+    multikey_random: bpy.props.FloatProperty(default=0.1)
+    
+    view_multiple_layer_keyframes: bpy.props.BoolProperty(default=True)
+    edit_type_toggle: bpy.props.BoolProperty(default=True)
+    edit_type: bpy.props.EnumProperty(items=[('TYPE', "Type", "")])
+    
+    active_action: bpy.props.PointerProperty(type=bpy.types.Action)
+    sync_layer_action: bpy.props.BoolProperty(default=True)
+    auto_blend: bpy.props.BoolProperty(default=True)
+    
+    frame_min: bpy.props.FloatProperty(default=0.0)
+    frame_max: bpy.props.FloatProperty(default=122.0)
+    frame_range_type: bpy.props.EnumProperty(items=[('NOTHING', "Nothing", "")])
+    
+    always_sync: bpy.props.BoolProperty(default=False)
+    reversed: bpy.props.BoolProperty(default=False)
+    repeat: bpy.props.FloatProperty(default=1.0)
+    offset: bpy.props.FloatProperty(default=0.0)
+    speed: bpy.props.FloatProperty(default=1.0)
 
 CLASSES = [
     LSD_PG_Transmission_Properties, LSD_PG_Material_Properties, LSD_PG_Collision_Properties,
@@ -1199,6 +1355,11 @@ def get_catalogs_items(self, context):
     return items
 
 def register():
+
+    bpy.utils.register_class(LSD_PG_Animation_Layer)
+    bpy.utils.register_class(LSD_PG_Animation_Settings)
+    bpy.types.Scene.lsd_anim_settings = bpy.props.PointerProperty(type=LSD_PG_Animation_Settings)
+
     for cls in CLASSES:
         try:
             bpy.utils.register_class(cls)
@@ -1571,12 +1732,12 @@ def register():
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
     # 3. Order Properties
     prop_names = [
-        "lsd_order_procedural",    # 1: Procedural Toolkit
         "lsd_order_dimensions",    # 2: Dimensions & Precision Transforms
         "lsd_order_sdf_booleans",  # 3: SDF Booleans
         "lsd_order_materials",     # 4: Paint Tools
         "lsd_order_physics",       # 5: Physics
-        "lsd_order_kinematics",    # 6: Kinematics Setup
+        "lsd_order_animation",     # 6: Animation Layers
+        "lsd_order_kinematics",    # 7: Kinematics Setup
         "lsd_order_transmission",  # 7: Transmission
         "lsd_order_camera",        # 8: Camera Studio & Pathing
         "lsd_order_export",        # 9: Import/Export System
@@ -1660,7 +1821,7 @@ def unregister():
         ]
         # Add order props
         prop_names = [
-            "lsd_order_procedural", "lsd_order_dimensions", "lsd_order_sdf_booleans",
+            "lsd_order_dimensions", "lsd_order_sdf_booleans",
             "lsd_order_materials", "lsd_order_physics", "lsd_order_kinematics",
             "lsd_order_transmission", "lsd_order_camera", "lsd_order_export",
             "lsd_order_preferences"
@@ -1682,6 +1843,14 @@ def unregister():
     except Exception as e:
         print(f"Error during LSD property cleanup: {e}")
     # 3. Unregister classes in reverse order
+
+    if hasattr(bpy.types.Scene, "lsd_anim_settings"):
+        del bpy.types.Scene.lsd_anim_settings
+    try:
+        bpy.utils.unregister_class(LSD_PG_Animation_Settings)
+        bpy.utils.unregister_class(LSD_PG_Animation_Layer)
+    except: pass
+
     for cls in reversed(CLASSES):
         try:
             bpy.utils.unregister_class(cls)

@@ -67,7 +67,6 @@ DEFAULT_IK_CHAIN_LENGTH: int = 255
 LSD_PANEL_PROPS: List[str] = [
     "lsd_panel_enabled_parts", "lsd_show_panel_parts",
     "lsd_panel_enabled_electronics", "lsd_show_panel_electronics",
-    "lsd_panel_enabled_procedural", "lsd_show_panel_procedural",
     "lsd_panel_enabled_materials", "lsd_show_panel_materials",
     "lsd_panel_enabled_lighting", "lsd_show_panel_lighting",
     "lsd_panel_enabled_dimensions", "lsd_show_panel_dimensions",
@@ -81,6 +80,7 @@ LSD_PANEL_PROPS: List[str] = [
     "lsd_panel_enabled_vehicle", "lsd_show_panel_vehicle",
     "lsd_panel_enabled_sdf_booleans", "lsd_show_panel_sdf_booleans",
     "lsd_panel_enabled_presets", "lsd_show_panel_presets",
+    "lsd_panel_enabled_animation", "lsd_show_panel_animation",
     "lsd_panel_enabled_preferences", "lsd_show_panel_preferences",
 ]
 

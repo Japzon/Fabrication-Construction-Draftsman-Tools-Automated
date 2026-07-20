@@ -240,12 +240,12 @@ class LSD_OT_ResetPanelOrder(bpy.types.Operator):
     bl_description = "Resets all panel order settings to their defaults"
     def execute(self, context):
         scene = context.scene
-        scene.lsd_order_dimensions = 0
-        scene.lsd_order_sdf_booleans = 1
+        scene.lsd_order_sdf_booleans = 0
+        scene.lsd_order_dimensions = 1
         scene.lsd_order_materials = 2
-        scene.lsd_order_physics = 3
-        scene.lsd_order_animation = 4
-        scene.lsd_order_kinematics = 5
+        scene.lsd_order_animation = 3
+        scene.lsd_order_kinematics = 4
+        scene.lsd_order_physics = 5
         scene.lsd_order_transmission = 6
         scene.lsd_order_camera = 7
         scene.lsd_order_export = 8

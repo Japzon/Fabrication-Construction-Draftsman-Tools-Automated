@@ -46,25 +46,32 @@ def sync_layer_light(context):
     settings = get_anim_settings(context)
     if not settings.layers_enabled or not settings.layers:
         return
-    obj = get_active_object(context)
-    if not obj or not obj.animation_data:
-        return
-    
-    for i, layer in enumerate(settings.layers):
-        track = ensure_nla_track(obj, layer.track_name if layer.track_name else layer.name)
+    # Apply to all objects to ensure global influence update
+    for scene_obj in context.scene.objects:
+        if not scene_obj.animation_data:
+            continue
         
-        for strip in track.strips:
-            strip.blend_type = layer.blend_type
-            strip.influence = 0.0 if (layer.is_muted or layer.is_locked) else layer.influence
-            strip.mute = layer.is_muted or layer.is_locked
+        for i, layer in enumerate(settings.layers):
+            track = None
+            for t in scene_obj.animation_data.nla_tracks:
+                if t.name == layer.name or t.name == layer.track_name:
+                    track = t
+                    break
+            
+            if track:
+                for strip in track.strips:
+                    strip.blend_type = layer.blend_type
+                    strip.influence = 0.0 if (layer.is_muted or layer.is_locked) else layer.influence
+                    strip.mute = layer.is_muted or layer.is_locked
     
     context.view_layer.update()
     
     # CRITICAL: Muting the active layer while in Tweak Mode causes the Action slot to override the NLA strip!
     # Instead of forcefully exiting Tweak Mode (which flashes the UI), we can simply mute the active action's F-curves!
-    if settings.active_layer_index < len(settings.layers):
+    obj = get_active_object(context)
+    if obj and settings.active_layer_index < len(settings.layers):
         active_layer = settings.layers[settings.active_layer_index]
-        if obj.animation_data.action:
+        if obj.animation_data and obj.animation_data.action:
             for fcurve in get_action_fcurves(obj, obj.animation_data.action):
                 fcurve.mute = (active_layer.is_muted or active_layer.is_locked)
     

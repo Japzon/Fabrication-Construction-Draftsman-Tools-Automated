@@ -6779,6 +6779,17 @@ class LSD_OT_Sync_Active_Layer(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class LSD_OT_Anim_Refresh_Sync(bpy.types.Operator):
+    bl_idname = "lsd.anim_refresh_sync"
+    bl_label = "Refresh Layer Sync"
+    bl_description = "Register new animations and refresh the timeline."
+    
+    def execute(self, context):
+        from . import anim_core
+        anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
+        self.report({'INFO'}, "Animation Layers Synchronized")
+        return {'FINISHED'}
+
 class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
     bl_idname = "lsd.anim_layer_add"
     bl_label = "Add Animation Layer"
@@ -6966,12 +6977,41 @@ class LSD_OT_Anim_Sync_To_Action(bpy.types.Operator):
     bl_label = "Sync to Action"
     def execute(self, context): return {'FINISHED'}
 
+class LSD_OT_NM_Boolean_Pro(bpy.types.Operator):
+    bl_idname = "lsd.nm_boolean_pro"
+    bl_label = "Boolean"
+    def execute(self, context): return {'FINISHED'}
 
+class LSD_OT_NM_Surface_Project(bpy.types.Operator):
+    bl_idname = "lsd.nm_surface_project"
+    bl_label = "Surface Project"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Surface_Insert(bpy.types.Operator):
+    bl_idname = "lsd.nm_surface_insert"
+    bl_label = "Surface Insert"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Normal_Weighted(bpy.types.Operator):
+    bl_idname = "lsd.nm_normal_weighted"
+    bl_label = "Weighted Normals"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Apply_Modifiers(bpy.types.Operator):
+    bl_idname = "lsd.nm_apply_modifiers"
+    bl_label = "Apply All Modifiers"
+    def execute(self, context): return {'FINISHED'}
 
 def register():
     CLASSES = [
+    LSD_OT_NM_Boolean_Pro,
+    LSD_OT_NM_Surface_Project,
+    LSD_OT_NM_Surface_Insert,
+    LSD_OT_NM_Normal_Weighted,
+    LSD_OT_NM_Apply_Modifiers,
 
     LSD_OT_Sync_Active_Layer,
+    LSD_OT_Anim_Refresh_Sync,
     LSD_OT_Anim_Layer_Add,
     LSD_OT_Anim_Layer_Remove,
     LSD_OT_Anim_Layer_Move,
@@ -7022,6 +7062,11 @@ def register():
                 print(f"LSD Operator Register Warning: Could not register {cls.__name__}: {e}")
 def unregister():
     CLASSES = [
+    LSD_OT_NM_Boolean_Pro,
+    LSD_OT_NM_Surface_Project,
+    LSD_OT_NM_Surface_Insert,
+    LSD_OT_NM_Normal_Weighted,
+    LSD_OT_NM_Apply_Modifiers,
 
     LSD_OT_Sync_Active_Layer,
     LSD_OT_Anim_Layer_Add,

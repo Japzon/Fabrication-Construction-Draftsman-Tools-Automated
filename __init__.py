@@ -29,12 +29,14 @@ if "bpy" in locals():
     if "operators" in locals(): importlib.reload(operators)
     if "panels" in locals(): importlib.reload(panels)
     if "config" in locals(): importlib.reload(config)
+    if "anim_onion_skin" in locals(): importlib.reload(anim_onion_skin)
 import bpy
 from . import config
 from . import core
 from . import properties
 from . import operators
 from . import panels
+from . import anim_onion_skin
 
 addon_keymaps = []
 
@@ -58,6 +60,7 @@ def register():
     # 3. Core - Handlers and logic
     core.register()
     panels.register()
+    anim_onion_skin.register()
     
     # 5. Keymaps
     wm = bpy.context.window_manager
@@ -82,6 +85,11 @@ def unregister():
         core.unregister()
     except Exception as e:
         print(f"[LSD] Unregister Warning (Core): {e}")
+        
+    try:
+        anim_onion_skin.unregister()
+    except Exception as e:
+        print(f"[LSD] Unregister Warning (Onion Skin): {e}")
         
     try:
         operators.unregister()

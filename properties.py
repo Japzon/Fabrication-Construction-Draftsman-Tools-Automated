@@ -1145,6 +1145,60 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     active_layer_index: bpy.props.IntProperty(default=-1, update=update_active_idx)
     show_bake_operators: bpy.props.BoolProperty(default=True)
     
+    onion_skin_enabled: bpy.props.BoolProperty(
+        name="Enable Timeline Onion Skinning",
+        default=False,
+        update=lambda self, context: __import__('importlib').import_module('.anim_onion_skin', __package__).update_onion_skin(self, context) if __package__ else None
+    )
+    
+    onion_skin_target: bpy.props.EnumProperty(
+        name="Target",
+        items=[('SELECTED', "Selected Only", ""), ('VISIBLE', "Everything Visible", "")],
+        default='SELECTED'
+    )
+    
+    onion_skin_auto_refresh: bpy.props.BoolProperty(
+        name="",
+        default=False,
+        description="Enable automatic cache refreshing based on an interval"
+    )
+    
+    onion_skin_refresh_interval: bpy.props.FloatProperty(
+        name="Refresh Timer (seconds)",
+        default=5.0, min=0.1, max=100.0,
+        description="Interval in seconds to recalculate onion skins automatically"
+    )
+    
+    onion_skin_frame_distance: bpy.props.IntProperty(
+        name="Frame Distance",
+        default=10, min=1
+    )
+    onion_skin_count_before: bpy.props.IntProperty(
+        name="Frames Before",
+        default=10, min=0
+    )
+    onion_skin_count_after: bpy.props.IntProperty(
+        name="Frames After",
+        default=10, min=0
+    )
+    onion_skin_opacity_before: bpy.props.FloatProperty(
+        name="Opacity Before",
+        default=0.10, min=0.0, max=1.0
+    )
+    onion_skin_opacity_after: bpy.props.FloatProperty(
+        name="Opacity After",
+        default=0.10, min=0.0, max=1.0
+    )
+    onion_skin_color_past: bpy.props.FloatVectorProperty(
+        name="Past Color", subtype='COLOR', size=3, default=(0.0, 1.0, 0.0)
+    )
+    onion_skin_color_present: bpy.props.FloatVectorProperty(
+        name="Present Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0)
+    )
+    onion_skin_color_future: bpy.props.FloatVectorProperty(
+        name="Future Color", subtype='COLOR', size=3, default=(1.0, 0.0, 0.0)
+    )
+    
     affect_selected_bones_only: bpy.props.BoolProperty(default=False)
     inbetween_value: bpy.props.FloatProperty(default=0.8, min=0.0, max=1.0)
     def update_share_keys(self, context):
@@ -1732,16 +1786,16 @@ def register():
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
     # 3. Order Properties
     prop_names = [
-        "lsd_order_dimensions",    # 2: Dimensions & Precision Transforms
-        "lsd_order_sdf_booleans",  # 3: SDF Booleans
-        "lsd_order_materials",     # 4: Paint Tools
-        "lsd_order_physics",       # 5: Physics
-        "lsd_order_animation",     # 6: Animation Layers
-        "lsd_order_kinematics",    # 7: Kinematics Setup
-        "lsd_order_transmission",  # 7: Transmission
-        "lsd_order_camera",        # 8: Camera Studio & Pathing
-        "lsd_order_export",        # 9: Import/Export System
-        "lsd_order_preferences"    # 10: Preferences
+        "lsd_order_sdf_booleans",
+        "lsd_order_dimensions",
+        "lsd_order_materials",
+        "lsd_order_animation",
+        "lsd_order_kinematics",
+        "lsd_order_physics",
+        "lsd_order_transmission",
+        "lsd_order_camera",
+        "lsd_order_export",
+        "lsd_order_preferences"
     ]
     for i, name in enumerate(prop_names):
         setattr(bpy.types.Scene, name, bpy.props.IntProperty(name="Panel Order", default=i))

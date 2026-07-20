@@ -48,6 +48,7 @@ class LSD_PT_Animation_System_Main:
             row = layers_box.row()
             row.prop(settings, "layers_enabled", text="", icon='TRIA_DOWN' if settings.layers_enabled else 'TRIA_RIGHT', emboss=False)
             row.label(text="Animation Layers")
+            row.operator("lsd.anim_refresh_sync", text="", icon='FILE_REFRESH')
             row.prop(settings, "layers_enabled", text="", icon='CHECKBOX_HLT' if settings.layers_enabled else 'CHECKBOX_DEHLT')
             
             if settings.layers_enabled:
@@ -66,7 +67,6 @@ class LSD_PT_Animation_System_Main:
                 
                 if len(settings.layers) > 0 and settings.active_layer_index >= 0:
                     layer = settings.layers[settings.active_layer_index]
-                    col.prop(layer, "influence", text="Influence")
                     col.prop(layer, "blend_type", text="Blend:")
                 
                 bake_box = col.box()
@@ -77,83 +77,47 @@ class LSD_PT_Animation_System_Main:
                 
                 if settings.show_bake_operators:
                     bake_col = bake_box.column(align=True)
-                    bake_col.operator("lsd.anim_merge_bake", text="Merge / Bake", icon='ACTION_TWEAK')
+                    bake_col.operator("lsd.anim_merge_bake", text="Merge Layer Above", icon='ACTION_TWEAK')
                     bake_col.operator("lsd.anim_duplicate_layer", text="Duplicate Layer", icon='DUPLICATE')
                     bake_col.operator("lsd.anim_extract_bones", text="Extract Selected Bones", icon='BONE_DATA')
                     bake_col.operator("lsd.anim_extract_keys", text="Extract Marked Keyframes", icon='KEYINGSET')
             
-            # --- Layer Tools Subpanel ---
+            # --- Onion Skinning Subpanel ---
             if settings.layers_enabled:
-                tools_box = col_main.box()
-                row = tools_box.row()
-                row.label(text="Layer Tools", icon='TOOL_SETTINGS')
+                onion_box = col_main.box()
+                row = onion_box.row()
+                row.prop(settings, "onion_skin_enabled", text="", icon='TRIA_DOWN' if settings.onion_skin_enabled else 'TRIA_RIGHT', emboss=False)
+                row.label(text="Timeline Onion Skinning", icon='GHOST_ENABLED')
+                row.prop(settings, "onion_skin_enabled", text="", icon='CHECKBOX_HLT' if settings.onion_skin_enabled else 'CHECKBOX_DEHLT')
                 
-                col = tools_box.column()
-                col.operator("lsd.anim_select_bones", text="Select Bones in Layer", icon='BONE_DATA')
-                
-                row = col.row()
-                row.prop(settings, "affect_selected_bones_only", text="Affect Only Selected Bones")
-                row.label(icon='FILTER')
-                
-                col.operator("lsd.anim_reset_key_layer", text="Reset Key Layer", icon='KEYTYPE_KEYFRAME_VEC')
-                col.prop(settings, "inbetween_value", text="Inbetween")
-                
-                row = col.row()
-                row.label(text="Share Layer Keys")
-                row.prop(settings, "share_layer_keys_type", text="")
-                
-                mk_box = col.box()
-                mk_box.label(text="Multikey - Edit Multiple Keyframes")
-                row = mk_box.row()
-                row.prop(settings, "multikey_scale", text="Scale")
-                row.prop(settings, "multikey_random", text="Random")
-                mk_box.operator("lsd.anim_multikey_edit", text="Edit Selected Keyframes", icon='NODE_COMPOSITING')
-                
-                row = col.row(align=True)
-                row.operator("lsd.anim_cyclic_fcurves", text="Cyclic Fcurves", icon='GRAPH')
-                row.operator("lsd.anim_remove_fcurves", text="X Remove Fcurves")
-                
-                col.prop(settings, "view_multiple_layer_keyframes", text="View Multiple Layer Keyframes")
-                row = col.row()
-                row.prop(settings, "edit_type_toggle", text="Edit")
-                row.prop(settings, "edit_type", text="")
-                
-            # --- Layer Settings Subpanel ---
-            if settings.layers_enabled:
-                settings_box = col_main.box()
-                row = settings_box.row()
-                row.label(text="Layer Settings", icon='PREFERENCES')
-                
-                col = settings_box.column()
-                row = col.row()
-                row.label(text="Active A...")
-                row.prop(settings, "active_action", text="", icon='ACTION')
-                
-                row = col.row()
-                row.prop(settings, "sync_layer_action", text="Sync Layer/Actio...")
-                row.prop(settings, "auto_blend", text="Auto Blend")
-                
-                col.operator("lsd.anim_custom_frame_range", text="Custom Frame Range", icon='TRIA_LEFT')
-                
-                row = col.row()
-                row.prop(settings, "frame_min", text="")
-                row.prop(settings, "frame_max", text="")
-                row.prop(settings, "frame_range_type", text="")
-                
-                row = col.row()
-                col1 = row.column(align=True)
-                col1.prop(settings, "always_sync", text="Always Sync")
-                col1.prop(settings, "reversed", text="Reversed")
-                
-                col2 = row.column()
-                col2.operator("lsd.anim_sync_to_action", text="Sync to Action", icon='FILE_REFRESH')
-                row2 = col2.row(align=True)
-                row2.prop(settings, "repeat", text="Repeat")
-                row2.prop(settings, "offset", text="Offset")
-                
-                row = col.row(align=True)
-                col1 = row.column()
-                col1.prop(settings, "speed", text="Speed")
+                if settings.onion_skin_enabled:
+                    col = onion_box.column()
+                    
+                    row = col.row()
+                    row.operator("lsd.calculate_onion_skin", icon='FILE_REFRESH')
+                    
+                    row_timer = col.row(align=True)
+                    row_timer.prop(settings, "onion_skin_auto_refresh", icon='CHECKBOX_HLT' if settings.onion_skin_auto_refresh else 'CHECKBOX_DEHLT')
+                    row_timer.prop(settings, "onion_skin_refresh_interval")
+                    
+                    col.prop(settings, "onion_skin_target", text="")
+                    
+                    col.separator()
+                    col.prop(settings, "onion_skin_frame_distance")
+                    
+                    row = col.row(align=True)
+                    row.prop(settings, "onion_skin_opacity_before", text="Opacity Before")
+                    row.prop(settings, "onion_skin_opacity_after", text="Opacity After")
+                    
+                    row = col.row(align=True)
+                    row.prop(settings, "onion_skin_count_before")
+                    row.prop(settings, "onion_skin_count_after")
+                    
+                    col.separator()
+                    row = col.row(align=True)
+                    row.prop(settings, "onion_skin_color_past", text="")
+                    row.prop(settings, "onion_skin_color_present", text="")
+                    row.prop(settings, "onion_skin_color_future", text="")
 
 CLASSES = (
     LSD_UL_Animation_Layers,

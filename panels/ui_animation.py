@@ -101,6 +101,12 @@ class LSD_PT_Animation_System_Main:
                     row_timer.prop(settings, "onion_skin_refresh_interval")
                     
                     col.prop(settings, "onion_skin_target", text="")
+                    if settings.onion_skin_target == 'SELECTED':
+                        col.prop(settings, "onion_skin_near_count")
+                        
+                    col.prop(settings, "onion_skin_display_type", text="")
+                    if settings.onion_skin_display_type == 'MESH':
+                        col.prop(settings, "onion_skin_mesh_resolution")
                     
                     col.separator()
                     col.prop(settings, "onion_skin_frame_distance")

@@ -16,21 +16,51 @@ def get_bone_lines(obj):
         lines.append(mat @ bone.tail)
     return lines
 
-def get_mesh_lines(obj, depsgraph):
+def get_mesh_lines(obj, depsgraph, display_type='BOUNDS'):
     lines = []
     if obj.type != 'MESH': return lines
-    eval_obj = obj.evaluated_get(depsgraph)
-    mesh = eval_obj.to_mesh()
-    mat = obj.matrix_world
-    # For performance, only do bounding box edges or low res edges if needed
-    # But wireframe is standard:
-    for edge in mesh.edges:
-        v1 = mesh.vertices[edge.vertices[0]].co
-        v2 = mesh.vertices[edge.vertices[1]].co
-        lines.append(mat @ v1)
-        lines.append(mat @ v2)
-    eval_obj.to_mesh_clear()
+    
+    if display_type == 'BOUNDS':
+        bbox = obj.bound_box
+        if not bbox: return lines
+        
+        eval_obj = obj.evaluated_get(depsgraph)
+        mat = eval_obj.matrix_world
+        
+        edges = [
+            (0,1), (1,2), (2,3), (3,0),
+            (4,5), (5,6), (6,7), (7,4),
+            (0,4), (1,5), (2,6), (3,7)
+        ]
+        
+        for e1, e2 in edges:
+            v1 = mathutils.Vector(bbox[e1])
+            v2 = mathutils.Vector(bbox[e2])
+            lines.append(mat @ v1)
+            lines.append(mat @ v2)
+            
+    else: # MESH mode
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+        mat = eval_obj.matrix_world
+        
+        # O(N) pseudo-decimation logic
+        settings = getattr(bpy.context.scene, 'lsd_anim_settings', None)
+        resolution = settings.onion_skin_mesh_resolution if settings else 1.0
+        step = max(1, int(1.0 / max(0.01, resolution)))
+        
+        for i, edge in enumerate(mesh.edges):
+            if i % step != 0: continue
+            v1 = mesh.vertices[edge.vertices[0]].co
+            v2 = mesh.vertices[edge.vertices[1]].co
+            lines.append(mat @ v1)
+            lines.append(mat @ v2)
+            
+        eval_obj.to_mesh_clear()
+        
     return lines
+    
+
 
 def draw_callback():
     if not _cached_data: return
@@ -78,6 +108,11 @@ def build_onion_cache(context=None):
     target_objs = []
     if settings.onion_skin_target == 'SELECTED':
         target_objs = [o for o in context.selected_objects if o.type in {'ARMATURE', 'MESH'}]
+        if settings.onion_skin_near_count > 0 and len(target_objs) > 0:
+            center_loc = target_objs[0].matrix_world.translation
+            all_vis = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and o not in target_objs]
+            all_vis.sort(key=lambda o: (o.matrix_world.translation - center_loc).length)
+            target_objs.extend(all_vis[:settings.onion_skin_near_count])
     else:
         target_objs = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'}]
         
@@ -108,7 +143,7 @@ def build_onion_cache(context=None):
             if obj.type == 'ARMATURE':
                 _cached_data[f].extend(get_bone_lines(obj))
             elif obj.type == 'MESH':
-                _cached_data[f].extend(get_mesh_lines(obj, depsgraph))
+                _cached_data[f].extend(get_mesh_lines(obj, depsgraph, settings.onion_skin_display_type))
                 
     context.scene.frame_set(orig_frame)
     _is_building = False

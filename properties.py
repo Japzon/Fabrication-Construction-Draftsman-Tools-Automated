@@ -1157,6 +1157,24 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default='SELECTED'
     )
     
+    onion_skin_near_count: bpy.props.IntProperty(
+        name="# of Objects Near Selected",
+        default=10, min=0,
+        description="Number of nearby objects to include when using 'Selected Only'"
+    )
+    
+    onion_skin_display_type: bpy.props.EnumProperty(
+        name="Display Mode",
+        items=[('BOUNDS', "Boundaries", ""), ('MESH', "Mesh", "")],
+        default='MESH'
+    )
+    
+    onion_skin_mesh_resolution: bpy.props.FloatProperty(
+        name="Mesh Resolution",
+        default=0.05, min=0.01, max=1.0, subtype='FACTOR',
+        description="Percentage of mesh edges to render (lower is faster)"
+    )
+    
     onion_skin_auto_refresh: bpy.props.BoolProperty(
         name="",
         default=False,
@@ -1171,15 +1189,15 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     
     onion_skin_frame_distance: bpy.props.IntProperty(
         name="Frame Distance",
-        default=10, min=1
+        default=1, min=1
     )
     onion_skin_count_before: bpy.props.IntProperty(
         name="Frames Before",
-        default=10, min=0
+        default=100, min=0
     )
     onion_skin_count_after: bpy.props.IntProperty(
         name="Frames After",
-        default=10, min=0
+        default=100, min=0
     )
     onion_skin_opacity_before: bpy.props.FloatProperty(
         name="Opacity Before",

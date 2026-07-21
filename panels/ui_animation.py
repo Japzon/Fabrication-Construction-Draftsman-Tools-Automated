@@ -83,49 +83,48 @@ class LSD_PT_Animation_System_Main:
                     bake_col.operator("lsd.anim_extract_keys", text="Extract Marked Keyframes", icon='KEYINGSET')
             
             # --- Onion Skinning Subpanel ---
-            if settings.layers_enabled:
-                onion_box = col_main.box()
-                row = onion_box.row()
-                row.prop(settings, "onion_skin_enabled", text="", icon='TRIA_DOWN' if settings.onion_skin_enabled else 'TRIA_RIGHT', emboss=False)
-                row.label(text="Timeline Onion Skinning", icon='GHOST_ENABLED')
-                row.prop(settings, "onion_skin_enabled", text="", icon='CHECKBOX_HLT' if settings.onion_skin_enabled else 'CHECKBOX_DEHLT')
+            onion_box = col_main.box()
+            row = onion_box.row()
+            row.prop(settings, "onion_skin_enabled", text="", icon='TRIA_DOWN' if settings.onion_skin_enabled else 'TRIA_RIGHT', emboss=False)
+            row.label(text="Timeline Onion Skinning", icon='GHOST_ENABLED')
+            row.prop(settings, "onion_skin_enabled", text="", icon='CHECKBOX_HLT' if settings.onion_skin_enabled else 'CHECKBOX_DEHLT')
+            
+            if settings.onion_skin_enabled:
+                col = onion_box.column()
                 
-                if settings.onion_skin_enabled:
-                    col = onion_box.column()
+                row = col.row()
+                row.operator("lsd.calculate_onion_skin", icon='FILE_REFRESH')
+                
+                row_timer = col.row(align=True)
+                row_timer.prop(settings, "onion_skin_auto_refresh", icon='CHECKBOX_HLT' if settings.onion_skin_auto_refresh else 'CHECKBOX_DEHLT')
+                row_timer.prop(settings, "onion_skin_refresh_interval")
+                
+                col.prop(settings, "onion_skin_target", text="")
+                if settings.onion_skin_target == 'SELECTED':
+                    col.prop(settings, "onion_skin_near_count")
                     
-                    row = col.row()
-                    row.operator("lsd.calculate_onion_skin", icon='FILE_REFRESH')
+                col.prop(settings, "onion_skin_display_type", text="")
+                if settings.onion_skin_display_type == 'MESH':
+                    col.prop(settings, "onion_skin_mesh_resolution")
                     
-                    row_timer = col.row(align=True)
-                    row_timer.prop(settings, "onion_skin_auto_refresh", icon='CHECKBOX_HLT' if settings.onion_skin_auto_refresh else 'CHECKBOX_DEHLT')
-                    row_timer.prop(settings, "onion_skin_refresh_interval")
-                    
-                    col.prop(settings, "onion_skin_target", text="")
-                    if settings.onion_skin_target == 'SELECTED':
-                        col.prop(settings, "onion_skin_near_count")
-                        
-                    col.prop(settings, "onion_skin_display_type", text="")
-                    if settings.onion_skin_display_type == 'MESH':
-                        col.prop(settings, "onion_skin_mesh_resolution")
-                        
-                    col.prop(settings, "onion_skin_fade")
-                    
-                    col.separator()
-                    col.prop(settings, "onion_skin_frame_distance")
-                    
-                    row = col.row(align=True)
-                    row.prop(settings, "onion_skin_opacity_before", text="Opacity Before")
-                    row.prop(settings, "onion_skin_opacity_after", text="Opacity After")
-                    
-                    row = col.row(align=True)
-                    row.prop(settings, "onion_skin_count_before")
-                    row.prop(settings, "onion_skin_count_after")
-                    
-                    col.separator()
-                    row = col.row(align=True)
-                    row.prop(settings, "onion_skin_color_past", text="")
-                    row.prop(settings, "onion_skin_color_present", text="")
-                    row.prop(settings, "onion_skin_color_future", text="")
+                col.prop(settings, "onion_skin_fade")
+                
+                col.separator()
+                col.prop(settings, "onion_skin_frame_distance")
+                
+                row = col.row(align=True)
+                row.prop(settings, "onion_skin_opacity_before", text="Opacity Before")
+                row.prop(settings, "onion_skin_opacity_after", text="Opacity After")
+                
+                row = col.row(align=True)
+                row.prop(settings, "onion_skin_count_before")
+                row.prop(settings, "onion_skin_count_after")
+                
+                col.separator()
+                row = col.row(align=True)
+                row.prop(settings, "onion_skin_color_past", text="")
+                row.prop(settings, "onion_skin_color_present", text="")
+                row.prop(settings, "onion_skin_color_future", text="")
 
 CLASSES = (
     LSD_UL_Animation_Layers,

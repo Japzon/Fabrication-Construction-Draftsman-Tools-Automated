@@ -1140,7 +1140,23 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
             anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
         except:
             pass
-    layers_enabled: bpy.props.BoolProperty(name="Turn Animation Layers On", default=False)
+    def update_layers_enabled(self, context):
+        try:
+            from . import anim_core
+            if not self.layers_enabled:
+                # Safely exit tweak mode
+                anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
+                # Unlock all layer tracks so the user isn't frozen from animating
+                for obj in context.scene.objects:
+                    if obj.animation_data and obj.animation_data.nla_tracks:
+                        for layer in self.layers:
+                            track = obj.animation_data.nla_tracks.get(layer.track_name if layer.track_name else layer.name)
+                            if track:
+                                track.lock = False
+        except:
+            pass
+
+    layers_enabled: bpy.props.BoolProperty(name="Turn Animation Layers On", default=False, update=update_layers_enabled)
     layers: bpy.props.CollectionProperty(type=LSD_PG_Animation_Layer)
     active_layer_index: bpy.props.IntProperty(default=-1, update=update_active_idx)
     show_bake_operators: bpy.props.BoolProperty(default=True)
@@ -1171,7 +1187,7 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     
     onion_skin_mesh_resolution: bpy.props.FloatProperty(
         name="Mesh Resolution",
-        default=0.2, min=0.01, max=1.0, subtype='FACTOR',
+        default=0.1, min=0.01, max=1.0, subtype='FACTOR',
         description="Percentage of mesh edges to render (lower is faster)"
     )
     
@@ -1207,20 +1223,20 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     )
     onion_skin_opacity_before: bpy.props.FloatProperty(
         name="Opacity Before",
-        default=0.4, min=0.0, max=1.0
+        default=0.1, min=0.0, max=1.0
     )
     onion_skin_opacity_after: bpy.props.FloatProperty(
         name="Opacity After",
-        default=0.4, min=0.0, max=1.0
+        default=0.1, min=0.0, max=1.0
     )
     onion_skin_color_past: bpy.props.FloatVectorProperty(
-        name="Past Color", subtype='COLOR', size=3, default=(0.0, 1.0, 0.0)
+        name="Past Color", subtype='COLOR', size=3, default=(1.0, 1.0, 0.8), min=0.0, max=1.0
     )
     onion_skin_color_present: bpy.props.FloatVectorProperty(
-        name="Present Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0)
+        name="Present Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0), min=0.0, max=1.0
     )
     onion_skin_color_future: bpy.props.FloatVectorProperty(
-        name="Future Color", subtype='COLOR', size=3, default=(1.0, 0.0, 0.0)
+        name="Future Color", subtype='COLOR', size=3, default=(0.9, 0.9, 1.0), min=0.0, max=1.0
     )
     
     affect_selected_bones_only: bpy.props.BoolProperty(default=False)

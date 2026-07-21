@@ -9,11 +9,11 @@ _cached_data = {}
 def get_bone_lines(obj):
     lines = []
     if obj.type != 'ARMATURE': return lines
-    # Calculate world space head and tail for each bone
     mat = obj.matrix_world
+    
     for bone in obj.pose.bones:
-        lines.append(mat @ bone.head)
-        lines.append(mat @ bone.tail)
+        lines.extend([mat @ bone.head, mat @ bone.tail])
+            
     return lines
 
 def get_mesh_lines(obj, depsgraph, display_type='BOUNDS'):
@@ -36,25 +36,25 @@ def get_mesh_lines(obj, depsgraph, display_type='BOUNDS'):
         for e1, e2 in edges:
             v1 = mathutils.Vector(bbox[e1])
             v2 = mathutils.Vector(bbox[e2])
-            lines.append(mat @ v1)
-            lines.append(mat @ v2)
+            lines.extend([mat @ v1, mat @ v2])
             
     else: # MESH mode
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
         mat = eval_obj.matrix_world
         
-        # O(N) pseudo-decimation logic
+        mesh.transform(mat)
+        
         settings = getattr(bpy.context.scene, 'lsd_anim_settings', None)
         resolution = settings.onion_skin_mesh_resolution if settings else 1.0
         step = max(1, int(1.0 / max(0.01, resolution)))
         
+        verts = mesh.vertices
         for i, edge in enumerate(mesh.edges):
             if i % step != 0: continue
-            v1 = mesh.vertices[edge.vertices[0]].co
-            v2 = mesh.vertices[edge.vertices[1]].co
-            lines.append(mat @ v1)
-            lines.append(mat @ v2)
+            v1 = verts[edge.vertices[0]].co
+            v2 = verts[edge.vertices[1]].co
+            lines.extend(((v1.x, v1.y, v1.z), (v2.x, v2.y, v2.z)))
             
         eval_obj.to_mesh_clear()
         
@@ -67,7 +67,7 @@ def draw_callback():
     
     context = bpy.context
     settings = getattr(context.scene, 'lsd_anim_settings', None)
-    if not settings or not settings.onion_skin_enabled or not settings.layers_enabled:
+    if not settings or not settings.onion_skin_enabled:
         return
         
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -76,9 +76,14 @@ def draw_callback():
     
     current_frame = context.scene.frame_current
     
-    for frame, lines in _cached_data.items():
-        if not lines: continue
-        
+    for frame, data in _cached_data.items():
+        if isinstance(data, list):
+            if not data: continue
+            batch = batch_for_shader(shader, 'LINES', {"pos": data})
+            _cached_data[frame] = batch
+        else:
+            batch = data
+            
         if frame < current_frame:
             base_opacity = settings.onion_skin_opacity_before
             if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before > 1:
@@ -95,8 +100,9 @@ def draw_callback():
             color = list(settings.onion_skin_color_present) + [1.0]
             
         shader.bind()
+        
+        gpu.state.line_width_set(2.0)
         shader.uniform_float("color", color)
-        batch = batch_for_shader(shader, 'LINES', {"pos": lines})
         batch.draw(shader)
         
     gpu.state.blend_set('NONE')

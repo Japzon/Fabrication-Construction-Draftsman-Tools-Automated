@@ -80,9 +80,17 @@ def draw_callback():
         if not lines: continue
         
         if frame < current_frame:
-            color = list(settings.onion_skin_color_past) + [settings.onion_skin_opacity_before]
+            base_opacity = settings.onion_skin_opacity_before
+            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before > 1:
+                n = abs(current_frame - frame) // max(1, settings.onion_skin_frame_distance)
+                base_opacity *= max(0.0, 1.0 - (n - 1) / (settings.onion_skin_count_before - 1))
+            color = list(settings.onion_skin_color_past) + [base_opacity]
         elif frame > current_frame:
-            color = list(settings.onion_skin_color_future) + [settings.onion_skin_opacity_after]
+            base_opacity = settings.onion_skin_opacity_after
+            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after > 1:
+                n = abs(current_frame - frame) // max(1, settings.onion_skin_frame_distance)
+                base_opacity *= max(0.0, 1.0 - (n - 1) / (settings.onion_skin_count_after - 1))
+            color = list(settings.onion_skin_color_future) + [base_opacity]
         else:
             color = list(settings.onion_skin_color_present) + [1.0]
             
@@ -134,9 +142,13 @@ def build_onion_cache(context=None):
     
     _is_building = True
     
-    _cached_data.clear()
+    frames_to_remove = [f for f in _cached_data.keys() if f not in frames_to_cache]
+    for f in frames_to_remove:
+        del _cached_data[f]
+        
+    frames_to_build = [f for f in frames_to_cache if f not in _cached_data]
     
-    for f in frames_to_cache:
+    for f in frames_to_build:
         context.scene.frame_set(f)
         _cached_data[f] = []
         for obj in target_objs:

@@ -1171,19 +1171,25 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     
     onion_skin_mesh_resolution: bpy.props.FloatProperty(
         name="Mesh Resolution",
-        default=0.05, min=0.01, max=1.0, subtype='FACTOR',
+        default=0.2, min=0.01, max=1.0, subtype='FACTOR',
         description="Percentage of mesh edges to render (lower is faster)"
+    )
+    
+    onion_skin_fade: bpy.props.BoolProperty(
+        name="Fade Outer Ghosts",
+        default=True,
+        description="Fade out the furthest onion skins at the start and end"
     )
     
     onion_skin_auto_refresh: bpy.props.BoolProperty(
         name="",
-        default=False,
+        default=True,
         description="Enable automatic cache refreshing based on an interval"
     )
     
     onion_skin_refresh_interval: bpy.props.FloatProperty(
         name="Refresh Timer (seconds)",
-        default=5.0, min=0.1, max=100.0,
+        default=0.1, min=0.1, max=100.0,
         description="Interval in seconds to recalculate onion skins automatically"
     )
     
@@ -1193,19 +1199,19 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     )
     onion_skin_count_before: bpy.props.IntProperty(
         name="Frames Before",
-        default=100, min=0
+        default=30, min=0
     )
     onion_skin_count_after: bpy.props.IntProperty(
         name="Frames After",
-        default=100, min=0
+        default=30, min=0
     )
     onion_skin_opacity_before: bpy.props.FloatProperty(
         name="Opacity Before",
-        default=0.10, min=0.0, max=1.0
+        default=0.4, min=0.0, max=1.0
     )
     onion_skin_opacity_after: bpy.props.FloatProperty(
         name="Opacity After",
-        default=0.10, min=0.0, max=1.0
+        default=0.4, min=0.0, max=1.0
     )
     onion_skin_color_past: bpy.props.FloatVectorProperty(
         name="Past Color", subtype='COLOR', size=3, default=(0.0, 1.0, 0.0)

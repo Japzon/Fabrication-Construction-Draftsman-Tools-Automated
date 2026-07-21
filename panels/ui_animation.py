@@ -107,6 +107,8 @@ class LSD_PT_Animation_System_Main:
                     col.prop(settings, "onion_skin_display_type", text="")
                     if settings.onion_skin_display_type == 'MESH':
                         col.prop(settings, "onion_skin_mesh_resolution")
+                        
+                    col.prop(settings, "onion_skin_fade")
                     
                     col.separator()
                     col.prop(settings, "onion_skin_frame_distance")

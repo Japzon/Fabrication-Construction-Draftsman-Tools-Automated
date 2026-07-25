@@ -1197,16 +1197,23 @@ def update_arrow_settings(obj):
     rw_scale = root.matrix_world.to_scale()
     def safe_divide(val, s): return val / s if abs(s) > 0.0001 else val
     # Apply location scale compensation to move_vec
-    move_vec = mathutils.Vector((
-        safe_divide(offset_local_dir.x * offset, rw_scale.x),
-        safe_divide(offset_local_dir.y * offset, rw_scale.y),
-        safe_divide(offset_local_dir.z * offset, rw_scale.z)
-    ))
+    if getattr(dim_props, "use_offset", True):
+        move_vec = mathutils.Vector((
+            safe_divide(offset_local_dir.x * offset, rw_scale.x),
+            safe_divide(offset_local_dir.y * offset, rw_scale.y),
+            safe_divide(offset_local_dir.z * offset, rw_scale.z)
+        ))
+    else:
+        move_vec = mathutils.Vector((0, 0, 0))
+        
     # Extension Leg Rotation: points from the dimension line back to the target points.
     # This vector is (-move_vec) in the assembly's local drafting space.
     ext_rot_vec = (-move_vec)
     ext_leg_length = ext_rot_vec.length
-    ext_rot_euler = (ext_rot_vec.normalized()).to_track_quat('Z', 'Y').to_euler()
+    if ext_leg_length > 0.00001:
+        ext_rot_euler = (ext_rot_vec.normalized()).to_track_quat('Z', 'Y').to_euler()
+    else:
+        ext_rot_euler = mathutils.Euler((0, 0, 0))
     # Compensation for Parent Scale:
     # If the root is parented to a scaled object, we must divide our children's
     # scale by the root's world scale to maintain absolute draftsman units.
@@ -5640,7 +5647,7 @@ def apply_paint_bucket(context):
     Applies the scene's bucket color and texture to selected faces in Edit Mode.
     """
     scene = context.scene
-    if not scene.lsd_paint_bucket_mode:
+    if scene.lsd_paint_tool != 'PAINT_BUCKET':
         return
     
     obj = context.active_object
@@ -5678,60 +5685,56 @@ def apply_paint_bucket(context):
         if not selected_faces and obj.mode == 'EDIT':
             return
 
-        # 2. Material Resolution
-        color = scene.lsd_paint_bucket_color
-        image = scene.lsd_paint_bucket_image
-        
-        # Increased precision to ensure dragging color wheel triggers updates
-        mat_id = f"LSD_Bucket_{color[0]:.4f}_{color[1]:.4f}_{color[2]:.4f}_{color[3]:.4f}"
-        if image:
-            mat_id += f"_{image.name}"
-            
+        # 2. Master Material Resolution
+        mat_id = "LSD_Layered_Paint"
         mat = bpy.data.materials.get(mat_id)
         if not mat:
             mat = bpy.data.materials.new(mat_id)
             mat.use_nodes = True
         
-        # Always ensure nodes are configured to the current settings
-        # to guarantee real-time visual adjustment
+        # Always rebuild nodes to reflect current layer stack
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
+        nodes.clear()
         
-        bsdf = nodes.get("Principled BSDF") or nodes.new('BSDF_PRINCIPLED')
-        output = nodes.get("Material Output") or nodes.new('ShaderNodeOutputMaterial')
-        if not output.inputs['Surface'].is_linked:
+        output = nodes.new('ShaderNodeOutputMaterial')
+        output.location = (1000, 0)
+        
+        # We assume layer 0 is the bottom, so we iterate from bottom to top
+        valid_layers = [l for l in scene.lsd_paint_layers if not l.is_muted]
+        
+        if not valid_layers:
+            bsdf = nodes.new('ShaderNodeBsdfPrincipled')
             links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-        
-        # Update Color
-        bsdf.inputs['Base Color'].default_value = color
-        
-        # Update Texture
-        if image:
-            # Find existing or create new texture node
-            tex = next((n for n in nodes if n.type == 'TEX_IMAGE'), None)
-            if not tex:
-                tex = nodes.new('ShaderNodeTexImage')
-                links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
-                # Coordinate setup
-                coord = nodes.new('ShaderNodeTexCoord')
-                map_node = nodes.new('ShaderNodeMapping')
-                links.new(coord.outputs['UV'], map_node.inputs['Vector'])
-                links.new(map_node.outputs['Vector'], tex.inputs['Vector'])
-            
-            if tex.image != image:
-                tex.image = image
-            
-            # Ensure object has UVs for the texture
-            if not obj.data.uv_layers:
-                # Basic smart project if no UVs exist
-                # We must be in Object Mode for some UV ops, but we can use BMesh
-                bmesh.ops.uv_map(bm, faces=bm.faces)
         else:
-            # Remove texture link if image was cleared
-            if bsdf.inputs['Base Color'].is_linked:
-                for link in list(bsdf.inputs['Base Color'].links):
-                    if link.from_node.type == 'TEX_IMAGE':
-                        links.remove(link)
+            previous_shader = None
+            for idx, layer in enumerate(valid_layers):
+                bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+                bsdf.inputs['Base Color'].default_value = layer.color
+                bsdf.location = (idx * 300, idx * 300)
+                
+                if layer.texture:
+                    tex = nodes.new('ShaderNodeTexImage')
+                    tex.image = layer.texture
+                    tex.location = (idx * 300 - 300, idx * 300)
+                    links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+                    # Basic UV setup
+                    if obj.data.uv_layers:
+                        pass # Default uses UV
+                    else:
+                        bmesh.ops.uv_map(bm, faces=bm.faces)
+                        
+                if previous_shader is None:
+                    previous_shader = bsdf.outputs['BSDF']
+                else:
+                    mix = nodes.new('ShaderNodeMixShader')
+                    mix.location = (idx * 400, idx * 100)
+                    mix.inputs['Fac'].default_value = layer.opacity
+                    links.new(previous_shader, mix.inputs[1])
+                    links.new(bsdf.outputs['BSDF'], mix.inputs[2])
+                    previous_shader = mix.outputs['Shader']
+            
+            links.new(previous_shader, output.inputs['Surface'])
 
         # 3. Assign Material Slot
         slot_index = -1
@@ -5790,7 +5793,7 @@ def lsd_paint_bucket_timer_cb():
         context = bpy.context
         if not context or not hasattr(context, "mode"):
             return None
-        if context.scene.lsd_paint_bucket_mode:
+        if context.scene.lsd_paint_tool == 'PAINT_BUCKET':
             if context.mode == 'EDIT_MESH':
                 bpy.ops.lsd.apply_paint_bucket()
             elif context.mode == 'OBJECT' and (not context.scene.lsd_paint_bucket_prevent_initial_fill or context.scene.lsd_paint_bucket_purge_mode):
@@ -5806,7 +5809,7 @@ def lsd_paint_bucket_handler(scene, depsgraph=None):
     global _paint_bucket_timer_active, _last_bucket_mode, _last_bucket_obj, _paint_bucket_hold
     
     # 1. Immediate Safety Checks
-    if not scene or not hasattr(scene, "lsd_paint_bucket_mode") or not scene.lsd_paint_bucket_mode:
+    if not scene or not hasattr(scene, "lsd_paint_tool") or scene.lsd_paint_tool != 'PAINT_BUCKET':
         _last_bucket_mode = None
         _last_bucket_obj = None
         _paint_bucket_hold = False

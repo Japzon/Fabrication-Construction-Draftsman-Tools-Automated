@@ -85,18 +85,27 @@ def draw_callback():
             batch = data
             
         if frame < current_frame:
+            if not getattr(settings, 'onion_skin_show_past', True): continue
             base_opacity = settings.onion_skin_opacity_before
-            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before > 1:
-                n = abs(current_frame - frame) // max(1, settings.onion_skin_frame_distance)
-                base_opacity *= max(0.0, 1.0 - (n - 1) / (settings.onion_skin_count_before - 1))
+            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before >= max(1, settings.onion_skin_frame_distance):
+                frame_dist = max(1, settings.onion_skin_frame_distance)
+                n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
+                max_n = settings.onion_skin_count_before // frame_dist
+                if max_n > 1:
+                    base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
             color = list(settings.onion_skin_color_past) + [base_opacity]
         elif frame > current_frame:
+            if not getattr(settings, 'onion_skin_show_future', True): continue
             base_opacity = settings.onion_skin_opacity_after
-            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after > 1:
-                n = abs(current_frame - frame) // max(1, settings.onion_skin_frame_distance)
-                base_opacity *= max(0.0, 1.0 - (n - 1) / (settings.onion_skin_count_after - 1))
+            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after >= max(1, settings.onion_skin_frame_distance):
+                frame_dist = max(1, settings.onion_skin_frame_distance)
+                n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
+                max_n = settings.onion_skin_count_after // frame_dist
+                if max_n > 1:
+                    base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
             color = list(settings.onion_skin_color_future) + [base_opacity]
         else:
+            if not getattr(settings, 'onion_skin_show_present', False): continue
             color = list(settings.onion_skin_color_present) + [1.0]
             
         shader.bind()
@@ -137,12 +146,28 @@ def build_onion_cache(context=None):
     frames_before = settings.onion_skin_count_before
     frames_after = settings.onion_skin_count_after
     
+    start_frame = orig_frame
+    if getattr(settings, 'onion_skin_show_past', True):
+        start_frame -= frames_before
+        
+    end_frame = orig_frame
+    if getattr(settings, 'onion_skin_show_future', True):
+        end_frame += frames_after
+        
     frames_to_cache = []
-    for i in range(frames_before, 0, -1):
-        frames_to_cache.append(orig_frame - (i * frame_step))
-    frames_to_cache.append(orig_frame)
-    for i in range(1, frames_after + 1):
-        frames_to_cache.append(orig_frame + (i * frame_step))
+    
+    first_mult = start_frame - (start_frame % frame_step)
+    if first_mult < start_frame:
+        first_mult += frame_step
+        
+    curr = first_mult
+    while curr <= end_frame:
+        frames_to_cache.append(curr)
+        curr += frame_step
+            
+    if getattr(settings, 'onion_skin_show_present', False):
+        if orig_frame not in frames_to_cache:
+            frames_to_cache.append(orig_frame)
         
     depsgraph = context.evaluated_depsgraph_get()
     
@@ -154,16 +179,17 @@ def build_onion_cache(context=None):
         
     frames_to_build = [f for f in frames_to_cache if f not in _cached_data]
     
-    for f in frames_to_build:
-        context.scene.frame_set(f)
-        _cached_data[f] = []
-        for obj in target_objs:
-            if obj.type == 'ARMATURE':
-                _cached_data[f].extend(get_bone_lines(obj))
-            elif obj.type == 'MESH':
-                _cached_data[f].extend(get_mesh_lines(obj, depsgraph, settings.onion_skin_display_type))
-                
-    context.scene.frame_set(orig_frame)
+    if frames_to_build:
+        for f in frames_to_build:
+            context.scene.frame_set(f)
+            _cached_data[f] = []
+            for obj in target_objs:
+                if obj.type == 'ARMATURE':
+                    _cached_data[f].extend(get_bone_lines(obj))
+                elif obj.type == 'MESH':
+                    _cached_data[f].extend(get_mesh_lines(obj, depsgraph, settings.onion_skin_display_type))
+                    
+        context.scene.frame_set(orig_frame)
     _is_building = False
 
 def onion_skin_timer_update():

@@ -7002,6 +7002,54 @@ class LSD_OT_NM_Apply_Modifiers(bpy.types.Operator):
     bl_label = "Apply All Modifiers"
     def execute(self, context): return {'FINISHED'}
 
+# --- Paint Layers Operators ---
+class LSD_OT_Paint_Layer_Add(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_add"
+    bl_label = "Add Paint Layer"
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        new_layer = layers.add()
+        new_layer.name = f"Layer {len(layers)}"
+        context.scene.lsd_active_paint_layer_index = len(layers) - 1
+        return {'FINISHED'}
+
+class LSD_OT_Paint_Layer_Remove(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_remove"
+    bl_label = "Remove Paint Layer"
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        idx = context.scene.lsd_active_paint_layer_index
+        if len(layers) > 0 and 0 <= idx < len(layers):
+            layers.remove(idx)
+            if context.scene.lsd_active_paint_layer_index >= len(layers):
+                context.scene.lsd_active_paint_layer_index = max(0, len(layers) - 1)
+        return {'FINISHED'}
+
+class LSD_OT_Paint_Layer_Move(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_move"
+    bl_label = "Move Paint Layer"
+    direction: bpy.props.EnumProperty(items=[('UP', 'Up', ''), ('DOWN', 'Down', '')])
+    
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        idx = context.scene.lsd_active_paint_layer_index
+        if self.direction == 'UP' and idx > 0:
+            layers.move(idx, idx - 1)
+            context.scene.lsd_active_paint_layer_index -= 1
+        elif self.direction == 'DOWN' and idx < len(layers) - 1:
+            layers.move(idx, idx + 1)
+            context.scene.lsd_active_paint_layer_index += 1
+        return {'FINISHED'}
+
+class LSD_OT_Paint_Layer_Select(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_select"
+    bl_label = "Select Paint Layer"
+    index: bpy.props.IntProperty()
+    
+    def execute(self, context):
+        context.scene.lsd_active_paint_layer_index = self.index
+        return {'FINISHED'}
+
 def register():
     CLASSES = [
     LSD_OT_NM_Boolean_Pro,
@@ -7033,6 +7081,7 @@ def register():
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
         LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Apply_Paint_Bucket,
+        LSD_OT_Paint_Layer_Add, LSD_OT_Paint_Layer_Remove, LSD_OT_Paint_Layer_Move, LSD_OT_Paint_Layer_Select,
         LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
@@ -7090,6 +7139,7 @@ def unregister():
         LSD_OT_Execute_AI_Prompt, LSD_OT_SetJointType, LSD_OT_CalculateCenterOfMass,
         LSD_OT_CalculateInertia, LSD_OT_Calculate_All_Physics, LSD_OT_BakeMesh, LSD_OT_ReadJointSettings, LSD_OT_ApplyJointSettings,
         LSD_OT_SetupIK, LSD_OT_SetOriginToCursor, LSD_OT_Apply_Paint_Bucket,
+        LSD_OT_Paint_Layer_Add, LSD_OT_Paint_Layer_Remove, LSD_OT_Paint_Layer_Move, LSD_OT_Paint_Layer_Select,
         LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,

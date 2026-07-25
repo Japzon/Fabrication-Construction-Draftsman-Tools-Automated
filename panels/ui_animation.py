@@ -122,8 +122,11 @@ class LSD_PT_Animation_System_Main:
                 
                 col.separator()
                 row = col.row(align=True)
+                row.prop(settings, "onion_skin_show_past", text="", icon='CHECKBOX_HLT' if getattr(settings, 'onion_skin_show_past', True) else 'CHECKBOX_DEHLT')
                 row.prop(settings, "onion_skin_color_past", text="")
+                row.prop(settings, "onion_skin_show_present", text="", icon='CHECKBOX_HLT' if getattr(settings, 'onion_skin_show_present', False) else 'CHECKBOX_DEHLT')
                 row.prop(settings, "onion_skin_color_present", text="")
+                row.prop(settings, "onion_skin_show_future", text="", icon='CHECKBOX_HLT' if getattr(settings, 'onion_skin_show_future', True) else 'CHECKBOX_DEHLT')
                 row.prop(settings, "onion_skin_color_future", text="")
 
 CLASSES = (

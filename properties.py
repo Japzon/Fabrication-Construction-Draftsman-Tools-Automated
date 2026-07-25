@@ -587,8 +587,29 @@ class LSD_PG_Transmission_Properties(bpy.types.PropertyGroup):
     hardware_interface: bpy.props.StringProperty(name="Hardware Interface", default="hardware_interface/EffortJointInterface")
     mechanical_reduction: bpy.props.FloatProperty(name="Mechanical Reduction", default=1.0)
 class LSD_PG_Material_Properties(bpy.types.PropertyGroup):
-    color: bpy.props.FloatVectorProperty(name="Color", subtype='COLOR', default=(0.8, 0.8, 0.8, 1.0), size=4, min=0.0, max=1.0)
-    texture: bpy.props.PointerProperty(name="Texture", type=bpy.types.Image)
+    pass
+
+def update_paint_layer(self, context):
+    try:
+        if context.mode in {'EDIT_MESH', 'OBJECT'} and context.scene.lsd_paint_tool == 'PAINT_BUCKET':
+            bpy.ops.lsd.apply_paint_bucket()
+    except:
+        pass
+
+
+class LSD_PG_Paint_Layer(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Layer Name", default="Layer")
+    opacity: bpy.props.FloatProperty(name="Opacity", default=1.0, min=0.0, max=1.0, update=update_paint_layer)
+    blend_mode: bpy.props.EnumProperty(
+        name="Blend Mode",
+        items=[('MIX', 'Mix', ''), ('ADD', 'Add', ''), ('MULTIPLY', 'Multiply', '')],
+        update=update_paint_layer
+    )
+    is_muted: bpy.props.BoolProperty(name="Muted", default=False, update=update_paint_layer)
+
+
+    color: bpy.props.FloatVectorProperty(name="Color", subtype='COLOR', default=(0.8, 0.8, 0.8, 1.0), size=4, min=0.0, max=1.0, update=update_paint_layer)
+    texture: bpy.props.PointerProperty(name="Texture", type=bpy.types.Image, update=update_paint_layer)
 class LSD_PG_Slinky_Hook(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Hook Name")
     target: bpy.props.PointerProperty(type=bpy.types.Object, name="Target")
@@ -671,6 +692,7 @@ class LSD_PG_Dimension_Props(bpy.types.PropertyGroup):
     text_scale: bpy.props.FloatProperty(name="Text Size", default=0.1, min=0.0, update=update_arrow_settings_timer)
     text_offset: bpy.props.FloatProperty(name="Text Offset", description="Distance between the label and the dimension line", default=0.05, min=0.0, unit='LENGTH', update=update_arrow_settings_timer)
     line_thickness: bpy.props.FloatProperty(name="Line Thickness", default=0.002, min=0.0, unit='LENGTH', update=update_arrow_settings_timer)
+    use_offset: bpy.props.BoolProperty(name="Use Offset", default=True, update=update_arrow_settings_timer)
     offset: bpy.props.FloatProperty(name="Offset from Target", default=0.1, unit='LENGTH', update=update_arrow_settings_timer)
     text_color: bpy.props.FloatVectorProperty(name="Label Color", subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), size=4, min=0.0, max=1.0, update=update_text_color)
     unit_display: bpy.props.EnumProperty(name="Units", items=[('METERS', "Meters (m)", ""), ('MM', "Millimeters (mm)", "")], default='METERS', update=update_dimension_length_timer)
@@ -1238,6 +1260,9 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     onion_skin_color_future: bpy.props.FloatVectorProperty(
         name="Future Color", subtype='COLOR', size=3, default=(0.9, 0.9, 1.0), min=0.0, max=1.0
     )
+    onion_skin_show_past: bpy.props.BoolProperty(name="Show Past", default=True)
+    onion_skin_show_present: bpy.props.BoolProperty(name="Show Present", default=False)
+    onion_skin_show_future: bpy.props.BoolProperty(name="Show Future", default=True)
     
     affect_selected_bones_only: bpy.props.BoolProperty(default=False)
     inbetween_value: bpy.props.FloatProperty(default=0.8, min=0.0, max=1.0)
@@ -1299,6 +1324,7 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
 
 CLASSES = [
     LSD_PG_Transmission_Properties, LSD_PG_Material_Properties, LSD_PG_Collision_Properties,
+    LSD_PG_Paint_Layer,
     LSD_PG_Inertial_Properties, LSD_PG_Wrap_Item, LSD_PG_Dimensions_Master_Item, LSD_PG_Dimensions_Grouped_Set, LSD_PG_Slinky_Hook, LSD_PG_Mech_Props, LSD_PG_Mimic_Driver,
     LSD_PG_Kinematic_Props, LSD_PG_AI_Props, LSD_PG_Lighting_Props,
     LSD_PG_Dimension_Props, LSD_PG_Smart_Skin_Props, LSD_ExportItem, LSD_PG_SDF_Props
@@ -1793,9 +1819,27 @@ def register():
              self.lsd_paint_bucket_image = None
         update_paint_bucket(self, context)
 
-    bpy.types.Scene.lsd_paint_bucket_mode = bpy.props.BoolProperty(
-        name="Paint Bucket Mode", 
-        description="When enabled, selection changes or color changes immediately apply the material to selected faces", 
+    bpy.types.Scene.lsd_enable_paint_mode = bpy.props.BoolProperty(
+        name="Enable Paint Mode",
+        description="Enable paint mode features",
+        default=False
+    )
+    
+    bpy.types.Scene.lsd_enable_materials_selection = bpy.props.BoolProperty(
+        name="Enable Materials Selection",
+        description="Expand to enable materials and texture selection tools",
+        default=False
+    )
+    
+    bpy.types.Scene.lsd_paint_tool = bpy.props.EnumProperty(
+        name="Paint Tool",
+        description="Select the active paint tool",
+        items=[
+            ('PAINT_BUCKET', "Paint Bucket", "Fill selected faces with material", 'EVENT_P', 1),
+            ('BRUSH', "Brush", "Brush paint material", 'BRUSH_DATA', 2),
+            ('DECALS', "Decals", "Place material decals", 'STICKY_UVS_DISABLE', 3),
+        ],
+        default='PAINT_BUCKET',
         update=update_paint_bucket
     )
     bpy.types.Scene.lsd_paint_bucket_color = bpy.props.FloatVectorProperty(
@@ -1813,14 +1857,19 @@ def register():
         update=update_paint_bucket
     )
     bpy.types.Scene.lsd_paint_bucket_prevent_initial_fill = bpy.props.BoolProperty(
-        name="Prevent Initial Fill",
+        name="Prevent Initial Selection Fill",
         description="Avoid painting everything when first entering Edit Mode (where whole object is selected by default)",
         default=False
     )
     bpy.types.Scene.lsd_paint_bucket_purge_mode = bpy.props.BoolProperty(
-        name="Purge Textures & Materials",
+        name="Selection Purge Mode",
         description="When enabled, selecting objects or faces will REMOVE all materials and textures instead of applying the paint bucket color",
         default=False
+    )
+    bpy.types.Scene.lsd_paint_layers = bpy.props.CollectionProperty(type=LSD_PG_Paint_Layer)
+    bpy.types.Scene.lsd_active_paint_layer_index = bpy.props.IntProperty(
+        name="Active Paint Layer Index",
+        default=0
     )
     bpy.types.Scene.lsd_hook_placement_mode = bpy.props.BoolProperty(name="Hook Placement", default=False)
     bpy.types.Scene.lsd_dim_tracker_group_name = bpy.props.StringProperty(name="New Group Name", default="Group 1", description="Title for the next dimension group created from tracked items")
@@ -1910,7 +1959,10 @@ def unregister():
             "lsd_dim_text_offset", "lsd_scale_mode", "lsd_scale_pivot", "lsd_scale_realtime",
             "lsd_dimensions_master", "lsd_dim_tracker_group_name",
             "lsd_pg_smart_skin_props",
-            "lsd_paint_bucket_mode", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill", "lsd_paint_bucket_purge_mode",
+            "lsd_enable_paint_mode",
+            "lsd_enable_materials_selection",
+            "lsd_paint_tool", "lsd_paint_bucket_color", "lsd_paint_bucket_image", "lsd_paint_bucket_prevent_initial_fill", "lsd_paint_bucket_purge_mode",
+            "lsd_paint_layers", "lsd_active_paint_layer_index",
             "lsd_enable_directional_translate", "lsd_enable_math_input", "lsd_enable_asset_editor", "lsd_asset_new_name", "lsd_asset_catalog"
         ]
         # Add order props

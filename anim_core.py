@@ -1,5 +1,20 @@
 import bpy
 
+def reset_auto_keyframe_cache():
+    """Resets the auto-keyframe cache so UI toggles don't falsely trigger snapshots."""
+    try:
+        from . import core
+        if getattr(core, '_ak_cache', None) is not None:
+            core._ak_dirty = False
+            core._ak_dirty_time = 0.0
+            obj = bpy.context.active_object
+            if obj and obj.type == 'ARMATURE':
+                core._ak_cache.clear()
+                for bone in obj.pose.bones:
+                    core._ak_cache[bone.name] = bone.matrix_basis.copy()
+    except Exception:
+        pass
+
 def get_anim_settings(context):
     return context.scene.lsd_anim_settings
 
@@ -76,6 +91,7 @@ def sync_layer_light(context):
                 fcurve.mute = (active_layer.is_muted or active_layer.is_locked)
     
     context.view_layer.update()
+    reset_auto_keyframe_cache()
 def execute_sync_logic(context):
     """Core logic to restructure NLA tracks. Must be called when Tweak Mode is OFF."""
     settings = get_anim_settings(context)
@@ -317,6 +333,7 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
         # This completely hides the NLA Editor swap from the user's screen.
         if target_area and original_type and target_area.type != original_type:
             target_area.type = original_type
+        reset_auto_keyframe_cache()
 
 def update_layer_property_light(self, context):
     sync_layer_light(context)

@@ -254,6 +254,21 @@ def onion_skin_timer_update():
         
     if not settings: return 1.0
     
+    try:
+        from . import core
+        if getattr(core, '_ak_dirty', False) or getattr(core, '_ak_inserting', False):
+            return 0.1
+            
+        obj = bpy.context.active_object
+        if obj and obj.type == 'ARMATURE' and hasattr(core, '_ak_cache') and bpy.context.mode == 'POSE':
+            for bone in obj.pose.bones:
+                if bone.name in core._ak_cache:
+                    diff = bone.matrix_basis - core._ak_cache[bone.name]
+                    if any(abs(v) > 0.0001 for row in diff for v in row):
+                        return 0.1  # Un-keyed pose detected! Do not evaluate depsgraph!
+    except:
+        pass
+    
     if settings.onion_skin_enabled and settings.onion_skin_auto_refresh:
         # Always force refresh the current frame so the pose is live and never stale!
         curr_frame = bpy.context.scene.frame_current

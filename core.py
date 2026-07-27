@@ -6272,32 +6272,25 @@ def _ak_snapshot_all_bones(obj):
                             override = {'window': window, 'screen': screen, 'area': area, 
                                         'region': region, 'active_object': obj, 'object': obj}
                             with bpy.context.temp_override(**override):
-                                try: bpy.ops.anim.keyframe_insert_menu(type='BUILTIN_KSI_WholeCharacter')
-                                except: pass
-                                try: bpy.ops.anim.keyframe_insert_menu(type='BUILTIN_KSI_LocRotScale')
-                                except: pass
-                                try: bpy.ops.anim.keyframe_insert_menu(type='Available')
-                                except: pass
+                                prefs = bpy.context.preferences.edit
+                                orig_needed = prefs.use_keyframe_insert_needed
+                                prefs.use_keyframe_insert_needed = False
+                                try:
+                                    try: bpy.ops.anim.keyframe_insert_menu(type='BUILTIN_KSI_WholeCharacter')
+                                    except: pass
+                                    try: bpy.ops.anim.keyframe_insert(type='LocRotScale')
+                                    except: pass
+                                    try: bpy.ops.anim.keyframe_insert(type='Available')
+                                    except: pass
+                                finally:
+                                    prefs.use_keyframe_insert_needed = orig_needed
                             override_success = True
                             break
                     if override_success: break
             if override_success: break
         
-        # --- Pass 2: Direct per-bone keyframe_insert (absolute fallback) ---
-        keyed = 0
-        failed = 0
-        for bone in obj.pose.bones:
-            for dp in ("location", "rotation_quaternion", "rotation_euler", "scale"):
-                try:
-                    bone.keyframe_insert(data_path=dp)
-                    keyed += 1
-                except:
-                    failed += 1
-            # Custom properties
-            for prop in bone.keys():
-                if prop not in '_RNA_UI':
-                    try: bone.keyframe_insert(data_path=f'["{prop}"]')
-                    except: pass
+        # --- Pass 2 Removed: Direct keyframe_insert bypasses NLA math and causes double-transforms ---
+        # The native operators in Pass 1 correctly handle NLA deltas and slots.
         
         # Restore selection
         for bone in obj.pose.bones:
@@ -6315,7 +6308,7 @@ def _ak_snapshot_all_bones(obj):
             try: coll.is_visible = False
             except: pass
         
-        print(f"LSD Auto-Key: Frame {frame} — keyed {keyed} channels ({failed} skipped) on {len(obj.pose.bones)} bones.")
+        print(f"LSD Auto-Key: Frame {frame} — Snapshot executed via native delta evaluator on {len(obj.pose.bones)} bones.")
         
         # Update depsgraph so the evaluated state reflects the new keyframes
         bpy.context.view_layer.update()
@@ -6401,10 +6394,11 @@ def lsd_auto_keyframe_all_handler(scene, depsgraph):
 @bpy.app.handlers.persistent
 def lsd_auto_keyframe_cache_update_handler(scene, depsgraph):
     """Updates the cache on frame changes without inserting keyframes."""
-    global _ak_cache, _ak_frame
+    global _ak_cache, _ak_frame, _ak_dirty
     if _ak_inserting: return
     if getattr(scene, 'lsd_enable_auto_keyframe_all', False) and bpy.context.mode == 'POSE':
         _ak_frame = scene.frame_current
+        _ak_dirty = False
         obj = bpy.context.active_object
         if obj and obj.type == 'ARMATURE':
             _ak_cache.clear()

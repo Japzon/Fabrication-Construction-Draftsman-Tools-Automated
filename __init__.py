@@ -73,6 +73,10 @@ def register():
         km = kc.keymaps.new(name='Mesh', space_type='EMPTY')
         kmi = km.keymap_items.new("lsd.directional_translate", 'G', 'PRESS')
         addon_keymaps.append((km, kmi))
+        
+        km = kc.keymaps.new(name='Window', space_type='EMPTY')
+        kmi = km.keymap_items.new("lsd.global_math_input", 'EQUAL', 'PRESS')
+        addon_keymaps.append((km, kmi))
 def unregister():
     # Unregister in reverse order with broad exception handling
     # to prevent "ghost" entries in the addon list if one module fails.

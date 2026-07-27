@@ -96,18 +96,52 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
             row_thick.prop(scene, "lsd_dim_line_thickness", text="Thickness")
             row_thick.prop(scene, "lsd_dim_text_offset", text="Txt Off")
             # Row 3: Default Offset
-            pref_col.prop(scene, "lsd_dim_offset", text="Default Offset")
+            row_offset = pref_col.row(align=True)
+            row_offset.prop(scene, "lsd_dim_use_offset", text="", icon='CHECKBOX_HLT' if getattr(scene, "lsd_dim_use_offset", False) else 'CHECKBOX_DEHLT')
+            row_offset.prop(scene, "lsd_dim_offset", text="Default Offset")
             dim_toolkit_box.separator()
             col = dim_toolkit_box.column(align=True)
+            col.operator("lsd.manually_draw_offset_line", text="Draw Offset Line from Selected", icon='CURVE_PATH')
+            col.prop(scene, "lsd_edit_offset_anchors", toggle=True, icon='HOOK')
             col.operator("lsd.add_dimension", text="Generate Dimension", icon='ADD')
-            # --- Remove Selected Dimension ---
+            
             active_obj = context.active_object
+            is_standalone = active_obj and getattr(active_obj, "lsd_is_standalone_offset", False)
+            
             from .. import core
             dim_host = core.get_dimension_host(active_obj)
             is_dim = dim_host is not None
+            
             if is_dim:
-                col.separator()
                 col.operator("lsd.remove_dimension", text="Remove Selected Dimensions", icon='TRASH')
+            
+            if is_standalone:
+                col.separator()
+                box = col.box()
+                box.label(text="Standalone Offset Line", icon='LINCURVE')
+                box.prop(active_obj, "lsd_standalone_thickness")
+                box.prop(active_obj, "lsd_standalone_mimic_target")
+                
+            if is_dim or is_standalone:
+                col.separator()
+                color_box = col.box()
+                scene = context.scene 
+                color_row = color_box.row(align=True)
+                color_row.prop(scene, "lsd_dim_global_text_color_sync", text="Force Global Sync", icon='WORLD')
+                
+                # Fetch local props
+                if is_dim:
+                    local_props = dim_host.lsd_pg_dim_props
+                else:
+                    local_props = active_obj.lsd_pg_dim_props
+                
+                if scene.lsd_dim_global_text_color_sync:
+                    color_box.prop(scene, "lsd_dim_universal_text_color", text="Label Color")
+                    color_box.prop(scene, "lsd_dim_universal_line_color", text="Dimension & Offset Line Color")
+                else:
+                    if is_dim:
+                        color_box.prop(local_props, "text_color", text="Label Color")
+                    color_box.prop(local_props, "line_color", text="Dimension & Offset Line Color")
             # --- Unified Display Properties ---
             col.separator()
             if is_dim:
@@ -122,19 +156,11 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                 col.prop(dim_props, "line_thickness", text="Line Thickness")
                 offset_row = col.row(align=True)
                 offset_row.prop(dim_props, "use_offset", text="", icon='CHECKBOX_HLT' if dim_props.use_offset else 'CHECKBOX_DEHLT')
-                offset_row.prop(dim_props, "offset", text="Offset from Target")
+                offset_row.prop(dim_props, "offset", text="Line Offset from Target")
                 col.operator("lsd.dimension_auto_scale", text="Auto Size Components", icon='AUTO')
                 col.operator("lsd.register_default_proportions", text="Register Custom Proportions", icon='SETTINGS')
                 col.prop(dim_props, "is_flipped", text="Flip Target Roles")
                 col.prop(dim_props, "use_extension_lines", text="Use Extension Lines")
-                color_box = col.box()
-                scene = context.scene # Defined locally for the property check
-                color_row = color_box.row(align=True)
-                color_row.prop(scene, "lsd_dim_global_text_color_sync", text="Force Global Sync", icon='WORLD')
-                if scene.lsd_dim_global_text_color_sync:
-                    color_box.prop(scene, "lsd_dim_universal_text_color", text="Universal Label Color")
-                else:
-                    color_box.prop(dim_props, "text_color", text="Selected Label Color")
                 # Architecture and Engineering fonts feature
                 row_style = col.row(align=True)
                 row_style.label(text="Font Style:")
@@ -145,14 +171,14 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                 col.prop(dim_props, "flip_text", text="Flip Text")
                 col.prop(dim_props, "unit_display", text="Units")
                 # --- Swapped Section: Alignment Tools ---
-                col.separator()
-                # 1. Text Alignment (Refined Priority)
-                col.label(text="Text Alignment", icon='ALIGN_CENTER')
-                row_text = col.row(align=True)
+            # Now placed after general dimension properties for a more logical flow
+            if is_dim:
+                align_box = col.box()
+                align_box.label(text="Text Alignment", icon='ALIGN_CENTER')
+                row_text = align_box.row(align=True)
                 row_text.prop(dim_props, "text_alignment", expand=True)
-                col.separator()
+                align_box.separator()
                 # 2. Offset Alignment (Orthographic Constraints)
-                col.label(text="Dimension Offset Alignment", icon='VIEW_ORTHO')
                 grid_col = col.column(align=True)
                 row_pos = grid_col.row(align=True)
                 row_pos.prop(dim_props, "align_x", toggle=True, text="+X")
@@ -198,6 +224,8 @@ def lsd_draw_master_tracker_ui(layout, context):
     # Manual List Management
     row = master_box.row()
     row.operator("lsd.add_to_dimension_master", text="Track Selected Dimensions", icon='ADD')
+    row_nav = master_box.row()
+    row_nav.operator("lsd.navigate_to_dimension_groups", text="Locate Dimension Groups", icon='SCENE_DATA')
     master = scene.lsd_dimensions_master
     if not master:
         master_box.label(text="No tracked dimensions in active list.", icon='INFO')
@@ -216,7 +244,7 @@ def lsd_draw_master_tracker_ui(layout, context):
             # Row 2: Ratio | Parent/Target | Remove
             r2 = item_box.row(align=True)
             r2.prop(item, "ratio", text="Ratio")
-            r2.prop(item, "driver_target", text="Object")
+            r2.prop(item, "driver_target", text="Driver")
             rem_op = r2.operator("lsd.remove_from_dimension_master", text="", icon='X')
             rem_op.index = idx
             item_box.separator(factor=0.5)

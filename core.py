@@ -799,71 +799,141 @@ def get_or_create_text_material(target_obj):
     if not mat:
         mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
-    # AI Editor Note: Access properties through the LSD_PG_Dimension_Props namespaced PG
-    dim_props = getattr(target_obj, "lsd_pg_dim_props", None)
+    host = get_dimension_host(target_obj)
+    if host:
+        dim_props = getattr(host, "lsd_pg_dim_props", None)
+    else:
+        dim_props = getattr(target_obj, "lsd_pg_dim_props", None)
     # 1.1.3 Global Color Sync Logic
     scene = bpy.context.scene
     if scene.lsd_dim_global_text_color_sync:
-         color = scene.lsd_dim_universal_text_color
+         color = list(scene.lsd_dim_universal_text_color)
     else:
-         color = dim_props.text_color if dim_props else (0.0, 0.0, 0.0, 1.0)
+         color = list(dim_props.text_color) if dim_props else [0.0, 0.0, 0.0, 1.0]
     if mat.use_nodes and mat.node_tree:
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
         if bsdf:
-            # AI Editor Note: High-Legibility Draftsman Display
-            # Use slice assignment to ensure full RGBA data is passed to the BSDF.
-            bsdf.inputs['Base Color'].default_value[:] = color[:]
-            bsdf.inputs['Metallic'].default_value = 0.0
-            bsdf.inputs['Roughness'].default_value = 1.0
-            # Specular handling (Blender 4.0+ uses Specular IOR or weight)
-            if 'Specular' in bsdf.inputs:
-                bsdf.inputs['Specular'].default_value = 0.0
-            if 'Specular IOR Level' in bsdf.inputs:
-                bsdf.inputs['Specular IOR Level'].default_value = 0.0
-            # Ensure visibility in Solid mode via Object Color sync.
-            # We set a small emission to keep it crisp in Rendered mode without it being a light source.
-            bsdf.inputs['Emission Color'].default_value = color
-            bsdf.inputs['Emission Strength'].default_value = 0.01
+            current_color = list(bsdf.inputs['Base Color'].default_value)
+            if any(abs(a - b) > 0.001 for a, b in zip(current_color, color)):
+                # AI Editor Note: High-Legibility Draftsman Display
+                bsdf.inputs['Base Color'].default_value = color
+                bsdf.inputs['Metallic'].default_value = 0.0
+                bsdf.inputs['Roughness'].default_value = 1.0
+                # Specular handling (Blender 4.0+ uses Specular IOR or weight)
+                if 'Specular' in bsdf.inputs:
+                    bsdf.inputs['Specular'].default_value = 0.0
+                if 'Specular IOR Level' in bsdf.inputs:
+                    bsdf.inputs['Specular IOR Level'].default_value = 0.0
+                # Ensure visibility in Solid mode via Object Color sync.
+                # We set a small emission to keep it crisp in Rendered mode without it being a light source.
+                bsdf.inputs['Emission Color'].default_value = color
+                bsdf.inputs['Emission Strength'].default_value = 0.01
     # Sync diffuse color for Solid viewport display
-    mat.diffuse_color = color
+    if any(abs(a - b) > 0.001 for a, b in zip(list(mat.diffuse_color), color)):
+        mat.diffuse_color = color
     return mat
+
+def get_or_create_line_material(target_obj):
+    """Ensures a unique line material exists for the given object and returns it."""
+    if not hasattr(target_obj, "name"):
+         return bpy.data.materials.new("ERROR_MAT")
+    mat_name = f"LSD_Line_Material_{target_obj.name}"
+    mat = bpy.data.materials.get(mat_name)
+    if not mat:
+        mat = bpy.data.materials.new(name=mat_name)
+        mat.use_nodes = True
+        
+    host = get_dimension_host(target_obj)
+    if host:
+        dim_props = getattr(host, "lsd_pg_dim_props", None)
+    else:
+        dim_props = getattr(target_obj, "lsd_pg_dim_props", None)
+    scene = bpy.context.scene
+    
+    if scene.lsd_dim_global_text_color_sync:
+         color = list(scene.lsd_dim_universal_line_color)
+    else:
+         color = list(dim_props.line_color) if dim_props else [0.0, 0.0, 0.0, 1.0]
+         
+    if mat.use_nodes and mat.node_tree:
+        bsdf = mat.node_tree.nodes.get("Principled BSDF")
+        if bsdf:
+            current_color = list(bsdf.inputs['Base Color'].default_value)
+            if any(abs(a - b) > 0.001 for a, b in zip(current_color, color)):
+                bsdf.inputs['Base Color'].default_value = color
+                bsdf.inputs['Metallic'].default_value = 0.0
+                bsdf.inputs['Roughness'].default_value = 1.0
+                if 'Specular' in bsdf.inputs:
+                    bsdf.inputs['Specular'].default_value = 0.0
+                if 'Specular IOR Level' in bsdf.inputs:
+                    bsdf.inputs['Specular IOR Level'].default_value = 0.0
+                bsdf.inputs['Emission Color'].default_value = color
+                bsdf.inputs['Emission Strength'].default_value = 0.01
+            
+    if any(abs(a - b) > 0.001 for a, b in zip(list(mat.diffuse_color), color)):
+        mat.diffuse_color = color
+    return mat
+
+# Guard flag: True while any depsgraph handler is executing.
+# Used to prevent material writes inside the depsgraph cycle.
+_in_depsgraph_handler = False
+
 def sync_dimension_assembly_material(host_obj):
     """
     Ensures that the correctly synced material is assigned to all members
     of the dimension assembly (arrows, lines, labels).
     """
+    global _in_depsgraph_handler
     if not host_obj or not host_obj.get("lsd_is_dimension"):
+        return
+    # If called from within the depsgraph handler, defer via timer to avoid cycle
+    if _in_depsgraph_handler:
+        _queue_material_sync(host_obj.name)
         return
     root = host_obj.parent
     if not root:
         root = get_dimension_root(host_obj)
     if not root: return
-    # Get/Create the material for this specific host (dimension)
-    mat = get_or_create_text_material(host_obj)
+    # Get/Create the materials for this specific host (dimension)
+    text_mat = get_or_create_text_material(host_obj)
+    line_mat = get_or_create_line_material(host_obj)
+    
     # Assign to all relevant children
     for child in root.children:
         # 1. Label
         if child.get("lsd_is_dimension"):
             if child.data:
                 if not child.data.materials:
-                    child.data.materials.append(mat)
-                else:
-                    child.data.materials[0] = mat
-            child.active_material = mat
-            child.color = mat.diffuse_color
+                    child.data.materials.append(text_mat)
+                elif child.data.materials[0] != text_mat:
+                    child.data.materials[0] = text_mat
+            if child.active_material != text_mat:
+                child.active_material = text_mat
+            if any(abs(a - b) > 0.001 for a, b in zip(list(child.color), list(text_mat.diffuse_color))):
+                child.color = text_mat.diffuse_color
+            
         # 2. Arrows (Linked Objects - Shared Mesh)
         elif child.get("lsd_is_dimension_anchor") == "VISUAL":
             # Force link to OBJECT for independent coloration of shared meshes
             if child.material_slots:
-                child.material_slots[0].link = 'OBJECT'
-            child.active_material = mat
-            child.color = mat.diffuse_color
+                if child.material_slots[0].link != 'OBJECT':
+                    child.material_slots[0].link = 'OBJECT'
+                if child.material_slots[0].material != line_mat:
+                    child.material_slots[0].material = line_mat
+            elif child.active_material != line_mat:
+                child.active_material = line_mat
+                
+            if any(abs(a - b) > 0.001 for a, b in zip(list(child.color), list(line_mat.diffuse_color))):
+                child.color = line_mat.diffuse_color
+            
         # 3. Lines & Extensions
         elif child.get("lsd_is_dimension_line") or child.get("lsd_is_extension_line"):
-            child.active_material = mat
-            child.color = mat.diffuse_color
-    root.update_tag()
-    host_obj.update_tag()
+            if child.active_material != line_mat:
+                child.active_material = line_mat
+            if any(abs(a - b) > 0.001 for a, b in zip(list(child.color), list(line_mat.diffuse_color))):
+                child.color = line_mat.diffuse_color
+    # root.update_tag()
+    # host_obj.update_tag()
 def get_dimension_host(obj: Optional[bpy.types.Object]) -> Optional[bpy.types.Object]:
     """
     Robustly identifies the host of the dimension properties (the Label object)
@@ -954,106 +1024,118 @@ def get_dimension_root(obj: Optional[bpy.types.Object]) -> Optional[bpy.types.Ob
                        if child.get("lsd_is_dimension"):
                             return child
     return None
-@persistent
 
+
+# Pending material sync queue - objects are added during depsgraph, flushed via timer
+_pending_material_sync = set()
+_material_sync_timer_running = False
+
+def _flush_material_sync():
+    """Timer callback: applies all queued material syncs safely outside the depsgraph."""
+    global _pending_material_sync, _material_sync_timer_running
+    _material_sync_timer_running = False
+    targets = list(_pending_material_sync)
+    _pending_material_sync.clear()
+    for obj_name in targets:
+        obj = bpy.data.objects.get(obj_name)
+        if obj and obj.get("lsd_is_dimension"):
+            sync_dimension_assembly_material(obj)
+        elif obj and getattr(obj, "lsd_is_standalone_offset", False):
+            line_mat = get_or_create_line_material(obj)
+            if obj.active_material != line_mat:
+                obj.active_material = line_mat
+            if any(abs(a - b) > 0.001 for a, b in zip(list(obj.color), list(line_mat.diffuse_color))):
+                obj.color = line_mat.diffuse_color
+    return None  # Don't repeat
+
+def _queue_material_sync(obj_name):
+    """Adds an object to the pending sync queue and ensures the timer is running."""
+    global _pending_material_sync, _material_sync_timer_running
+    _pending_material_sync.add(obj_name)
+    if not _material_sync_timer_running:
+        _material_sync_timer_running = True
+        bpy.app.timers.register(_flush_material_sync, first_interval=0.05)
+
+@persistent
 def lsd_dimension_sync_handler(scene: bpy.types.Scene, depsgraph: bpy.types.Depsgraph) -> None:
+    global _in_depsgraph_handler
     """Ultimate real-time synchronization for Procedural Dimensions."""
-    # AI Editor Note: High-Performance Optimization.
     # We exit immediately if we are in Edit Mode to prevent lag during extrusion/translation.
-    # Dimensions are only edited in Object Mode usually, so this is safe.
     context = bpy.context
     if context and context.mode != 'OBJECT':
         return
-
-    # Only process objects that were actually updated in this depsgraph cycle.
-    # This replaces the 'for obj in scene.objects' loop which was causing O(n) lag.
-    for update in depsgraph.updates:
-        if not isinstance(update.id, bpy.types.Object): continue
-        obj = update.id
-        
-        # Verify it's an LSD dimension object or a participant (Hook)
-        if not obj.get("lsd_is_dimension"):
-            # Check if this object is a tracked hook for a dimension assembly
-            root_ptr = obj.get("lsd_dim_root")
-            if root_ptr:
-                # Resolve to the actual Label Object which holds the length prop
-                obj = get_dimension_host(root_ptr)
-                if not obj: continue
-            else:
-                continue
+    _in_depsgraph_handler = True
+    try:
+        # Only process objects that were actually updated in this depsgraph cycle.
+        for update in depsgraph.updates:
+            if not isinstance(update.id, bpy.types.Object): continue
+            obj = update.id
             
-        eval_obj = depsgraph.id_eval_get(obj) if depsgraph else obj
-        dim_props = getattr(eval_obj, "lsd_pg_dim_props", None)
-        if not dim_props: continue
-        # Original props for WRITING (modifying original ID data)
-        orig_dim_props = getattr(obj, "lsd_pg_dim_props", None)
-        root = obj.parent if not obj.get("lsd_is_dimension_root") else obj
-        if not root: continue
-        # Calculate Real-World orientation and distance
-        # We find the Mesh Hook (the slave) to determine distance
-        target_mesh_hook = root.get("lsd_hook_end")
-        if not target_mesh_hook or not isinstance(target_mesh_hook, bpy.types.Object):
-            # Fallback for old versions or lost pointers
-            for child in root.children:
-                if child.get("lsd_is_dimension_anchor") == "END":
-                    for o in bpy.data.objects:
-                         if o.get("lsd_is_dimension_hook") == "END" and o.get("lsd_dim_root") == root:
-                               target_mesh_hook = o
-                               root["lsd_hook_end"] = o # Repair pointer
-                               break
-                    if target_mesh_hook: break
-        
-        local_target = None
-        if target_mesh_hook:
-             local_target = root.matrix_world.inverted() @ target_mesh_hook.matrix_world.translation
-        # 1. LENGTH SYNC (X/Y/Z primary drafting axis)
-        if obj.name in _dim_sync_active_ids: continue
-        last_l = obj.get("_lsd_last_built_length", -1.0)
-        id_l = obj.lsd_pg_dim_props.length
-        
-        if not dim_props.is_manual:
-             # DYNAMIC MODE: Object/Mesh Hook drives the property
-             if local_target is None: continue # Cannot sync dynamic without hook
-             dist = abs(local_target.z)
-             if abs(id_l - dist) > 0.0001:
-                  _dim_sync_active_ids.add(obj.name)
-                  try:
-                       obj.lsd_pg_dim_props.length = dist # Update ID property
-                       update_dimension_length(obj, length_override=dist)
-                       obj["_lsd_last_built_length"] = dist
-                       # Real-Time Master Tracker Propagation (Chain Reactions)
-                       propagate_dimension_follower_updates(obj, scene, dist)
-                       # Tags to ensure anchors/points refresh coordinate matrices
-                       for child in root.children:
+            # Verify it's an LSD dimension object or a participant (Hook)
+            if not obj.get("lsd_is_dimension"):
+                root_ptr = obj.get("lsd_dim_root")
+                if root_ptr:
+                    obj = get_dimension_host(root_ptr)
+                    if not obj: continue
+                else:
+                    continue
+                
+            eval_obj = depsgraph.id_eval_get(obj) if depsgraph else obj
+            dim_props = getattr(eval_obj, "lsd_pg_dim_props", None)
+            if not dim_props: continue
+            root = obj.parent if not obj.get("lsd_is_dimension_root") else obj
+            if not root: continue
+            
+            target_mesh_hook = root.get("lsd_hook_end")
+            if not target_mesh_hook or not isinstance(target_mesh_hook, bpy.types.Object):
+                for child in root.children:
+                    if child.get("lsd_is_dimension_anchor") == "END":
+                        for o in bpy.data.objects:
+                            if o.get("lsd_is_dimension_hook") == "END" and o.get("lsd_dim_root") == root:
+                                target_mesh_hook = o
+                                root["lsd_hook_end"] = o
+                                break
+                        if target_mesh_hook: break
+            
+            local_target = None
+            if target_mesh_hook:
+                local_target = root.matrix_world.inverted() @ target_mesh_hook.matrix_world.translation
+            
+            # 1. LENGTH SYNC
+            if obj.name in _dim_sync_active_ids: continue
+            last_l = obj.get("_lsd_last_built_length", -1.0)
+            id_l = obj.lsd_pg_dim_props.length
+            
+            if not dim_props.is_manual:
+                if local_target is None: continue
+                dist = abs(local_target.z)
+                if abs(id_l - dist) > 0.0001:
+                    _dim_sync_active_ids.add(obj.name)
+                    try:
+                        obj.lsd_pg_dim_props.length = dist
+                        update_dimension_length(obj, length_override=dist)
+                        obj["_lsd_last_built_length"] = dist
+                        propagate_dimension_follower_updates(obj, scene, dist)
+                        for child in root.children:
                             if child.get("lsd_is_dimension_anchor"): child.update_tag()
-                  finally:
-                       _dim_sync_active_ids.remove(obj.name)
-        else:
-             # MANUAL/DRIVEN MODE: Check if an external driver changed the value
-             # We use id_l (the current state of the ID property) against our last build.
-             # This is critical because curr_l (from eval_obj) is often 1-frame stale here.
-             if abs(last_l - id_l) > 0.0001:
-                  update_dimension_length(obj, length_override=id_l)
-                  obj["_lsd_last_built_length"] = id_l
-                  # Propagate to downstream linked dimensions
-                  propagate_dimension_follower_updates(obj, scene, id_l)
-        # 2. TRANSVERSE SYNC (Alignment stability) - Only if hook exists
-        if local_target and (abs(dim_props.target_x - local_target.x) > 0.0001 or abs(dim_props.target_y - local_target.y) > 0.0001):
-             if not dim_props.is_manual:
-                       _dim_sync_active_ids.remove(obj.name)
+                    finally:
+                        _dim_sync_active_ids.discard(obj.name)
+            else:
+                if abs(last_l - id_l) > 0.0001:
+                    update_dimension_length(obj, length_override=id_l)
+                    obj["_lsd_last_built_length"] = id_l
+                    propagate_dimension_follower_updates(obj, scene, id_l)
 
-    # 3. MASTER TRACKER FINAL PASS
-    # To resolve the issue where followers aren't flagged as 'updated' by Blender
-    # during real-time dragging, we do a final sweep of all tracked collections.
-    
-    # A. Active Tracker List
-    for item in scene.lsd_dimensions_master:
-        _process_item_visual_sync(item)
-    
-    # B. Archival Groups (Scene Tab)
-    for g_set in getattr(scene, "lsd_dimensions_grouped_sets", []):
-         for item in g_set.items:
-              _process_item_visual_sync(item)
+        # 3. MASTER TRACKER FINAL PASS
+        for item in scene.lsd_dimensions_master:
+            _process_item_visual_sync(item)
+        for g_set in getattr(scene, "lsd_dimensions_grouped_sets", []):
+            for item in g_set.items:
+                _process_item_visual_sync(item)
+    finally:
+        _in_depsgraph_handler = False
+
+
 
 def _process_item_visual_sync(item):
     """Helper to ensure ID-property changes are visually refreshed in the viewport."""
@@ -1197,7 +1279,7 @@ def update_arrow_settings(obj):
     rw_scale = root.matrix_world.to_scale()
     def safe_divide(val, s): return val / s if abs(s) > 0.0001 else val
     # Apply location scale compensation to move_vec
-    if getattr(dim_props, "use_offset", True):
+    if getattr(dim_props, "use_offset", False):
         move_vec = mathutils.Vector((
             safe_divide(offset_local_dir.x * offset, rw_scale.x),
             safe_divide(offset_local_dir.y * offset, rw_scale.y),
@@ -1262,7 +1344,15 @@ def update_arrow_settings(obj):
                 safe_divide(text_s * ts_mod, rw_scale.z)
             )
             # Clearance from drafting line
-            text_clearance = move_vec.normalized() * (dim_props.text_offset * us)
+            if move_vec.length > 0.0001:
+                text_dir = move_vec.normalized()
+            else:
+                text_dir = mathutils.Vector((
+                    safe_divide(offset_local_dir.x, rw_scale.x),
+                    safe_divide(offset_local_dir.y, rw_scale.y),
+                    safe_divide(offset_local_dir.z, rw_scale.z)
+                )).normalized()
+            text_clearance = text_dir * (dim_props.text_offset * us)
             # Reusable Font Assignment
             f_data = get_font_data(dim_props.font_name, dim_props.font_bold, dim_props.font_italic)
             if f_data:
@@ -1289,9 +1379,19 @@ def update_arrow_settings(obj):
                 # This mirrors the text direction while keeping it upright.
                 flip_rot = mathutils.Euler((0, math.pi, 0))
             child.location = move_vec + text_clearance
-            child.location.z += length / 2
+            
+            if dim_props.text_alignment == 'LEFT':
+                child.location.z += 0.0
+                align_val = 'RIGHT' if dim_props.flip_text else 'LEFT'
+            elif dim_props.text_alignment == 'RIGHT':
+                child.location.z += length
+                align_val = 'LEFT' if dim_props.flip_text else 'RIGHT'
+            else:
+                child.location.z += length / 2
+                align_val = 'CENTER'
+                
             if hasattr(child.data, "align_x"):
-                 child.data.align_x = dim_props.text_alignment
+                 child.data.align_x = align_val
             # Sync font to GN if present
             mod = child.modifiers.get("Dynamic_Dimension")
             if mod and mod.node_group:
@@ -5677,6 +5777,8 @@ def apply_paint_bucket(context):
                 obj.data.materials.clear()
             else:
                 for o in context.selected_objects:
+                    if getattr(o, "lsd_is_standalone_offset", False) or o.get("lsd_is_dimension") or o.get("lsd_is_dimension_line") or o.get("lsd_is_extension_line") or o.get("lsd_is_dimension_anchor") or o.get("lsd_is_dimension_root"):
+                        continue
                     if o.type == 'MESH':
                         o.data.materials.clear()
             obj.data.update()
@@ -5765,6 +5867,8 @@ def apply_paint_bucket(context):
         else:
             # Object Mode application
             for o in context.selected_objects:
+                if getattr(o, "lsd_is_standalone_offset", False) or o.get("lsd_is_dimension") or o.get("lsd_is_dimension_line") or o.get("lsd_is_extension_line") or o.get("lsd_is_dimension_anchor") or o.get("lsd_is_dimension_root"):
+                    continue
                 if o.type == 'MESH':
                     if len(o.material_slots) == 0:
                         o.data.materials.append(mat)
@@ -5828,33 +5932,14 @@ def lsd_paint_bucket_handler(scene, depsgraph=None):
     if curr_mode == 'EDIT_MESH':
         if not curr_obj or not hasattr(curr_obj, "data"):
             return
-            
-        # 1. Entry Guard: Detect transition into Edit Mode
-        if _last_bucket_mode != 'EDIT_MESH' or curr_obj != _last_bucket_obj:
-            _last_bucket_mode = 'EDIT_MESH'
-            _last_bucket_obj = curr_obj
-            
-            if scene.lsd_paint_bucket_prevent_initial_fill and curr_obj.type == 'MESH':
-                try:
-                    bm = bmesh.from_edit_mesh(curr_obj.data)
-                    # If everything is selected on entry, hold updates until selection changes
-                    if all(f.select for f in bm.faces):
-                        _paint_bucket_hold = True
-                        return
-                except: pass
-            _paint_bucket_hold = False
-
-        # 2. Hold Logic: If we are holding, wait until selection is no longer 'everything'
-        if _paint_bucket_hold:
-            try:
-                bm = bmesh.from_edit_mesh(curr_obj.data)
-                if all(f.select for f in bm.faces):
-                    return
-                else:
-                    # Selection has changed away from 'select all', release hold
-                    _paint_bucket_hold = False
-            except: 
+        try:
+            bm = bmesh.from_edit_mesh(curr_obj.data)
+            if all(f.select for f in bm.faces):
                 return
+            else:
+                _paint_bucket_hold = False
+        except: 
+            return
 
         if _paint_bucket_timer_active:
             return
@@ -5862,7 +5947,15 @@ def lsd_paint_bucket_handler(scene, depsgraph=None):
         _paint_bucket_timer_active = True
         bpy.app.timers.register(lsd_paint_bucket_timer_cb, first_interval=0.01)
     else:
-        # Object mode handling
+        if not curr_obj:
+            return
+        # Check if the active object is a dimension part - if so, immediately abort paint bucket
+        if getattr(curr_obj, "lsd_is_standalone_offset", False) or curr_obj.get("lsd_is_dimension") or curr_obj.get("lsd_is_dimension_line") or curr_obj.get("lsd_is_extension_line") or curr_obj.get("lsd_is_dimension_anchor") or curr_obj.get("lsd_is_dimension_root"):
+            _last_bucket_mode = curr_mode
+            _last_bucket_obj = curr_obj
+            _paint_bucket_hold = False
+            return
+            
         if curr_obj != _last_bucket_obj and (not scene.lsd_paint_bucket_prevent_initial_fill or scene.lsd_paint_bucket_purge_mode):
             if _paint_bucket_timer_active:
                 return
@@ -5872,111 +5965,6 @@ def lsd_paint_bucket_handler(scene, depsgraph=None):
         _last_bucket_mode = curr_mode
         _last_bucket_obj = curr_obj
         _paint_bucket_hold = False
-# ------------------------------------------------------------------------
-
-#   Registration
-
-# ------------------------------------------------------------------------
-
-CLASSES = [
-    LSD_OT_Core_DisablePanel, LSD_OT_Core_SnapCursorToActive
-]
-
-def register():
-    # 1. Register Classes
-    for cls in CLASSES:
-        if hasattr(cls, 'bl_rna'):
-            try:
-                bpy.utils.register_class(cls)
-            except Exception:
-                pass
-    # 2. Append Handlers (Set-like behavior to prevent duplicates)
-    if sync_light_props_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(sync_light_props_handler)
-    if lsd_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_placement_handler)
-    if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
-    if load_panel_order_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(load_panel_order_handler)
-    if set_scene_units_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(set_scene_units_handler)
-    if active_bone_change_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(active_bone_change_handler)
-    if local_cursor_depsgraph_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(local_cursor_depsgraph_handler)
-    if lsd_dimension_sync_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_dimension_sync_handler)
-    if lsd_paint_bucket_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_paint_bucket_handler)
-    # Lambda with context safety
-    def safe_dimension_update(dummy):
-        if bpy.context and bpy.context.scene:
-            update_dimensions(bpy.context.scene)
-    if safe_dimension_update not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(safe_dimension_update)
-    # 3. Timers
-    # Timer MUST return None (or float) to satisfy Blender's UI thread
-    bpy.app.timers.register(lambda: (ensure_default_rig(bpy.context) and None), first_interval=0.1)
-def unregister():
-    # 1. Remove Handlers
-    for h in [sync_light_props_handler, lsd_placement_handler, active_bone_change_handler, local_cursor_depsgraph_handler, lsd_dimension_sync_handler, lsd_paint_bucket_handler]:
-        if h in bpy.app.handlers.depsgraph_update_post:
-            bpy.app.handlers.depsgraph_update_post.remove(h)
-    for h in [auto_set_active_rig_handler, load_panel_order_handler, set_scene_units_handler]:
-        if h in bpy.app.handlers.load_post:
-            bpy.app.handlers.load_post.remove(h)
-    # 2. Unregister Classes
-    for cls in reversed(CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
-# ------------------------------------------------------------------------
-#   CURVE DRAFTING TOOLS
-# ------------------------------------------------------------------------
-
-def apply_curve_vertex_rotation(context):
-    """
-    Applies an incremental rotation to all selected curve control points.
-    Calculates the delta between current and previous scene rotation states.
-    """
-    global _curve_update_guard
-    if _curve_update_guard: return
-    _curve_update_guard = True
-    try:
-        scene = context.scene
-        # Calculate Delta Rotation
-        curr_rot = mathutils.Euler(scene.lsd_curve_vertex_rot, 'XYZ')
-        prev_rot = mathutils.Euler(scene.lsd_curve_vertex_rot_prev, 'XYZ')
-        # Difference quaternion: New * Old_Inverted
-        diff_quat = curr_rot.to_quaternion() @ prev_rot.to_quaternion().inverted()
-        diff_mat = diff_quat.to_matrix().to_4x4()
-        # Identity check to avoid redundant evaluation
-        if diff_quat.angle < 0.00001:
-            _curve_update_guard = False
-            return
-        selected_curves = [obj for obj in context.selected_objects if obj.type == 'CURVE']
-        for obj in selected_curves:
-            # Transform each control point (and its handles if Bezier) in local space
-            for spline in obj.data.splines:
-                if spline.type == 'BEZIER':
-                    for p in spline.bezier_points:
-                        p.co = diff_mat @ p.co
-                        p.handle_left = diff_mat @ p.handle_left
-                        p.handle_right = diff_mat @ p.handle_right
-                else: # POLY or NURBS
-                    for p in spline.points:
-                        # p.co is a Vector4 (XYZW) for NURBS/Poly
-                        vec_3d = p.co.to_3d()
-                        baked_vec = diff_mat @ vec_3d
-                        p.co[0], p.co[1], p.co[2] = baked_vec.x, baked_vec.y, baked_vec.z
-            obj.data.update()
-        # Update state persistence
-        scene.lsd_curve_vertex_rot_prev = scene.lsd_curve_vertex_rot
-    except Exception as e:
-        print(f"[LSD] Curve alignment failed: {e}")
-    finally:
-        _curve_update_guard = False
-
-def get_smart_skin_data():
-    """Returns the Smart Skin curve node if it exists, otherwise returns None."""
-    node_group_name = "LSD_SmartSkin_Data"
-    if node_group_name in bpy.data.node_groups:
-        nt = bpy.data.node_groups[node_group_name]
-        if "SkinCurve" in nt.nodes:
-            return nt.nodes["SkinCurve"]
-    return None
 
 def ensure_smart_skin_data():
     """Systematically ensures and returns the hidden FloatCurve node for transitions."""
@@ -5985,7 +5973,6 @@ def ensure_smart_skin_data():
         nt = bpy.data.node_groups.new(node_group_name, 'ShaderNodeTree')
         node = nt.nodes.new('ShaderNodeFloatCurve')
         node.name = "SkinCurve"
-        # Set default values: Start at full thickness, end at full thickness (User modifies from here)
         curve = node.mapping.curves[0]
         curve.points[0].location = (0.0, 1.0)
         curve.points[1].location = (1.0, 1.0)
@@ -6019,3 +6006,474 @@ def lsd_anim_layer_handler(scene, depsgraph=None):
     except Exception:
         pass
 
+
+_color_refresh_timer_active = False
+
+def _color_refresh_loop():
+    global _color_refresh_timer_active
+    if not _color_refresh_timer_active:
+        return None
+        
+    scene = bpy.context.scene
+    interval = scene.lsd_dim_color_refresh_timer
+    if interval <= 0.0:
+        _color_refresh_timer_active = False
+        return None
+        
+    for obj in bpy.data.objects:
+        if obj.get("lsd_is_dimension"):
+            sync_dimension_assembly_material(obj)
+        elif getattr(obj, "lsd_is_standalone_offset", False):
+            line_mat = get_or_create_line_material(obj)
+            if obj.active_material != line_mat:
+                obj.active_material = line_mat
+            if any(abs(a - b) > 0.001 for a, b in zip(list(obj.color), list(line_mat.diffuse_color))):
+                obj.color = line_mat.diffuse_color
+                
+    return interval
+
+def toggle_color_refresh_timer(interval):
+    global _color_refresh_timer_active
+    if interval > 0.0:
+        if not _color_refresh_timer_active:
+            _color_refresh_timer_active = True
+            bpy.app.timers.register(_color_refresh_loop, first_interval=interval)
+    else:
+        _color_refresh_timer_active = False
+
+@persistent
+def lsd_dimension_hook_cleanup_handler(scene, depsgraph=None):
+    global _in_depsgraph_handler
+    if not depsgraph or _in_depsgraph_handler: return
+    _in_depsgraph_handler = True
+    try:
+        for obj in scene.objects:
+            if obj.get("lsd_is_dimension_hook") or obj.get("lsd_is_offset_hook"):
+                con = next((c for c in obj.constraints if c.type == 'COPY_LOCATION' and c.name != "Auto_Offset_Follow"), None)
+                if con:
+                    is_dead = False
+                    if not con.target:
+                        is_dead = True
+                    elif con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                        if not con.target.parent or con.target.parent.name not in scene.objects:
+                            is_dead = True
+                            
+                    if is_dead:
+                        if "lsd_saved_world_loc" in obj:
+                            loc = obj["lsd_saved_world_loc"]
+                            obj.matrix_world.translation = (loc[0], loc[1], loc[2])
+                            del obj["lsd_saved_world_loc"]
+                        obj.constraints.remove(con)
+                        if "lsd_is_dimension_hook" in obj:
+                            del obj["lsd_is_dimension_hook"]
+                        obj.update_tag()
+                    elif con.target and con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                        obj["lsd_saved_world_loc"] = list(obj.matrix_world.translation)
+    finally:
+        _in_depsgraph_handler = False
+
+@persistent
+def lsd_standalone_offset_sync(scene, depsgraph=None):
+    global _in_depsgraph_handler
+    if not depsgraph: return
+    _in_depsgraph_handler = True
+    try:
+        # Check if we need to update anything (any object changed)
+        if not depsgraph.updates: return
+        
+        # Always evaluate all standalone offset lines in the scene
+        # because moving a hook does not always put the offset line into depsgraph.updates.
+        for obj in scene.objects:
+            if getattr(obj, "lsd_is_standalone_offset", False) or "Standalone_Offset_Line" in obj.name:
+                target = getattr(obj, "lsd_standalone_mimic_target", None)
+                if target:
+                    try:
+                        host = get_dimension_host(target)
+                        if host:
+                            target_thick = host.lsd_pg_dim_props.line_thickness
+                            if abs(obj.lsd_standalone_thickness - target_thick) > 0.0001:
+                                obj.lsd_standalone_thickness = target_thick
+                    except: pass
+                thick = obj.lsd_standalone_thickness
+                if abs(obj.scale.x - thick) > 0.0001 or abs(obj.scale.y - thick) > 0.0001:
+                    obj.scale.x = thick
+                    obj.scale.y = thick
+                    obj.update_tag()
+                    
+                # Dynamic Z-Scale (Length) calculation
+                track_con = next((c for c in obj.constraints if c.type == 'TRACK_TO'), None)
+                if track_con and track_con.target:
+                    # Calculate distance between object location and target location in world space
+                    p1 = obj.matrix_world.translation
+                    p2 = track_con.target.matrix_world.translation
+                    dist = (p2 - p1).length
+                    # The mesh itself is 1m long, so scale = distance
+                    if abs(obj.scale.z - dist) > 0.0001:
+                        obj.scale.z = dist
+                        obj.update_tag()
+    finally:
+        _in_depsgraph_handler = False
+
+def update_offset_anchors_edit_mode(self, context):
+    """
+    Callback for lsd_edit_offset_anchors toggle.
+    When True: Temporarily unparents objects constrained to offset anchors so anchors can be moved freely.
+    When False: Restores the parent-child relationships securely.
+    """
+    scene = context.scene
+    is_editing = scene.lsd_edit_offset_anchors
+    
+    if is_editing:
+        # Enable Edit Mode: Unparent children of hooks and store the relationship
+        for obj in context.scene.objects:
+            # Skip the offset line mesh itself so it still follows the hook!
+            if getattr(obj, "lsd_is_standalone_offset", False) or "Standalone_Offset_Line" in obj.name:
+                continue
+            parent = obj.parent
+            if parent and (parent.get("lsd_is_offset_hook") or "Offset_EndHook" in parent.name or "StartHook" in parent.name):
+                # Store the hook's name
+                obj["lsd_temp_hook_parent"] = parent.name
+                # Unparent while keeping world transform
+                mw = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = mw
+    else:
+        # Disable Edit Mode: Restore parent relationships
+        for obj in context.scene.objects:
+            if "lsd_temp_hook_parent" in obj:
+                hook_name = obj["lsd_temp_hook_parent"]
+                hook = context.scene.objects.get(hook_name)
+                if hook:
+                    mw = obj.matrix_world.copy()
+                    obj.parent = hook
+                    obj.matrix_parent_inverse = hook.matrix_world.inverted()
+                    obj.matrix_world = mw
+                # Clean up the custom property
+                del obj["lsd_temp_hook_parent"]
+
+_lsd_arrow_prev_mode = 'OBJECT'
+_lsd_arrow_prev_active = None
+
+import bpy
+@bpy.app.handlers.persistent
+def lsd_onion_arrow_selection_handler(scene, depsgraph):
+    """Detects selection of an Onion Skin Arrow and instantly scrubs the timeline."""
+    global _lsd_arrow_prev_mode, _lsd_arrow_prev_active
+    active = bpy.context.active_object
+    
+    if not active or "lsd_onion_frame_target" not in active:
+        if active:
+            _lsd_arrow_prev_mode = bpy.context.mode
+            _lsd_arrow_prev_active = active
+        return
+    
+    if active.select_get():
+        target_frame = active["lsd_onion_frame_target"]
+        
+        # Deselect arrow instantly
+        active.select_set(False)
+        
+        # Restore previous active object
+        if _lsd_arrow_prev_active and _lsd_arrow_prev_active.name in scene.objects:
+            bpy.context.view_layer.objects.active = _lsd_arrow_prev_active
+            _lsd_arrow_prev_active.select_set(True)
+            
+            # Restore previous mode safely
+            try:
+                if _lsd_arrow_prev_mode != bpy.context.mode:
+                    bpy.ops.object.mode_set(mode=_lsd_arrow_prev_mode)
+            except Exception:
+                pass
+        else:
+            bpy.context.view_layer.objects.active = None
+            
+        # Jump timeline
+        if scene.frame_current != target_frame:
+            scene.frame_set(target_frame)
+            
+import time
+
+# ── Auto-Keyframe Everything Engine ─────────────────────────────────────
+# Architecture: A simple polling timer checks every 200ms whether any bone
+# has changed. When it detects a change, it waits for the pose to be stable
+# for 200ms (meaning the user released the mouse), then snapshots ALL bones.
+# A re-entrancy guard prevents the snapshot itself from triggering re-detection.
+
+_ak_cache = {}          # bone_name -> matrix_basis copy
+_ak_frame = None        # Last known frame number
+_ak_dirty = False       # True when a bone change has been detected
+_ak_dirty_time = 0.0    # Timestamp of the last detected change
+_ak_inserting = False   # Re-entrancy guard: True while we are inserting keyframes
+
+def _ak_ensure_action(obj):
+    """Ensure the object has animation_data, an Action, and (for Blender 4.4+) an active Slot."""
+    if not obj.animation_data:
+        obj.animation_data_create()
+    if not obj.animation_data.action:
+        action = bpy.data.actions.new(name=obj.name + "Action")
+        obj.animation_data.action = action
+    # Blender 4.4+ slotted actions
+    if hasattr(obj.animation_data, 'action_slot'):
+        if not obj.animation_data.action_slot:
+            try:
+                slot = obj.animation_data.action.slots.new(for_id=obj)
+                obj.animation_data.action_slot = slot
+            except Exception:
+                pass
+
+def _ak_snapshot_all_bones(obj):
+    """The absolute pose screenshot: keyframe EVERY bone's loc/rot/scale + custom props."""
+    global _ak_inserting, _ak_cache
+    _ak_inserting = True
+    
+    frame = bpy.context.scene.frame_current
+    
+    try:
+        _ak_ensure_action(obj)
+        
+        # Save current selection
+        selected_bones = []
+        if bpy.context.selected_pose_bones:
+            selected_bones = [b.name for b in bpy.context.selected_pose_bones]
+        
+        # Unhide all bone collections (Blender 4.0+) so operator can see them
+        hidden_colls = []
+        if hasattr(obj.data, "collections"):
+            for coll in obj.data.collections:
+                try:
+                    if not coll.is_visible:
+                        hidden_colls.append(coll)
+                        coll.is_visible = True
+                except: pass
+                    
+        # Unhide individual hidden bones
+        hidden_bones = []
+        for b in obj.data.bones:
+            if b.hide:
+                hidden_bones.append(b)
+                try: b.hide = False
+                except: pass
+        
+        # Select ALL bones
+        for bone in obj.pose.bones:
+            try: bone.bone.select = True
+            except AttributeError:
+                try: bone.select = True
+                except: pass
+        
+        # --- Pass 1: Native operator (handles NLA deltas correctly) ---
+        override_success = False
+        for window in bpy.context.window_manager.windows:
+            screen = window.screen
+            for area in screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            override = {'window': window, 'screen': screen, 'area': area, 
+                                        'region': region, 'active_object': obj, 'object': obj}
+                            with bpy.context.temp_override(**override):
+                                try: bpy.ops.anim.keyframe_insert_menu(type='BUILTIN_KSI_WholeCharacter')
+                                except: pass
+                                try: bpy.ops.anim.keyframe_insert_menu(type='BUILTIN_KSI_LocRotScale')
+                                except: pass
+                                try: bpy.ops.anim.keyframe_insert_menu(type='Available')
+                                except: pass
+                            override_success = True
+                            break
+                    if override_success: break
+            if override_success: break
+        
+        # --- Pass 2: Direct per-bone keyframe_insert (absolute fallback) ---
+        keyed = 0
+        failed = 0
+        for bone in obj.pose.bones:
+            for dp in ("location", "rotation_quaternion", "rotation_euler", "scale"):
+                try:
+                    bone.keyframe_insert(data_path=dp)
+                    keyed += 1
+                except:
+                    failed += 1
+            # Custom properties
+            for prop in bone.keys():
+                if prop not in '_RNA_UI':
+                    try: bone.keyframe_insert(data_path=f'["{prop}"]')
+                    except: pass
+        
+        # Restore selection
+        for bone in obj.pose.bones:
+            val = (bone.name in selected_bones)
+            try: bone.bone.select = val
+            except AttributeError:
+                try: bone.select = val
+                except: pass
+        
+        # Restore hidden states
+        for b in hidden_bones:
+            try: b.hide = True
+            except: pass
+        for coll in hidden_colls:
+            try: coll.is_visible = False
+            except: pass
+        
+        print(f"LSD Auto-Key: Frame {frame} — keyed {keyed} channels ({failed} skipped) on {len(obj.pose.bones)} bones.")
+        
+        # Update depsgraph so the evaluated state reflects the new keyframes
+        bpy.context.view_layer.update()
+        
+        # Update cache to prevent re-triggering
+        for bone in obj.pose.bones:
+            _ak_cache[bone.name] = bone.matrix_basis.copy()
+        
+        # Refresh Onion Skins
+        try:
+            bpy.ops.lsd.calculate_onion_skin('INVOKE_DEFAULT')
+        except: pass
+        
+    except Exception as e:
+        print(f"LSD Auto-Key Error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        _ak_inserting = False
+
+def _ak_poll_timer():
+    """Polling timer: runs every 200ms to detect pose changes and trigger snapshots."""
+    global _ak_cache, _ak_frame, _ak_dirty, _ak_dirty_time
+    
+    # Skip if feature is off, not in pose mode, or currently inserting
+    if _ak_inserting:
+        return 0.2
+    
+    try:
+        scene = bpy.context.scene
+    except:
+        return 1.0
+    
+    if not getattr(scene, 'lsd_enable_auto_keyframe_all', False):
+        return 0.5
+    if bpy.context.mode != 'POSE':
+        return 0.5
+    
+    obj = bpy.context.active_object
+    if not obj or obj.type != 'ARMATURE':
+        return 0.5
+    
+    current_frame = scene.frame_current
+    
+    # Frame changed: reset cache, clear dirty flag
+    if _ak_frame is not None and _ak_frame != current_frame:
+        _ak_frame = current_frame
+        _ak_dirty = False
+        _ak_cache.clear()
+        for bone in obj.pose.bones:
+            _ak_cache[bone.name] = bone.matrix_basis.copy()
+        return 0.2
+    
+    _ak_frame = current_frame
+    
+    # Check if any bone has changed since last check
+    now = time.time()
+    for bone in obj.pose.bones:
+        if bone.name not in _ak_cache:
+            _ak_cache[bone.name] = bone.matrix_basis.copy()
+            continue
+        diff = bone.matrix_basis - _ak_cache[bone.name]
+        if any(abs(v) > 0.0001 for row in diff for v in row):
+            _ak_dirty = True
+            _ak_dirty_time = now
+            # Update cache entry so we track the latest position during drag
+            _ak_cache[bone.name] = bone.matrix_basis.copy()
+    
+    # If dirty and stable for 200ms → user released mouse → snapshot!
+    if _ak_dirty and (now - _ak_dirty_time) > 0.2:
+        _ak_dirty = False
+        _ak_snapshot_all_bones(obj)
+    
+    return 0.2
+
+# Legacy handler kept minimal — just ensures the timer is running
+@bpy.app.handlers.persistent
+def lsd_auto_keyframe_all_handler(scene, depsgraph):
+    if not getattr(scene, 'lsd_enable_auto_keyframe_all', False): return
+    if not bpy.app.timers.is_registered(_ak_poll_timer):
+        bpy.app.timers.register(_ak_poll_timer, first_interval=0.5)
+
+@bpy.app.handlers.persistent
+def lsd_auto_keyframe_cache_update_handler(scene, depsgraph):
+    """Updates the cache on frame changes without inserting keyframes."""
+    global _ak_cache, _ak_frame
+    if _ak_inserting: return
+    if getattr(scene, 'lsd_enable_auto_keyframe_all', False) and bpy.context.mode == 'POSE':
+        _ak_frame = scene.frame_current
+        obj = bpy.context.active_object
+        if obj and obj.type == 'ARMATURE':
+            _ak_cache.clear()
+            for bone in obj.pose.bones:
+                _ak_cache[bone.name] = bone.matrix_basis.copy()
+
+CLASSES = [
+    LSD_OT_Core_DisablePanel, LSD_OT_Core_SnapCursorToActive
+]
+
+def register():
+    # 1. Register Classes
+    for cls in CLASSES:
+        if hasattr(cls, 'bl_rna'):
+            try:
+                bpy.utils.register_class(cls)
+            except Exception:
+                pass
+    # 2. Append Handlers (Set-like behavior to prevent duplicates)
+    if sync_light_props_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(sync_light_props_handler)
+    if lsd_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_placement_handler)
+    if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
+    if load_panel_order_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(load_panel_order_handler)
+    if set_scene_units_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(set_scene_units_handler)
+    if active_bone_change_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(active_bone_change_handler)
+    if local_cursor_depsgraph_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(local_cursor_depsgraph_handler)
+    if lsd_dimension_sync_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_dimension_sync_handler)
+    if lsd_dimension_hook_cleanup_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_dimension_hook_cleanup_handler)
+    if lsd_paint_bucket_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_paint_bucket_handler)
+    if lsd_standalone_offset_sync not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_standalone_offset_sync)
+    if lsd_onion_arrow_selection_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_onion_arrow_selection_handler)
+    if lsd_auto_keyframe_all_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_auto_keyframe_all_handler)
+    if lsd_auto_keyframe_cache_update_handler not in bpy.app.handlers.frame_change_post: bpy.app.handlers.frame_change_post.append(lsd_auto_keyframe_cache_update_handler)
+    
+    # Lambda with context safety
+    def safe_dimension_update(dummy):
+        if bpy.context and bpy.context.scene:
+            update_dimensions(bpy.context.scene)
+    if safe_dimension_update not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(safe_dimension_update)
+
+    # 3. Timers
+    if not getattr(bpy.types.Scene, "lsd_dim_color_refresh_timer", None):
+        if not bpy.app.timers.is_registered(_color_refresh_loop):
+            bpy.app.timers.register(_color_refresh_loop, first_interval=1.0)
+    
+def unregister():
+    # 1. Unregister Classes
+    for cls in reversed(CLASSES):
+        if hasattr(cls, 'bl_rna'):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception:
+                pass
+                
+    # 2. Remove Handlers safely
+    if sync_light_props_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(sync_light_props_handler)
+    if lsd_placement_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_placement_handler)
+    if auto_set_active_rig_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(auto_set_active_rig_handler)
+    if load_panel_order_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(load_panel_order_handler)
+    if set_scene_units_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(set_scene_units_handler)
+    if active_bone_change_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(active_bone_change_handler)
+    if local_cursor_depsgraph_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(local_cursor_depsgraph_handler)
+    if lsd_dimension_sync_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_dimension_sync_handler)
+    if lsd_dimension_hook_cleanup_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_dimension_hook_cleanup_handler)
+    if lsd_paint_bucket_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_paint_bucket_handler)
+    if lsd_standalone_offset_sync in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_standalone_offset_sync)
+    if lsd_onion_arrow_selection_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_onion_arrow_selection_handler)
+    if lsd_auto_keyframe_all_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_auto_keyframe_all_handler)
+    if lsd_auto_keyframe_cache_update_handler in bpy.app.handlers.frame_change_post: bpy.app.handlers.frame_change_post.remove(lsd_auto_keyframe_cache_update_handler)
+
+    if _color_refresh_timer_active:
+        toggle_color_refresh_timer(0.0)

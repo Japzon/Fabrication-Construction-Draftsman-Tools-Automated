@@ -6,12 +6,14 @@ import mathutils
 _draw_handler = None
 _cached_data = {}
 
-def get_bone_lines(obj):
+def get_bone_lines(obj, depsgraph):
     lines = []
     if obj.type != 'ARMATURE': return lines
-    mat = obj.matrix_world
     
-    for bone in obj.pose.bones:
+    eval_obj = obj.evaluated_get(depsgraph)
+    mat = eval_obj.matrix_world
+    
+    for bone in eval_obj.pose.bones:
         lines.extend([mat @ bone.head, mat @ bone.tail])
             
     return lines
@@ -84,7 +86,11 @@ def draw_callback():
         else:
             batch = data
             
-        if frame < current_frame:
+        is_keyframe = frame in _cached_keyframe_frames
+        
+        if getattr(settings, 'onion_skin_show_present', False) and is_keyframe and frame != current_frame:
+            color = list(settings.onion_skin_color_present) + [1.0]
+        elif frame < current_frame:
             if not getattr(settings, 'onion_skin_show_past', True): continue
             base_opacity = settings.onion_skin_opacity_before
             if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before >= max(1, settings.onion_skin_frame_distance):
@@ -105,8 +111,9 @@ def draw_callback():
                     base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
             color = list(settings.onion_skin_color_future) + [base_opacity]
         else:
-            if not getattr(settings, 'onion_skin_show_present', False): continue
-            color = list(settings.onion_skin_color_present) + [1.0]
+            # If frame == current_frame, we only draw it if it's a keyframe?
+            # But the real mesh is already there, so it's useless to draw a ghost over it.
+            continue
             
         shader.bind()
         
@@ -117,9 +124,11 @@ def draw_callback():
     gpu.state.blend_set('NONE')
 
 _is_building = False
+_cached_keyframe_frames = set()
 
 def build_onion_cache(context=None):
     global _is_building
+    global _cached_keyframe_frames
     if _is_building: return
     
     if context is None:
@@ -130,14 +139,14 @@ def build_onion_cache(context=None):
     
     target_objs = []
     if settings.onion_skin_target == 'SELECTED':
-        target_objs = [o for o in context.selected_objects if o.type in {'ARMATURE', 'MESH'}]
+        target_objs = [o for o in context.selected_objects if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_")]
         if settings.onion_skin_near_count > 0 and len(target_objs) > 0:
             center_loc = target_objs[0].matrix_world.translation
-            all_vis = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and o not in target_objs]
+            all_vis = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and o not in target_objs and not o.name.startswith("LSD_OnionArrow_")]
             all_vis.sort(key=lambda o: (o.matrix_world.translation - center_loc).length)
             target_objs.extend(all_vis[:settings.onion_skin_near_count])
     else:
-        target_objs = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'}]
+        target_objs = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_")]
         
     if not target_objs: return
     
@@ -155,7 +164,35 @@ def build_onion_cache(context=None):
         end_frame += frames_after
         
     frames_to_cache = []
+    _cached_keyframe_frames.clear()
     
+    if getattr(settings, 'onion_skin_show_present', False):
+        for obj in target_objs:
+            if obj.animation_data and obj.animation_data.action:
+                fcurves_list = []
+                # Legacy Blender (<4.4)
+                if hasattr(obj.animation_data.action, "fcurves"):
+                    fcurves_list = obj.animation_data.action.fcurves
+                # Animation 2.0 (Blender 4.4+)
+                elif hasattr(obj.animation_data, "action_slot"):
+                    try:
+                        from bpy_extras import anim_utils
+                        cb = anim_utils.action_get_channelbag_for_slot(obj.animation_data.action, obj.animation_data.action_slot)
+                        if cb and hasattr(cb, "fcurves"):
+                            fcurves_list = cb.fcurves
+                    except Exception:
+                        pass
+                
+                for fcurve in fcurves_list:
+                    if hasattr(fcurve, "keyframe_points"):
+                        for kp in fcurve.keyframe_points:
+                            f = int(kp.co.x)
+                            if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
+                                if start_frame <= f <= end_frame:
+                                    _cached_keyframe_frames.add(f)
+                            else:
+                                _cached_keyframe_frames.add(f)
+                            
     first_mult = start_frame - (start_frame % frame_step)
     if first_mult < start_frame:
         first_mult += frame_step
@@ -168,28 +205,45 @@ def build_onion_cache(context=None):
     if getattr(settings, 'onion_skin_show_present', False):
         if orig_frame not in frames_to_cache:
             frames_to_cache.append(orig_frame)
+        for f in _cached_keyframe_frames:
+            if f not in frames_to_cache:
+                frames_to_cache.append(f)
         
     depsgraph = context.evaluated_depsgraph_get()
     
     _is_building = True
     
-    frames_to_remove = [f for f in _cached_data.keys() if f not in frames_to_cache]
+    frames_to_remove = [f for f in list(_cached_data.keys()) if f not in frames_to_cache]
     for f in frames_to_remove:
         del _cached_data[f]
         
+    arrow_col = bpy.data.collections.get("LSD_Onion_Arrows")
+    if arrow_col:
+        for obj in list(arrow_col.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.collections.remove(arrow_col)
+        
     frames_to_build = [f for f in frames_to_cache if f not in _cached_data]
     
+    changed_frame = False
     if frames_to_build:
         for f in frames_to_build:
-            context.scene.frame_set(f)
+            if f != orig_frame:
+                context.scene.frame_set(f)
+                changed_frame = True
+            
+            # Fetch fresh evaluated depsgraph for this specific frame
+            current_deps = context.evaluated_depsgraph_get()
+                
             _cached_data[f] = []
             for obj in target_objs:
                 if obj.type == 'ARMATURE':
-                    _cached_data[f].extend(get_bone_lines(obj))
+                    _cached_data[f].extend(get_bone_lines(obj, current_deps))
                 elif obj.type == 'MESH':
-                    _cached_data[f].extend(get_mesh_lines(obj, depsgraph, settings.onion_skin_display_type))
+                    _cached_data[f].extend(get_mesh_lines(obj, current_deps, settings.onion_skin_display_type))
                     
-        context.scene.frame_set(orig_frame)
+        if changed_frame:
+            context.scene.frame_set(orig_frame)
     _is_building = False
 
 def onion_skin_timer_update():
@@ -201,6 +255,11 @@ def onion_skin_timer_update():
     if not settings: return 1.0
     
     if settings.onion_skin_enabled and settings.onion_skin_auto_refresh:
+        # Always force refresh the current frame so the pose is live and never stale!
+        curr_frame = bpy.context.scene.frame_current
+        if curr_frame in _cached_data:
+            del _cached_data[curr_frame]
+                
         build_onion_cache(bpy.context)
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
@@ -217,6 +276,7 @@ def update_onion_skin(self, context):
     if settings.onion_skin_enabled:
         if _draw_handler is None:
             _draw_handler = bpy.types.SpaceView3D.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_VIEW')
+        _cached_data.clear()  # Force a full rebuild so arrows and meshes synchronize instantly
         build_onion_cache(context)
     else:
         if _draw_handler is not None:
@@ -233,6 +293,8 @@ class LSD_OT_Calculate_Onion_Skin(bpy.types.Operator):
     bl_description = "Bake the onion skin frames based on the current timeline position"
     
     def execute(self, context):
+        global _cached_data
+        _cached_data.clear()
         build_onion_cache(context)
         if context.area:
             context.area.tag_redraw()

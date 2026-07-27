@@ -20,8 +20,6 @@ class LSD_UL_Animation_Layers(bpy.types.UIList):
                 row.prop(layer, "is_muted", text="", icon='HIDE_ON', emboss=False)
             else:
                 row.prop(layer, "is_muted", text="", icon='HIDE_OFF', emboss=False)
-                
-            row.prop(layer, "is_locked", text="", icon='LOCKED' if layer.is_locked else 'UNLOCKED', emboss=False)
         elif self.layout_type == 'GRID':
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value=icon)
@@ -68,19 +66,6 @@ class LSD_PT_Animation_System_Main:
                 if len(settings.layers) > 0 and settings.active_layer_index >= 0:
                     layer = settings.layers[settings.active_layer_index]
                     col.prop(layer, "blend_type", text="Blend:")
-                
-                bake_box = col.box()
-                row = bake_box.row()
-                row.alignment = 'LEFT'
-                row.prop(settings, "show_bake_operators", text="", icon='TRIA_DOWN' if settings.show_bake_operators else 'TRIA_RIGHT', emboss=False)
-                row.label(text="Bake Operators")
-                
-                if settings.show_bake_operators:
-                    bake_col = bake_box.column(align=True)
-                    bake_col.operator("lsd.anim_merge_bake", text="Merge Layer Above", icon='ACTION_TWEAK')
-                    bake_col.operator("lsd.anim_duplicate_layer", text="Duplicate Layer", icon='DUPLICATE')
-                    bake_col.operator("lsd.anim_extract_bones", text="Extract Selected Bones", icon='BONE_DATA')
-                    bake_col.operator("lsd.anim_extract_keys", text="Extract Marked Keyframes", icon='KEYINGSET')
             
             # --- Onion Skinning Subpanel ---
             onion_box = col_main.box()
@@ -108,6 +93,7 @@ class LSD_PT_Animation_System_Main:
                     col.prop(settings, "onion_skin_mesh_resolution")
                     
                 col.prop(settings, "onion_skin_fade")
+                col.prop(settings, "onion_skin_delete_outer_keyframes")
                 
                 col.separator()
                 col.prop(settings, "onion_skin_frame_distance")
@@ -128,7 +114,14 @@ class LSD_PT_Animation_System_Main:
                 row.prop(settings, "onion_skin_color_present", text="")
                 row.prop(settings, "onion_skin_show_future", text="", icon='CHECKBOX_HLT' if getattr(settings, 'onion_skin_show_future', True) else 'CHECKBOX_DEHLT')
                 row.prop(settings, "onion_skin_color_future", text="")
-
+                col.separator()
+                box = col.box()
+                box.label(text="Snap to Frame with Keyframes", icon='SNAP_ON')
+                row = box.row(align=True)
+                op_past = row.operator("lsd.snap_to_keyframe", text="Snap to Nearest Past Keyframe", icon='TRIA_LEFT')
+                op_past.direction = 'PAST'
+                op_future = row.operator("lsd.snap_to_keyframe", text="Snap to Nearest Future Keyframe", icon='TRIA_RIGHT')
+                op_future.direction = 'FUTURE'
 CLASSES = (
     LSD_UL_Animation_Layers,
 )

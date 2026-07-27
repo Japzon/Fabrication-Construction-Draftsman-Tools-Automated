@@ -781,6 +781,22 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     # AI Editor Note: To prevent dependency cycles while mirroring chaining support (1-2, 2-3).
     # We only apply Root constraints if the target is ALREADY a dimension component.
     # For regular objects, the Dimension remains the MASTER (Object following Anchor).
+    def cleanup_dead_dimension_hooks(obj):
+        if not obj: return
+        has_alive_dim = False
+        for con in list(obj.constraints):
+            if con.type == 'COPY_LOCATION' and con.name != "Auto_Offset_Follow":
+                if con.target and con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                    if con.target.parent and con.target.parent.name in context.scene.objects:
+                        has_alive_dim = True
+                        continue
+                obj.constraints.remove(con)
+        if not has_alive_dim and "lsd_is_dimension_hook" in obj:
+            del obj["lsd_is_dimension_hook"]
+            
+    if parent_a: cleanup_dead_dimension_hooks(parent_a[0])
+    if parent_b: cleanup_dead_dimension_hooks(parent_b[0])
+
     track_p1 = parent_a and (parent_a[0].get("lsd_is_dimension_anchor") or parent_a[0].get("lsd_is_dimension_hook"))
     track_p2 = parent_b and (parent_b[0].get("lsd_is_dimension_anchor") or parent_b[0].get("lsd_is_dimension_hook"))
     if track_p1:

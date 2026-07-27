@@ -430,6 +430,18 @@ def update_dimension_length_timer(self, context):
     if hasattr(self, "is_manual"):
         self.is_manual = True
     queue_batch_sync(obj.name)
+def update_text_color(self, context):
+    """Updates dimension material colors."""
+    if hasattr(self, "id_data"):
+        from . import core
+        if self.id_data.get("lsd_is_dimension"):
+            core.sync_dimension_assembly_material(self.id_data)
+        elif getattr(self.id_data, "lsd_is_standalone_offset", False):
+            line_mat = core.get_or_create_line_material(self.id_data)
+            if self.id_data.active_material != line_mat:
+                self.id_data.active_material = line_mat
+            if any(abs(a - b) > 0.001 for a, b in zip(list(self.id_data.color), list(line_mat.diffuse_color))):
+                self.id_data.color = line_mat.diffuse_color
 def update_dimension_driver_target(self, context):
     """Sets up a driver for the dimension to follow the target dimension's length."""
     from . import core # Move to top of scope to avoid UnboundLocalError
@@ -692,9 +704,10 @@ class LSD_PG_Dimension_Props(bpy.types.PropertyGroup):
     text_scale: bpy.props.FloatProperty(name="Text Size", default=0.1, min=0.0, update=update_arrow_settings_timer)
     text_offset: bpy.props.FloatProperty(name="Text Offset", description="Distance between the label and the dimension line", default=0.05, min=0.0, unit='LENGTH', update=update_arrow_settings_timer)
     line_thickness: bpy.props.FloatProperty(name="Line Thickness", default=0.002, min=0.0, unit='LENGTH', update=update_arrow_settings_timer)
-    use_offset: bpy.props.BoolProperty(name="Use Offset", default=True, update=update_arrow_settings_timer)
-    offset: bpy.props.FloatProperty(name="Offset from Target", default=0.1, unit='LENGTH', update=update_arrow_settings_timer)
+    use_offset: bpy.props.BoolProperty(name="Use Offset", default=False, update=update_arrow_settings_timer)
+    offset: bpy.props.FloatProperty(name="Line Offset from Target", default=0.1, unit='LENGTH', update=update_arrow_settings_timer)
     text_color: bpy.props.FloatVectorProperty(name="Label Color", subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), size=4, min=0.0, max=1.0, update=update_text_color)
+    line_color: bpy.props.FloatVectorProperty(name="Dimension & Offset Line Color", subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), size=4, min=0.0, max=1.0, update=update_text_color)
     unit_display: bpy.props.EnumProperty(name="Units", items=[('METERS', "Meters (m)", ""), ('MM', "Millimeters (mm)", "")], default='METERS', update=update_dimension_length_timer)
     length: bpy.props.FloatProperty(name="Line Length", default=1.0, unit='LENGTH', update=update_dimension_length_timer)
     direction: bpy.props.EnumProperty(name="Direction", items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""), ('-X', "-X", ""), ('-Y', "-Y", ""), ('-Z', "-Z", "")], default='Z', update=update_arrow_settings_timer)
@@ -1218,6 +1231,11 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default=True,
         description="Fade out the furthest onion skins at the start and end"
     )
+    onion_skin_delete_outer_keyframes: bpy.props.BoolProperty(
+        name="Delete Outer Keyframe Highlights",
+        default=False,
+        description="If enabled, restricts keyframe highlights to the Frames Before/After limits"
+    )
     
     onion_skin_auto_refresh: bpy.props.BoolProperty(
         name="",
@@ -1252,16 +1270,17 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default=0.1, min=0.0, max=1.0
     )
     onion_skin_color_past: bpy.props.FloatVectorProperty(
-        name="Past Color", subtype='COLOR', size=3, default=(1.0, 1.0, 0.8), min=0.0, max=1.0
+        name="Onion Skins Past Color", subtype='COLOR', size=3, default=(1.0, 1.0, 0.8), min=0.0, max=1.0
     )
     onion_skin_color_present: bpy.props.FloatVectorProperty(
-        name="Present Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0), min=0.0, max=1.0
+        name="Onion Skins with Keyframes Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0), min=0.0, max=1.0
     )
     onion_skin_color_future: bpy.props.FloatVectorProperty(
-        name="Future Color", subtype='COLOR', size=3, default=(0.9, 0.9, 1.0), min=0.0, max=1.0
+        name="Onion Skins Future Color", subtype='COLOR', size=3, default=(0.9, 0.9, 1.0), min=0.0, max=1.0
     )
+    
     onion_skin_show_past: bpy.props.BoolProperty(name="Show Past", default=True)
-    onion_skin_show_present: bpy.props.BoolProperty(name="Show Present", default=False)
+    onion_skin_show_present: bpy.props.BoolProperty(name="Show Keyframes", default=True)
     onion_skin_show_future: bpy.props.BoolProperty(name="Show Future", default=True)
     
     affect_selected_bones_only: bpy.props.BoolProperty(default=False)
@@ -1476,8 +1495,16 @@ def get_catalogs_items(self, context):
 
 def register():
 
-    bpy.utils.register_class(LSD_PG_Animation_Layer)
-    bpy.utils.register_class(LSD_PG_Animation_Settings)
+    try:
+        bpy.utils.register_class(LSD_PG_Animation_Layer)
+    except Exception as e:
+        print(f"Warning: Could not register LSD_PG_Animation_Layer: {e}")
+        
+    try:
+        bpy.utils.register_class(LSD_PG_Animation_Settings)
+    except Exception as e:
+        print(f"Warning: Could not register LSD_PG_Animation_Settings: {e}")
+        
     bpy.types.Scene.lsd_anim_settings = bpy.props.PointerProperty(type=LSD_PG_Animation_Settings)
 
     for cls in CLASSES:
@@ -1495,6 +1522,9 @@ def register():
     bpy.types.Scene.lsd_pg_joint_editor_settings = bpy.props.PointerProperty(type=LSD_PG_Kinematic_Props)
     bpy.types.Object.lsd_pg_dim_props = bpy.props.PointerProperty(type=LSD_PG_Dimension_Props)
     bpy.types.Object.lsd_pg_sdf_props = bpy.props.PointerProperty(type=LSD_PG_SDF_Props)
+    bpy.types.Object.lsd_is_standalone_offset = bpy.props.BoolProperty(name="Is Standalone Offset", default=False)
+    bpy.types.Object.lsd_standalone_thickness = bpy.props.FloatProperty(name="Line Thickness", default=0.002, min=0.0, unit='LENGTH')
+    bpy.types.Object.lsd_standalone_mimic_target = bpy.props.PointerProperty(type=bpy.types.Object, name="Mimic Target", description="Mimic the thickness of this dimension")
     # Precision Scale State (Drafting)
     def update_accurate_scale(self, context):
         """Real-time drafting sync: Applying scale as parameters change."""
@@ -1586,6 +1616,14 @@ def register():
     bpy.types.Scene.lsd_dim_text_offset = bpy.props.FloatProperty(name="Text Offset", default=0.05, min=0.0, unit='LENGTH')
     bpy.types.Scene.lsd_dim_line_thickness = bpy.props.FloatProperty(name="Line Thickness", default=0.002, min=0.0, unit='LENGTH')
     bpy.types.Scene.lsd_dim_offset = bpy.props.FloatProperty(name="Offset", default=0.1, min=0.0, unit='LENGTH')
+    bpy.types.Scene.lsd_dim_use_offset = bpy.props.BoolProperty(name="Use Offset", default=False, description="Enable offset line for new dimensions")
+    from .core import update_offset_anchors_edit_mode
+    bpy.types.Scene.lsd_edit_offset_anchors = bpy.props.BoolProperty(
+        name="Edit Offset Line Hooks",
+        description="Temporarily disable parent-child relationships to allow moving offset hooks freely",
+        default=False,
+        update=update_offset_anchors_edit_mode
+    )
     bpy.types.Scene.lsd_dim_axis = bpy.props.EnumProperty(
         name="Measurement Axis",
         items=[('X', "X", ""), ('Y', "Y", ""), ('Z', "Z", ""), ('ALL', "All Axes", "")],
@@ -1609,22 +1647,53 @@ def register():
         # Force refresh of all dimension materials in the scene
         for obj in bpy.data.objects:
             if obj.get("lsd_is_dimension"):
-                # Color Persistence: If global sync is being disabled, bake the universal color to the local property.
                 if not self.lsd_dim_global_text_color_sync:
                     dim_props = getattr(obj, "lsd_pg_dim_props", None)
                     if dim_props:
                         dim_props.text_color = self.lsd_dim_universal_text_color
+                        dim_props.line_color = self.lsd_dim_universal_line_color
                 core.sync_dimension_assembly_material(obj)
+            elif getattr(obj, "lsd_is_standalone_offset", False):
+                if not self.lsd_dim_global_text_color_sync:
+                    dim_props = getattr(obj, "lsd_pg_dim_props", None)
+                    if dim_props:
+                        dim_props.line_color = self.lsd_dim_universal_line_color
+                line_mat = core.get_or_create_line_material(obj)
+                if obj.active_material != line_mat:
+                    obj.active_material = line_mat
+                if any(abs(a - b) > 0.001 for a, b in zip(list(obj.color), list(line_mat.diffuse_color))):
+                    obj.color = line_mat.diffuse_color
     bpy.types.Scene.lsd_dim_global_text_color_sync = bpy.props.BoolProperty(
         name="Global Color Sync",
-        default=True,
+        default=False,
         update=update_dim_color_sync
     )
+    
+    def update_color_refresh_timer(self, context):
+        from . import core
+        core.toggle_color_refresh_timer(self.lsd_dim_color_refresh_timer)
+        
+    bpy.types.Scene.lsd_dim_color_refresh_timer = bpy.props.FloatProperty(
+        name="Refresh Timer (s)",
+        description="Periodically refreshes dimension and offset line colors to ensure they don't break",
+        default=0.0,
+        min=0.0,
+        max=60.0,
+        update=update_color_refresh_timer
+    )
     bpy.types.Scene.lsd_dim_universal_text_color = bpy.props.FloatVectorProperty(
-        name="Universal Label Color",
+        name="Label Color",
         subtype='COLOR',
         size=4,
         min=0.0, max=1.0, # Explicit hard-limit for color wheel range
+        default=(0.0, 0.0, 0.0, 1.0),
+        update=update_dim_color_sync
+    )
+    bpy.types.Scene.lsd_dim_universal_line_color = bpy.props.FloatVectorProperty(
+        name="Dimension & Offset Line Color",
+        subtype='COLOR',
+        size=4,
+        min=0.0, max=1.0,
         default=(0.0, 0.0, 0.0, 1.0),
         update=update_dim_color_sync
     )
@@ -1911,13 +1980,24 @@ def register():
     )
     bpy.types.Scene.lsd_enable_math_input = bpy.props.BoolProperty(
         name="Enable Math Input (=)",
-        description="Allows typing math expressions like =5/2+1 when inputting distances in Directional Translate",
+        description="Pressing '=' anywhere opens a Math Input dialog to calculate and copy expressions to clipboard",
         default=False
     )
     bpy.types.Scene.lsd_enable_asset_editor = bpy.props.BoolProperty(
         name="Asset Browser Editor",
         description="Safely allows for indirect editing/naming/clear assets without needing to open the .blend file directly",
         default=False
+    )
+    def update_auto_keyframe_all(self, context):
+        if self.lsd_enable_auto_keyframe_all:
+            context.scene.tool_settings.use_keyframe_insert_auto = True
+        else:
+            context.scene.tool_settings.use_keyframe_insert_auto = False
+    bpy.types.Scene.lsd_enable_auto_keyframe_all = bpy.props.BoolProperty(
+        name="Automatic Keyframe Everything",
+        description="Automatically stores both changed and unmodified poses and transforms when keyframing",
+        default=True,
+        update=update_auto_keyframe_all
     )
     bpy.types.Scene.lsd_asset_new_name = bpy.props.StringProperty(
         name="New Asset Name",
@@ -1978,7 +2058,7 @@ def unregister():
                 delattr(bpy.types.Scene, prop)
         # 2. Clean up Object, Bone, and ID Pointers (Bypasses 'Uninstall Twice' bug)
         id_type_attrs = {
-            bpy.types.Object: ["lsd_pg_mech_props", "lsd_pg_dim_props", "lsd_pg_smart_skin_props", "lsd_pg_lighting_props", "lsd_pg_sdf_props"],
+            bpy.types.Object: ["lsd_pg_mech_props", "lsd_pg_dim_props", "lsd_pg_smart_skin_props", "lsd_pg_lighting_props", "lsd_pg_sdf_props", "lsd_is_standalone_offset", "lsd_standalone_thickness", "lsd_standalone_mimic_target"],
             bpy.types.PoseBone: ["lsd_pg_kinematic_props"],
             bpy.types.Image: ["lsd_pg_ai_props"]
         }

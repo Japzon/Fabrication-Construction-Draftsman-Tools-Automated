@@ -175,6 +175,10 @@ def execute_sync_logic(context):
                 elif not active_track.strips:
                     # Create an empty strip so tweak mode has something to lock onto and blend type applies
                     empty_action = bpy.data.actions.new(name=active_track.name)
+                    if hasattr(empty_action, 'slots'):
+                        try: empty_action.slots.new(for_id=obj)
+                        except: pass
+                        
                     strip = active_track.strips.new(
                         name=active_track.name,
                         start=1,

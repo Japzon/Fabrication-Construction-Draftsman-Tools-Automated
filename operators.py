@@ -201,8 +201,38 @@ class LSD_OT_BakeDimensionsMaster(bpy.types.Operator):
             return {'CANCELLED'}
         from . import generators
         generators.group_dimension_master_list(context, unique_targets)
+        
+        # Auto-navigate to Scene tab
+        for area in context.screen.areas:
+            if area.type == 'PROPERTIES':
+                for space in area.spaces:
+                    if space.type == 'PROPERTIES':
+                        space.context = 'SCENE'
+                        break
+
         self.report({'INFO'}, f"Grouped {len(unique_targets)} dimensions to the Dimensions Group Manager (Scene Tab).")
         return {'FINISHED'}
+
+class LSD_OT_NavigateToDimensionGroups(bpy.types.Operator):
+    """Switch the Properties Editor to the Scene tab to view grouped dimensions."""
+    bl_idname = "lsd.navigate_to_dimension_groups"
+    bl_label = "Locate Dimension Groups"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        found = False
+        for area in context.screen.areas:
+            if area.type == 'PROPERTIES':
+                for space in area.spaces:
+                    if space.type == 'PROPERTIES':
+                        space.context = 'SCENE'
+                        found = True
+                        break
+        if not found:
+            self.report({'WARNING'}, "No Properties editor found on screen to navigate.")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
 class LSD_OT_ImportGroupedDimensionsBack(bpy.types.Operator):
     """Moves a specific group of dimensions back into the active Dimensions Master Tracker."""
     bl_idname = "lsd.import_grouped_dimensions_back"
@@ -2890,7 +2920,7 @@ class LSD_OT_AddTextDescription(bpy.types.Operator):
 class LSD_OT_Remove_Dimension(bpy.types.Operator):
     """Removes all selected dimensions and purges their associated mechatronic hooks."""
     bl_idname = "lsd.remove_dimension"
-    bl_label = "Remove Selected Dimensions"
+    bl_label = "Delete Selected Dimensions"
     bl_options = {'REGISTER', 'UNDO'}
     @classmethod
     def poll(cls, context):
@@ -2928,8 +2958,23 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
             if root.get("lsd_parent_obj"): participants.append(root["lsd_parent_obj"])
             if root.get("lsd_slave_obj"):  participants.append(root["lsd_slave_obj"])
             # --- PHASE 1: BAKE & DETACH ---
+            to_delete = {root}
             for hook_empty in participants:
                 if not (hook_empty and hook_empty.name in bpy.data.objects): continue
+                
+                # If it's an offset hook, delete the entire offset line assembly
+                if hook_empty.get("lsd_is_offset_hook"):
+                    offset_root = hook_empty if "StartHook" in hook_empty.name else hook_empty.parent
+                    if offset_root:
+                        to_delete.add(offset_root)
+                        for child in offset_root.children:
+                            to_delete.add(child)
+                            for grandchild in child.children:
+                                to_delete.add(grandchild)
+                # If it's a mesh hook, bake it and mark for deletion
+                elif hook_empty.get("lsd_anchor") or hook_empty.name.startswith("Hook_Dim_Obj"):
+                    to_delete.add(hook_empty)
+                    
                 # Find all meshes driven by this hook
                 for scene_obj in bpy.data.objects:
                     if scene_obj.type != 'MESH': continue
@@ -2945,7 +2990,6 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             finally:
                                 scene_obj.select_set(False)
             # --- PHASE 2: PURGE ASSEMBLY ---
-            to_delete = {root}
             for child in root.children:
                 if child: to_delete.add(child)
                 for grandchild in child.children:
@@ -2984,6 +3028,197 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                 context.view_layer.objects.active = original_act
         self.report({'INFO'}, f"Purged {removed_count} Dimension(s) and associated mechatronic links.")
         return {'FINISHED'}
+class LSD_OT_Manually_Draw_Offset_Line(bpy.types.Operator):
+    """Draw a dimension offset line manually by clicking in the viewport"""
+    bl_idname = "lsd.manually_draw_offset_line"
+    bl_label = "Manually Draw Offset Line"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    use_snapping: bpy.props.BoolProperty(default=False)
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode in {'OBJECT', 'EDIT_MESH'}
+
+    def invoke(self, context, event):
+        if context.space_data.type != 'VIEW_3D':
+            self.report({'WARNING'}, "Active space must be a View3d")
+            return {'CANCELLED'}
+
+        self.obj1 = context.active_object
+        if not self.obj1:
+            self.report({'WARNING'}, "Please select an object, mesh, or hook first.")
+            return {'CANCELLED'}
+
+        self.initial_mode = context.mode
+
+        if self.initial_mode == 'EDIT_MESH' and self.obj1.type == 'MESH':
+            import bmesh
+            import mathutils
+            bm = bmesh.from_edit_mesh(self.obj1.data)
+            bm.verts.ensure_lookup_table()
+            sel_verts = [v for v in bm.verts if v.select]
+            if not sel_verts:
+                self.report({'WARNING'}, "No vertices selected.")
+                return {'CANCELLED'}
+            pts = [self.obj1.matrix_world @ v.co.copy() for v in sel_verts]
+            center = sum(pts, mathutils.Vector()) / len(pts)
+            self.p1 = center
+            
+            bpy.ops.object.mode_set(mode='OBJECT')
+            self.hook1 = bpy.data.objects.new(f"{self.obj1.name}_StartHook", None)
+            context.collection.objects.link(self.hook1)
+            self.hook1.empty_display_type = 'PLAIN_AXES'
+            self.hook1.empty_display_size = 0.5
+            self.hook1.location = self.p1
+            self.hook1["lsd_is_offset_hook"] = "START"
+            
+            mod = self.obj1.modifiers.new(name="Offset_Hook", type='HOOK')
+            mod.object = self.hook1
+            
+            context.view_layer.objects.active = self.obj1
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.object.hook_assign(modifier="Offset_Hook")
+            bpy.ops.object.mode_set(mode='OBJECT')
+        else:
+            self.p1 = self.obj1.matrix_world.translation.copy()
+            
+            if self.obj1.type == 'EMPTY' and "anchor" in self.obj1.name.lower() or "hook" in self.obj1.name.lower():
+                self.hook1 = self.obj1
+            else:
+                self.hook1 = bpy.data.objects.new(f"{self.obj1.name}_StartHook", None)
+                context.collection.objects.link(self.hook1)
+                self.hook1.empty_display_type = 'PLAIN_AXES'
+                self.hook1.empty_display_size = 0.5
+                self.hook1.location = self.p1
+                self.hook1["lsd_is_offset_hook"] = "START"
+                
+                # Parent the selected object to the newly created hook so the hook acts as a handle
+                bpy.ops.object.select_all(action='DESELECT')
+                self.obj1.select_set(True)
+                self.hook1.select_set(True)
+                context.view_layer.objects.active = self.hook1
+                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+        self.use_snapping = False
+        context.workspace.status_text_set("Draw Offset: Click to place SECOND point (Depth 0 Viewplane) | [B] Toggle Snapping | [ESC] Cancel")
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type in {'RIGHTMOUSE', 'ESC'}:
+            context.workspace.status_text_set(None)
+            return {'CANCELLED'}
+
+        if event.type == 'B' and event.value == 'PRESS':
+            self.use_snapping = not self.use_snapping
+            if self.use_snapping:
+                context.workspace.status_text_set("Draw Offset: Click to place SECOND point (SNAPPING ENABLED) | [B] Toggle Snapping | [ESC] Cancel")
+            else:
+                context.workspace.status_text_set("Draw Offset: Click to place SECOND point (Depth 0 Viewplane) | [B] Toggle Snapping | [ESC] Cancel")
+            return {'RUNNING_MODAL'}
+
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            import mathutils
+            from bpy_extras import view3d_utils
+            region = context.region
+            rv3d = context.region_data
+            coord = event.mouse_region_x, event.mouse_region_y
+
+            if self.use_snapping:
+                view_vector = view3d_utils.region_2d_to_vector_3d(region, rv3d, coord)
+                ray_origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, coord)
+                
+                res = context.scene.ray_cast(context.view_layer.depsgraph, ray_origin, view_vector)
+                result, location, normal, index, obj, matrix = res
+                
+                if result:
+                    if obj.type == 'MESH':
+                        depsgraph = context.evaluated_depsgraph_get()
+                        eval_obj = obj.evaluated_get(depsgraph)
+                        mesh = eval_obj.to_mesh()
+                        
+                        closest_v = None
+                        min_dist = float('inf')
+                        for v in mesh.vertices:
+                            v_world = obj.matrix_world @ v.co
+                            dist = (v_world - location).length
+                            if dist < min_dist:
+                                min_dist = dist
+                                closest_v = v_world
+                                
+                        closest_f = None
+                        min_dist_f = float('inf')
+                        for f in mesh.polygons:
+                            f_world = obj.matrix_world @ f.center
+                            dist = (f_world - location).length
+                            if dist < min_dist_f:
+                                min_dist_f = dist
+                                closest_f = f_world
+                                
+                        if closest_v and closest_f:
+                            if min_dist < min_dist_f:
+                                self.p2 = closest_v
+                            else:
+                                self.p2 = closest_f
+                        else:
+                            self.p2 = location
+                        eval_obj.to_mesh_clear()
+                    else:
+                        self.p2 = location
+                else:
+                    self.report({'WARNING'}, "No geometry hit! Disabling snapping or click on geometry.")
+                    return {'RUNNING_MODAL'}
+            else:
+                depth_location = context.scene.cursor.location
+                self.p2 = view3d_utils.region_2d_to_location_3d(region, rv3d, coord, depth_location)
+
+            self.hook2 = bpy.data.objects.new("Offset_EndHook", None)
+            context.collection.objects.link(self.hook2)
+            self.hook2.empty_display_type = 'PLAIN_AXES'
+            self.hook2.empty_display_size = 0.5
+            self.hook2.location = self.p2
+            self.hook2["lsd_is_offset_hook"] = "END"
+
+            # The first hook should always be parented to the second hook
+            bpy.ops.object.select_all(action='DESELECT')
+            self.hook1.select_set(True)
+            self.hook2.select_set(True)
+            context.view_layer.objects.active = self.hook2
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+
+            from . import generators
+            line_mesh = generators.create_dimension_line_mesh("Standalone_Offset")
+            line_obj = bpy.data.objects.new("Standalone_Offset_Line", line_mesh)
+            context.collection.objects.link(line_obj)
+            line_obj.parent = self.hook1
+            line_obj.location = (0, 0, 0)
+            
+            line_obj.lsd_is_standalone_offset = True
+            line_obj.scale.z = (self.p2 - self.p1).length
+            
+            from . import core
+            line_mat = core.get_or_create_line_material(line_obj)
+            line_obj.active_material = line_mat
+            line_obj.color = line_mat.diffuse_color
+            
+            con_track = line_obj.constraints.new('TRACK_TO')
+            con_track.target = self.hook2
+            con_track.track_axis = 'TRACK_Z'
+            con_track.up_axis = 'UP_Y'
+            
+            bpy.ops.object.select_all(action='DESELECT')
+            context.view_layer.objects.active = line_obj
+            line_obj.select_set(True)
+
+            if self.initial_mode == 'EDIT_MESH':
+                bpy.ops.object.mode_set(mode='EDIT')
+
+            context.workspace.status_text_set(None)
+            self.report({'INFO'}, "Standalone Offset Line Generated!")
+            return {'FINISHED'}
+
+        return {'RUNNING_MODAL'}
 class LSD_OT_Add_Dimension(bpy.types.Operator):
     """
     Generate a parametric dimension between two points.
@@ -3131,9 +3366,23 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                 # Otherwise, generate a fresh hook anchor.
                 h1, h2 = None, None
                 def resolve_anchor(obj, measured_p):
-                    # 1. Direct pass-through if the object is already a hook/anchor
-                    if obj.get("lsd_anchor") or obj.get("lsd_is_dimension_hook"):
+                    # 1. Direct pass-through if the object is already a hook/anchor or EMPTY
+                    if obj.type == 'EMPTY' or obj.get("lsd_anchor") or obj.get("lsd_is_dimension_hook") or obj.get("lsd_is_offset_hook"):
                         return obj
+                    # 1.5 Check if the object is parented to an offset line hook
+                    if getattr(obj, "lsd_is_standalone_offset", False):
+                        hook1 = obj.parent
+                        track_con = next((c for c in obj.constraints if c.type == 'TRACK_TO'), None)
+                        hook2 = track_con.target if track_con else None
+                        if hook1 and hook2:
+                            d1 = (hook1.matrix_world.translation - measured_p).length
+                            d2 = (hook2.matrix_world.translation - measured_p).length
+                            return hook1 if d1 < d2 else hook2
+                        elif hook1:
+                            return hook1
+                    
+                    if obj.parent and (obj.parent.get("lsd_is_offset_hook") or "StartHook" in obj.parent.name or "Offset_EndHook" in obj.parent.name):
+                        return obj.parent
                     # 2. Search for existing LSD-controlled hook modifier on mesh objects
                     if obj.type == 'MESH':
                         for mod in obj.modifiers:
@@ -6198,7 +6447,8 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
                 return {'CANCELLED'}
             self.active_obj = context.active_object
             self.initial_locs = {obj.name: obj.location.copy() for obj in context.selected_objects}
-            self.origin_world = self.active_obj.location.copy()
+            self.initial_world_locs = {obj.name: obj.matrix_world.translation.copy() for obj in context.selected_objects}
+            self.origin_world = self.active_obj.matrix_world.translation.copy()
             
         self.init_mouse_x = event.mouse_region_x
         self.init_mouse_y = event.mouse_region_y
@@ -6424,7 +6674,10 @@ class LSD_OT_Directional_Translate(bpy.types.Operator):
             bmesh.update_edit_mesh(self.active_obj.data)
         else:
             for obj in context.selected_objects:
-                obj.location = self.initial_locs[obj.name] + displacement
+                if obj.parent:
+                    obj.matrix_world.translation = self.initial_world_locs[obj.name] + displacement
+                else:
+                    obj.location = self.initial_locs[obj.name] + displacement
                 
         # Force a viewport redraw to ensure the user sees the update instantly
         context.area.tag_redraw()
@@ -6813,6 +7066,9 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
                 
             if not obj.animation_data or not obj.animation_data.action:
                 base_action = bpy.data.actions.new(name=f"{obj.name}_Base_Layer")
+                if hasattr(base_action, 'slots'):
+                    try: base_action.slots.new(for_id=obj)
+                    except: pass
                 obj.animation_data.action = base_action
                 anchor_frame = 1
                 
@@ -6822,14 +7078,22 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
                 # so it would just leave the mesh frozen in whatever pose Layer 2 left it in!
                 try:
                     obj.keyframe_insert(data_path="location", frame=1)
-                    obj.keyframe_insert(data_path="rotation_euler", frame=1)
-                    obj.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                    if obj.rotation_mode == 'QUATERNION':
+                        obj.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                    elif obj.rotation_mode == 'AXIS_ANGLE':
+                        obj.keyframe_insert(data_path="rotation_axis_angle", frame=1)
+                    else:
+                        obj.keyframe_insert(data_path="rotation_euler", frame=1)
                     obj.keyframe_insert(data_path="scale", frame=1)
                     if obj.type == 'ARMATURE' and obj.pose:
                         for pbone in obj.pose.bones:
                             pbone.keyframe_insert(data_path="location", frame=1)
-                            pbone.keyframe_insert(data_path="rotation_euler", frame=1)
-                            pbone.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                            if pbone.rotation_mode == 'QUATERNION':
+                                pbone.keyframe_insert(data_path="rotation_quaternion", frame=1)
+                            elif pbone.rotation_mode == 'AXIS_ANGLE':
+                                pbone.keyframe_insert(data_path="rotation_axis_angle", frame=1)
+                            else:
+                                pbone.keyframe_insert(data_path="rotation_euler", frame=1)
                             pbone.keyframe_insert(data_path="scale", frame=1)
                 except:
                     pass
@@ -6849,6 +7113,204 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             base_layer.is_locked = True
             
             base_track = obj.animation_data.nla_tracks.new()
+            base_track.name = base_layer.name
+            base_layer.track_name = base_track.name
+            base_track.mute = False
+            
+            base_strip = base_track.strips.new(name=base_layer.name, start=anchor_frame, action=base_action)
+            base_strip.blend_type = 'REPLACE'
+            base_strip.extrapolation = 'HOLD'
+            if hasattr(base_strip, 'use_sync_length'):
+                base_strip.use_sync_length = False
+            base_strip.frame_start = -100000
+            base_strip.frame_end = 100000
+            if base_strip.action:
+                base_strip.action_frame_start = -100000
+                base_strip.action_frame_end = 100000
+        
+        layer = settings.layers.add()
+        
+        layer_count = sum(1 for l in settings.layers if l.name != "Base Layer")
+        layer.name = f"Layer {layer_count}"
+        
+        if obj:
+            if not obj.animation_data:
+                obj.animation_data_create()
+            track = obj.animation_data.nla_tracks.new()
+            track.name = layer.name
+            layer.track_name = track.name
+            
+            new_action = bpy.data.actions.new(name=f"{obj.name}_{layer.name}")
+            if hasattr(new_action, 'slots'):
+                try: new_action.slots.new(for_id=obj)
+                except: pass
+            
+            strip = track.strips.new(name=layer.name, start=1, action=new_action)
+            strip.blend_type = 'COMBINE'
+            strip.extrapolation = 'HOLD'
+            if hasattr(strip, 'use_sync_length'):
+                strip.use_sync_length = False
+            strip.frame_start = -100000
+            strip.frame_end = 100000
+            if strip.action:
+                strip.action_frame_start = -100000
+                strip.action_frame_end = 100000
+                
+        settings.active_layer_index = len(settings.layers) - 1
+        
+        if context.view_layer:
+            context.view_layer.update()
+            
+        anim_core.update_active_layer(settings, context)
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
+    bl_idname = "lsd.anim_layer_remove"
+    bl_label = "Remove Animation Layer"
+    def execute(self, context):
+        settings = context.scene.lsd_anim_settings
+        if settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
+            settings.layers.remove(settings.active_layer_index)
+            settings.active_layer_index = max(0, settings.active_layer_index - 1)
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Layer_Move(bpy.types.Operator):
+    bl_idname = "lsd.anim_layer_move"
+    bl_label = "Move Animation Layer"
+    direction: bpy.props.EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
+    def execute(self, context):
+        settings = context.scene.lsd_anim_settings
+        idx = settings.active_layer_index
+        if self.direction == 'UP' and idx > 0:
+            settings.layers.move(idx, idx - 1)
+            settings.active_layer_index -= 1
+        elif self.direction == 'DOWN' and idx < len(settings.layers) - 1:
+            settings.layers.move(idx, idx + 1)
+            settings.active_layer_index += 1
+        return {'FINISHED'}
+
+class LSD_OT_Anim_Merge_Bake(bpy.types.Operator):
+    bl_idname = "lsd.anim_merge_bake"
+    bl_label = "Merge / Bake"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Duplicate_Layer(bpy.types.Operator):
+    bl_idname = "lsd.anim_duplicate_layer"
+    bl_label = "Duplicate Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Extract_Bones(bpy.types.Operator):
+    bl_idname = "lsd.anim_extract_bones"
+    bl_label = "Extract Selected Bones"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Extract_Keys(bpy.types.Operator):
+    bl_idname = "lsd.anim_extract_keys"
+    bl_label = "Extract Marked Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Import_Selected_Keyframes(bpy.types.Operator):
+    bl_idname = "lsd.anim_import_selected_keyframes"
+    bl_label = "Import Selected Keyframes to Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Bake_Layers_To_Keyframes(bpy.types.Operator):
+    bl_idname = "lsd.anim_bake_layers_to_keyframes"
+    bl_label = "Bake Layers to Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Select_Bones(bpy.types.Operator):
+    bl_idname = "lsd.anim_select_bones"
+    bl_label = "Select Bones in Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Reset_Key_Layer(bpy.types.Operator):
+    bl_idname = "lsd.anim_reset_key_layer"
+    bl_label = "Reset Key Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Multikey_Edit(bpy.types.Operator):
+    bl_idname = "lsd.anim_multikey_edit"
+    bl_label = "Edit Selected Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Cyclic_Fcurves(bpy.types.Operator):
+    bl_idname = "lsd.anim_cyclic_fcurves"
+    bl_label = "Cyclic Fcurves"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Remove_Fcurves(bpy.types.Operator):
+    bl_idname = "lsd.anim_remove_fcurves"
+    bl_label = "Remove Fcurves"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Custom_Frame_Range(bpy.types.Operator):
+    bl_idname = "lsd.anim_custom_frame_range"
+    bl_label = "Custom Frame Range"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Sync_To_Action(bpy.types.Operator):
+    bl_idname = "lsd.anim_sync_to_action"
+    bl_label = "Sync to Action"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Boolean_Pro(bpy.types.Operator):
+    bl_idname = "lsd.nm_boolean_pro"
+    bl_label = "Boolean"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Surface_Project(bpy.types.Operator):
+    bl_idname = "lsd.nm_surface_project"
+    bl_label = "Surface Project"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Surface_Insert(bpy.types.Operator):
+    bl_idname = "lsd.nm_surface_insert"
+    bl_label = "Surface Insert"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Normal_Weighted(bpy.types.Operator):
+    bl_idname = "lsd.nm_normal_weighted"
+    bl_label = "Weighted Normals"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_NM_Apply_Modifiers(bpy.types.Operator):
+    bl_idname = "lsd.nm_apply_modifiers"
+    bl_label = "Apply All Modifiers"
+    def execute(self, context): return {'FINISHED'}
+
+# --- Paint Layers Operators ---
+class LSD_OT_Paint_Layer_Add(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_add"
+    bl_label = "Add Paint Layer"
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        new_layer = layers.add()
+        new_layer.name = f"Layer {len(layers)}"
+        context.scene.lsd_active_paint_layer_index = len(layers) - 1
+        return {'FINISHED'}
+
+class LSD_OT_Paint_Layer_Remove(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_remove"
+    bl_label = "Remove Paint Layer"
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        idx = context.scene.lsd_active_paint_layer_index
+        if len(layers) > 0 and 0 <= idx < len(layers):
+            layers.remove(idx)
+            if context.scene.lsd_active_paint_layer_index >= len(layers):
+                context.scene.lsd_active_paint_layer_index = max(0, len(layers) - 1)
+        return {'FINISHED'}
+
+class LSD_OT_Paint_Layer_Move(bpy.types.Operator):
+    bl_idname = "lsd.paint_layer_move"
+    bl_label = "Move Paint Layer"
+    direction: bpy.props.EnumProperty(items=[('UP', 'Up', ''), ('DOWN', 'Down', '')])
+    
+    def execute(self, context):
+        layers = context.scene.lsd_paint_layers
+        idx = context.scene.lsd_active_paint_layer_index
+        if self.direction == 'UP' and idx > 0:
             base_track.name = base_layer.name
             base_layer.track_name = base_track.name
             base_track.mute = False
@@ -6940,6 +7402,16 @@ class LSD_OT_Anim_Extract_Bones(bpy.types.Operator):
 class LSD_OT_Anim_Extract_Keys(bpy.types.Operator):
     bl_idname = "lsd.anim_extract_keys"
     bl_label = "Extract Marked Keyframes"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Import_Selected_Keyframes(bpy.types.Operator):
+    bl_idname = "lsd.anim_import_selected_keyframes"
+    bl_label = "Import Selected Keyframes to Layer"
+    def execute(self, context): return {'FINISHED'}
+
+class LSD_OT_Anim_Bake_Layers_To_Keyframes(bpy.types.Operator):
+    bl_idname = "lsd.anim_bake_layers_to_keyframes"
+    bl_label = "Bake Layers to Keyframes"
     def execute(self, context): return {'FINISHED'}
 
 class LSD_OT_Anim_Select_Bones(bpy.types.Operator):
@@ -7050,30 +7522,164 @@ class LSD_OT_Paint_Layer_Select(bpy.types.Operator):
         context.scene.lsd_active_paint_layer_index = self.index
         return {'FINISHED'}
 
+class LSD_OT_SnapToNearestKeyframe(bpy.types.Operator):
+    """Snap to the nearest frame with keyframes on the timeline"""
+    bl_idname = "lsd.snap_to_nearest_keyframe"
+    bl_label = "Snap to Nearest Keyframe"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.animation_data and context.active_object.animation_data.action
+
+    def execute(self, context):
+        obj = context.active_object
+        action = obj.animation_data.action
+        curr_frame = context.scene.frame_current
+        
+        keyframes = set()
+        for fcurve in action.fcurves:
+            for key in fcurve.keyframe_points:
+                keyframes.add(int(key.co.x))
+                
+        if not keyframes:
+            self.report({'WARNING'}, "No keyframes found")
+            return {'CANCELLED'}
+            
+        closest_frame = None
+        min_dist = float('inf')
+        
+        for kf in keyframes:
+            if kf == curr_frame:
+                continue
+            dist = abs(kf - curr_frame)
+            if dist < min_dist:
+                min_dist = dist
+                closest_frame = kf
+                
+        if closest_frame is not None:
+            context.scene.frame_set(closest_frame)
+            self.report({'INFO'}, f"Snapped to frame {closest_frame}")
+        else:
+            self.report({'WARNING'}, "Already on the only keyframe")
+            
+        return {'FINISHED'}
+
+
+class LSD_OT_SnapToKeyframe(bpy.types.Operator):
+    """Snap to nearest past or future keyframe"""
+    bl_idname = "lsd.snap_to_keyframe"
+    bl_label = "Snap to Keyframe"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    direction: bpy.props.EnumProperty(items=[('PAST', 'Past', ''), ('FUTURE', 'Future', '')])
+    
+    @classmethod
+    def poll(cls, context):
+        return context.active_object and context.active_object.animation_data
+        
+    def execute(self, context):
+        obj = context.active_object
+        curr_frame = context.scene.frame_current
+        keyframes = set()
+            
+        if not keyframes and obj.animation_data and obj.animation_data.action:
+            # Fallback robust extraction
+            fcurves_list = []
+            if hasattr(obj.animation_data.action, "fcurves"):
+                fcurves_list = obj.animation_data.action.fcurves
+            elif hasattr(obj.animation_data, "action_slot"):
+                try:
+                    from bpy_extras import anim_utils
+                    cb = anim_utils.action_get_channelbag_for_slot(obj.animation_data.action, obj.animation_data.action_slot)
+                    if cb and hasattr(cb, "fcurves"):
+                        fcurves_list = cb.fcurves
+                except Exception:
+                    pass
+            
+            for fcurve in fcurves_list:
+                if hasattr(fcurve, "keyframe_points"):
+                    for kp in fcurve.keyframe_points:
+                        keyframes.add(int(kp.co.x))
+                        
+        if not keyframes:
+            self.report({'WARNING'}, "No keyframes found")
+            return {'CANCELLED'}
+            
+        target_frame = None
+        
+        if self.direction == 'PAST':
+            past_kfs = [k for k in keyframes if k < curr_frame]
+            if past_kfs:
+                target_frame = max(past_kfs)
+        elif self.direction == 'FUTURE':
+            future_kfs = [k for k in keyframes if k > curr_frame]
+            if future_kfs:
+                target_frame = min(future_kfs)
+                
+        if target_frame is not None:
+            context.scene.frame_set(target_frame)
+            self.report({'INFO'}, f"Snapped to frame {target_frame}")
+        else:
+            self.report({'WARNING'}, f"No {self.direction.lower()} keyframes found")
+            
+        return {'FINISHED'}
+
+class LSD_OT_Global_Math_Input(bpy.types.Operator):
+    """Global Math Calculator"""
+    bl_idname = "lsd.global_math_input"
+    bl_label = "Math Input"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    
+    expression: bpy.props.StringProperty(name="Expression", description="Enter math expression")
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "lsd_enable_math_input", False)
+
+    def execute(self, context):
+        try:
+            import math, re
+            allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith("__")}
+            expr = self.expression
+            expr = re.sub(r'(\d|\))\s*\(', r'\1*(', expr)
+            result = eval(expr, {"__builtins__": {}}, allowed_names)
+            context.window_manager.clipboard = str(result)
+            self.report({'INFO'}, f"Result: {result} (Copied to Clipboard)")
+        except Exception as e:
+            self.report({'ERROR'}, f"Invalid Math: {e}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
 def register():
     CLASSES = [
-    LSD_OT_NM_Boolean_Pro,
-    LSD_OT_NM_Surface_Project,
-    LSD_OT_NM_Surface_Insert,
-    LSD_OT_NM_Normal_Weighted,
-    LSD_OT_NM_Apply_Modifiers,
+        LSD_OT_NM_Boolean_Pro,
+        LSD_OT_NM_Surface_Project,
+        LSD_OT_NM_Surface_Insert,
+        LSD_OT_NM_Normal_Weighted,
+        LSD_OT_NM_Apply_Modifiers,
 
-    LSD_OT_Sync_Active_Layer,
-    LSD_OT_Anim_Refresh_Sync,
-    LSD_OT_Anim_Layer_Add,
-    LSD_OT_Anim_Layer_Remove,
-    LSD_OT_Anim_Layer_Move,
-    LSD_OT_Anim_Merge_Bake,
-    LSD_OT_Anim_Duplicate_Layer,
-    LSD_OT_Anim_Extract_Bones,
-    LSD_OT_Anim_Extract_Keys,
-    LSD_OT_Anim_Select_Bones,
-    LSD_OT_Anim_Reset_Key_Layer,
-    LSD_OT_Anim_Multikey_Edit,
-    LSD_OT_Anim_Cyclic_Fcurves,
-    LSD_OT_Anim_Remove_Fcurves,
-    LSD_OT_Anim_Custom_Frame_Range,
-    LSD_OT_Anim_Sync_To_Action,
+        LSD_OT_Sync_Active_Layer,
+        LSD_OT_Anim_Refresh_Sync,
+        LSD_OT_Anim_Layer_Add,
+        LSD_OT_Anim_Layer_Remove,
+        LSD_OT_Anim_Layer_Move,
+        LSD_OT_Anim_Merge_Bake,
+        LSD_OT_Anim_Duplicate_Layer,
+        LSD_OT_Anim_Extract_Bones,
+        LSD_OT_Anim_Extract_Keys,
+        LSD_OT_Anim_Import_Selected_Keyframes,
+        LSD_OT_Anim_Bake_Layers_To_Keyframes,
+        LSD_OT_Anim_Select_Bones,
+        LSD_OT_Anim_Reset_Key_Layer,
+        LSD_OT_Anim_Multikey_Edit,
+        LSD_OT_Anim_Cyclic_Fcurves,
+        LSD_OT_Anim_Remove_Fcurves,
+        LSD_OT_Anim_Custom_Frame_Range,
+        LSD_OT_Anim_Sync_To_Action,
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,
@@ -7085,7 +7691,7 @@ def register():
         LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
-        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
+        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_Manually_Draw_Offset_Line, LSD_OT_AddModifier,
         LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
         LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
         LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
@@ -7099,9 +7705,11 @@ def register():
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
         LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions,
+        LSD_OT_NavigateToDimensionGroups,
         LSD_OT_Apply_Smart_Skin_Thickness, LSD_OT_Apply_Smart_Skin_Transition,
         LSD_OT_Init_Smart_Skin_Data, LSD_OT_Setup_Skin_Modifier,
-        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate
+        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate,
+        LSD_OT_SnapToKeyframe, LSD_OT_Global_Math_Input
     ]
     for cls in CLASSES:
         if hasattr(cls, 'bl_rna'):
@@ -7109,29 +7717,33 @@ def register():
                 bpy.utils.register_class(cls)
             except Exception as e:
                 print(f"LSD Operator Register Warning: Could not register {cls.__name__}: {e}")
+
 def unregister():
     CLASSES = [
-    LSD_OT_NM_Boolean_Pro,
-    LSD_OT_NM_Surface_Project,
-    LSD_OT_NM_Surface_Insert,
-    LSD_OT_NM_Normal_Weighted,
-    LSD_OT_NM_Apply_Modifiers,
+        LSD_OT_NM_Boolean_Pro,
+        LSD_OT_NM_Surface_Project,
+        LSD_OT_NM_Surface_Insert,
+        LSD_OT_NM_Normal_Weighted,
+        LSD_OT_NM_Apply_Modifiers,
 
-    LSD_OT_Sync_Active_Layer,
-    LSD_OT_Anim_Layer_Add,
-    LSD_OT_Anim_Layer_Remove,
-    LSD_OT_Anim_Layer_Move,
-    LSD_OT_Anim_Merge_Bake,
-    LSD_OT_Anim_Duplicate_Layer,
-    LSD_OT_Anim_Extract_Bones,
-    LSD_OT_Anim_Extract_Keys,
-    LSD_OT_Anim_Select_Bones,
-    LSD_OT_Anim_Reset_Key_Layer,
-    LSD_OT_Anim_Multikey_Edit,
-    LSD_OT_Anim_Cyclic_Fcurves,
-    LSD_OT_Anim_Remove_Fcurves,
-    LSD_OT_Anim_Custom_Frame_Range,
-    LSD_OT_Anim_Sync_To_Action,
+        LSD_OT_Sync_Active_Layer,
+        LSD_OT_Anim_Refresh_Sync,
+        LSD_OT_Anim_Layer_Add,
+        LSD_OT_Anim_Layer_Remove,
+        LSD_OT_Anim_Layer_Move,
+        LSD_OT_Anim_Merge_Bake,
+        LSD_OT_Anim_Duplicate_Layer,
+        LSD_OT_Anim_Extract_Bones,
+        LSD_OT_Anim_Extract_Keys,
+        LSD_OT_Anim_Import_Selected_Keyframes,
+        LSD_OT_Anim_Bake_Layers_To_Keyframes,
+        LSD_OT_Anim_Select_Bones,
+        LSD_OT_Anim_Reset_Key_Layer,
+        LSD_OT_Anim_Multikey_Edit,
+        LSD_OT_Anim_Cyclic_Fcurves,
+        LSD_OT_Anim_Remove_Fcurves,
+        LSD_OT_Anim_Custom_Frame_Range,
+        LSD_OT_Anim_Sync_To_Action,
         LSD_OT_Quick_SDF_Boolean, LSD_OT_Toggle_Cutter_Visibility,
         LSD_OT_CreateCamera, LSD_OT_Camera_Setup, LSD_OT_Camera_Look_Through,
         LSD_OT_Generate_Collision_Mesh, LSD_OT_Purge_Collision, LSD_OT_Asset_Clear, LSD_OT_Asset_Edit_External,
@@ -7143,7 +7755,8 @@ def unregister():
         LSD_UL_SlinkyHooks_List, LSD_OT_Paint_SetupBrush,
         LSD_OT_ExportGazeboWorld, LSD_OT_LinkChainDriver, LSD_OT_AddBoolean, LSD_OT_AddParametricAnchor,
         LSD_OT_AddMarker, LSD_OT_ToggleHookPlacement, LSD_OT_CleanupAnchor, LSD_OT_BakeAnchor,
-        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_AddModifier,
+        LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_Manually_Draw_Offset_Line, LSD_OT_AddModifier,
+        LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
         LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
         LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
         LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject,
@@ -7156,10 +7769,11 @@ def unregister():
         LSD_OT_AccurateScale, LSD_OT_CommitPathAlignment,
         LSD_OT_SelectObjectByName, LSD_OT_AddToDimensionMaster, LSD_OT_RemoveFromDimensionMaster, LSD_OT_BakeDimensionsMaster,
         LSD_OT_ImportGroupedDimensionsBack, LSD_OT_ClearGroupedDimensions, LSD_OT_AlignAllSelectedDimensions,
+        LSD_OT_NavigateToDimensionGroups,
         LSD_OT_Apply_Smart_Skin_Thickness, LSD_OT_Apply_Smart_Skin_Transition,
         LSD_OT_Init_Smart_Skin_Data, LSD_OT_Setup_Skin_Modifier,
-        LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
-        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate
+        LSD_OT_Apply_SDF_Booleans, LSD_OT_Directional_Translate,
+        LSD_OT_SnapToKeyframe, LSD_OT_Global_Math_Input
     ]
     for cls in reversed(CLASSES):
         try:

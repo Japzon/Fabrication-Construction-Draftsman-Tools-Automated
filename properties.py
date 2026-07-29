@@ -1517,6 +1517,11 @@ def get_catalogs_items(self, context):
 def register():
 
     try:
+        bpy.utils.register_class(LSD_PG_AnimLibraryItem)
+    except Exception as e:
+        print(f"Warning: Could not register LSD_PG_AnimLibraryItem: {e}")
+        
+    try:
         bpy.utils.register_class(LSD_PG_Animation_Layer)
     except Exception as e:
         print(f"Warning: Could not register LSD_PG_Animation_Layer: {e}")

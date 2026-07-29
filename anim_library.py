@@ -203,15 +203,32 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
         # Assign action
         obj = context.active_object
         if obj and obj.animation_data:
-            obj.animation_data.action = action
-            
-            # Optionally sync it to an NLA strip right away
-            settings.layers[-1].name = action.name
-            settings.layers[-1].track_name = action.name
             try:
                 from . import anim_core
-                anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
-            except: pass
+                # Step 1: Force exit tweak mode so the action isn't locked as read-only by the dependency graph!
+                anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
+                
+                # Step 2: Swap the action on the newly created layer's NLA strip
+                layer = settings.layers[-1]
+                track = obj.animation_data.nla_tracks.get(layer.track_name)
+                if track and track.strips:
+                    strip = track.strips[0]
+                    old_action = strip.action
+                    strip.action = action
+                    if old_action:
+                        bpy.data.actions.remove(old_action)
+                        
+                # Step 3: Rename track and layer to match the library file
+                layer.name = action.name
+                if track:
+                    track.name = action.name
+                    layer.track_name = action.name
+                    
+                # Step 4: Re-enter tweak mode to resume animating
+                anim_core.invisible_tweakmode_swap(context, exit_first=False, enter_second=True)
+                
+            except Exception as e:
+                print(f"Error during library import action swap: {e}")
         
         return {'FINISHED'}
 

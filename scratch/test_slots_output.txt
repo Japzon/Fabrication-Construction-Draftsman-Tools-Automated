@@ -1,0 +1,2 @@
+bone.keyframe_insert result: True
+Bag FCurves length: 3

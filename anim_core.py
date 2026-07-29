@@ -76,8 +76,8 @@ def sync_layer_light(context):
             if track:
                 for strip in track.strips:
                     strip.blend_type = layer.blend_type
-                    strip.influence = 0.0 if (layer.is_muted or layer.is_locked) else layer.influence
-                    strip.mute = layer.is_muted or layer.is_locked
+                    strip.influence = 0.0 if layer.is_muted else layer.influence
+                    strip.mute = layer.is_muted
     
     context.view_layer.update()
     
@@ -88,7 +88,7 @@ def sync_layer_light(context):
         active_layer = settings.layers[settings.active_layer_index]
         if obj.animation_data and obj.animation_data.action:
             for fcurve in get_action_fcurves(obj, obj.animation_data.action):
-                fcurve.mute = (active_layer.is_muted or active_layer.is_locked)
+                fcurve.mute = active_layer.is_muted
     
     context.view_layer.update()
     reset_auto_keyframe_cache()
@@ -133,16 +133,17 @@ def execute_sync_logic(context):
                     strip.blend_type = layer.blend_type
                     
                     # Forcibly drop the strip influence to 0 and explicitly mute the strip itself
-                    strip.influence = 0.0 if (layer.is_muted or layer.is_locked) else layer.influence
-                    strip.mute = layer.is_muted or layer.is_locked
+                    strip.influence = 0.0 if layer.is_muted else layer.influence
+                    strip.mute = layer.is_muted
                     
-                    # Sync strip length to action automatically so we don't misalign action_frame_start offsets
-                    if hasattr(strip, 'use_sync_length'):
-                        strip.use_sync_length = True
-                    
-                    # Force holding the last frame if it's the active strip, 
-                    # allowing users to stack poses predictably without popping out of existence.
                     strip.extrapolation = 'HOLD'
+                    try:
+                        strip.action_frame_start = -100000
+                        strip.action_frame_end = 100000
+                    except: pass
+                    strip.frame_start = -100000
+                    strip.frame_end = 100000
+                    strip.scale = 1.0
             
     active_layer = None
     active_track = None
@@ -183,16 +184,20 @@ def execute_sync_logic(context):
                     strip.extrapolation = 'HOLD'
                     if hasattr(strip, 'use_sync_length'):
                         strip.use_sync_length = False
-                    strip.frame_start = -100000
-                    strip.frame_end = 100000
-                    if strip.action:
+                    try:
                         strip.action_frame_start = -100000
                         strip.action_frame_end = 100000
+                    except: pass
+                    strip.frame_start = -100000
+                    strip.frame_end = 100000
+                    strip.scale = 1.0
                 elif not active_track.strips:
                     # Create an empty strip so tweak mode has something to lock onto and blend type applies
                     empty_action = bpy.data.actions.new(name=active_track.name)
                     if hasattr(empty_action, 'slots'):
-                        try: empty_action.slots.new(for_id=obj)
+                        try: 
+                            slot_name = obj.id_data.name if hasattr(obj, 'id_data') else obj.name
+                            empty_action.slots.new(name=slot_name, id_type=obj.id_type if hasattr(obj, 'id_type') else 'OBJECT')
                         except: pass
                         
                     strip = active_track.strips.new(
@@ -204,22 +209,28 @@ def execute_sync_logic(context):
                     strip.extrapolation = 'HOLD'
                     if hasattr(strip, 'use_sync_length'):
                         strip.use_sync_length = False
-                    strip.frame_start = -100000
-                    strip.frame_end = 100000
-                    if strip.action:
+                    try:
                         strip.action_frame_start = -100000
                         strip.action_frame_end = 100000
+                    except: pass
+                    strip.frame_start = -100000
+                    strip.frame_end = 100000
+                    strip.scale = 1.0
 
                 # Retroactively ensure all existing strips use true infinite mapping to bypass Tweak Mode freeze
                 if active_track.strips:
                     existing_strip = active_track.strips[0]
+                    existing_strip.blend_type = active_layer.blend_type
+                    existing_strip.extrapolation = 'HOLD'
                     if hasattr(existing_strip, 'use_sync_length'):
                         existing_strip.use_sync_length = False
-                    existing_strip.frame_start = -100000
-                    existing_strip.frame_end = 100000
-                    if existing_strip.action:
+                    try:
                         existing_strip.action_frame_start = -100000
                         existing_strip.action_frame_end = 100000
+                    except: pass
+                    existing_strip.frame_start = -100000
+                    existing_strip.frame_end = 100000
+                    existing_strip.scale = 1.0
                 active_track.strips[0].active = True
             except:
                 pass
@@ -232,12 +243,16 @@ def execute_sync_logic(context):
             except: pass
             
             # Ensure the action matches the layer state
-            if active_layer.is_muted or active_layer.is_locked:
-                # Clear the action if locked or muted to prevent accidental base-level edits
+            if active_layer.is_muted:
+                # Clear the action if muted to prevent accidental base-level edits
                 obj.animation_data.action = None
             elif active_track.strips:
                 # Explicitly push the layer's action into the active slot for graph separation
-                obj.animation_data.action = active_track.strips[0].action
+                assigned_action = active_track.strips[0].action
+                obj.animation_data.action = assigned_action
+                if assigned_action and hasattr(obj.animation_data, 'action_slot') and hasattr(assigned_action, 'slots') and assigned_action.slots:
+                    try: obj.animation_data.action_slot = assigned_action.slots[0]
+                    except: pass
                 
             # Aggressively disable NLA track visibility in all Graph Editors so the user only sees the active layer
             for window in context.window_manager.windows:
@@ -319,11 +334,33 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
                     
                 execute_sync_logic(context)
                 
+                # CRITICAL: Force a depsgraph update before entering Tweak Mode. 
+                # If we don't, Blender caches the uninitialized strip state and COMBINE mode acts like REPLACE until the user manually switches layers.
+                if context.view_layer:
+                    context.view_layer.update()
+                
                 if enter_second:
                     try: bpy.ops.nla.tweakmode_enter(isolate_action=False)
                     except:
                         try: bpy.ops.nla.tweakmode_enter()
                         except: pass
+                        
+                # CRITICAL: Force another depsgraph update and tag the object after entering Tweak Mode.
+                # If we don't, Blender's viewport gets stuck displaying the previous layer's poses until the user manually toggles a property like Mute.
+                if context.view_layer:
+                    context.view_layer.update()
+                
+                obj = get_active_object(context)
+                if obj:
+                    obj.update_tag(refresh={'OBJECT', 'DATA'})
+                    
+                    # CRITICAL: Force NLA cache invalidation by quickly toggling the mute state of all tracks.
+                    # This physically mimics the user's manual mute/unmute workaround to fix Blender's C++ NLA cache freezing.
+                    if obj.animation_data:
+                        for t in obj.animation_data.nla_tracks:
+                            orig_mute = t.mute
+                            t.mute = not orig_mute
+                            t.mute = orig_mute
         else:
             # Fallback if region generation failed
             execute_sync_logic(context)
@@ -334,6 +371,13 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
         if target_area and original_type and target_area.type != original_type:
             target_area.type = original_type
         reset_auto_keyframe_cache()
+        
+        # CRITICAL: Force onion skin to instantly flush and rebuild after a tweakmode swap (layer change)
+        try:
+            from . import anim_onion_skin
+            anim_onion_skin._cached_data.clear()
+            anim_onion_skin._cached_keyframe_frames.clear()
+        except: pass
 
 def update_layer_property_light(self, context):
     sync_layer_light(context)

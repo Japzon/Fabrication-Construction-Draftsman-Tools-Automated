@@ -14,8 +14,6 @@ class LSD_PT_Workflow_Optimizer(bpy.types.Panel):
         box.prop(context.scene, "lsd_enable_directional_translate", text="Enable Directional Translate (G)", toggle=True, icon='CON_TRANSLIKE')
         box.prop(context.scene, "lsd_enable_math_input", text="Enable Math Input (=)", toggle=True, icon='CON_SIZELIKE')
         box.prop(context.scene, "lsd_enable_asset_editor", text="Asset Browser Editor", toggle=True, icon='ASSET_MANAGER')
-        box.prop(context.scene, "lsd_enable_auto_keyframe_all", text="Automatic Keyframe Everything", toggle=True, icon='KEYINGSET')
-        
         if context.scene.lsd_enable_directional_translate:
             box.label(text="Select object > Press G > Move mouse > Type distance", icon='INFO')
             box.label(text="Moves exactly in cursor direction.", icon='BLANK1')

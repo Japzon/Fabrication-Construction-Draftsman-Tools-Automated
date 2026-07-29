@@ -1,12 +1,13 @@
 import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
+import time
 import mathutils
 
 _draw_handler = None
 _cached_data = {}
 
-def get_bone_lines(obj, depsgraph):
+def get_bone_lines(obj, depsgraph, bone_names=None):
     lines = []
     if obj.type != 'ARMATURE': return lines
     
@@ -14,6 +15,8 @@ def get_bone_lines(obj, depsgraph):
     mat = eval_obj.matrix_world
     
     for bone in eval_obj.pose.bones:
+        if bone_names is not None and bone.name not in bone_names:
+            continue
         lines.extend([mat @ bone.head, mat @ bone.tail])
             
     return lines
@@ -83,14 +86,35 @@ def draw_callback():
             if not data: continue
             batch = batch_for_shader(shader, 'LINES', {"pos": data})
             _cached_data[frame] = batch
+        elif isinstance(data, dict):
+            if 'full' in data and isinstance(data['full'], list):
+                data['full'] = batch_for_shader(shader, 'LINES', {"pos": data['full']}) if data['full'] else None
+            if 'filtered' in data and isinstance(data['filtered'], list):
+                data['filtered'] = batch_for_shader(shader, 'LINES', {"pos": data['filtered']}) if data['filtered'] else None
+            _cached_data[frame] = data
+            batch = data.get('full')
         else:
             batch = data
             
         is_keyframe = frame in _cached_keyframe_frames
         
+        # When drawing a keyframe highlight (present), use the filtered batch if available
+        # Otherwise use the normal batch
         if getattr(settings, 'onion_skin_show_present', False) and is_keyframe and frame != current_frame:
-            color = list(settings.onion_skin_color_present) + [1.0]
+            if isinstance(_cached_data[frame], dict):
+                batch = _cached_data[frame].get('filtered')
+                if batch is None: batch = _cached_data[frame].get('full')
+            try:
+                sorted_keys = sorted(_cached_keyframe_frames)
+                idx = sorted_keys.index(frame)
+                if idx % 2 == 0:
+                    color = list(settings.onion_skin_color_present) + [1.0]
+                else:
+                    color = list(settings.onion_skin_color_present_2) + [1.0]
+            except Exception:
+                color = list(settings.onion_skin_color_present) + [1.0]
         elif frame < current_frame:
+            if isinstance(_cached_data[frame], dict): batch = _cached_data[frame].get('full')
             if not getattr(settings, 'onion_skin_show_past', True): continue
             base_opacity = settings.onion_skin_opacity_before
             if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before >= max(1, settings.onion_skin_frame_distance):
@@ -101,6 +125,7 @@ def draw_callback():
                     base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
             color = list(settings.onion_skin_color_past) + [base_opacity]
         elif frame > current_frame:
+            if isinstance(_cached_data[frame], dict): batch = _cached_data[frame].get('full')
             if not getattr(settings, 'onion_skin_show_future', True): continue
             base_opacity = settings.onion_skin_opacity_after
             if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after >= max(1, settings.onion_skin_frame_distance):
@@ -115,6 +140,8 @@ def draw_callback():
             # But the real mesh is already there, so it's useless to draw a ghost over it.
             continue
             
+        if batch is None: continue
+            
         shader.bind()
         
         gpu.state.line_width_set(2.0)
@@ -125,10 +152,12 @@ def draw_callback():
 
 _is_building = False
 _cached_keyframe_frames = set()
+_cached_keyframe_bone_data = {} # frame: set of bone names / object names
 
 def build_onion_cache(context=None):
     global _is_building
     global _cached_keyframe_frames
+    global _cached_keyframe_bone_data
     if _is_building: return
     
     if context is None:
@@ -165,6 +194,7 @@ def build_onion_cache(context=None):
         
     frames_to_cache = []
     _cached_keyframe_frames.clear()
+    _cached_keyframe_bone_data.clear()
     
     if getattr(settings, 'onion_skin_show_present', False):
         for obj in target_objs:
@@ -184,14 +214,30 @@ def build_onion_cache(context=None):
                         pass
                 
                 for fcurve in fcurves_list:
+                    if getattr(fcurve, "mute", False):
+                        continue
+                    
+                    # Parse out bone name if it exists (e.g. pose.bones["BoneName"])
+                    target_name = obj.name
+                    if fcurve.data_path.startswith("pose.bones["):
+                        try:
+                            target_name = fcurve.data_path.split('"')[1]
+                        except:
+                            try: target_name = fcurve.data_path.split("'")[1]
+                            except: pass
+                            
                     if hasattr(fcurve, "keyframe_points"):
                         for kp in fcurve.keyframe_points:
                             f = int(kp.co.x)
                             if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
                                 if start_frame <= f <= end_frame:
                                     _cached_keyframe_frames.add(f)
+                                    if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
+                                    _cached_keyframe_bone_data[f].add(target_name)
                             else:
                                 _cached_keyframe_frames.add(f)
+                                if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
+                                _cached_keyframe_bone_data[f].add(target_name)
                             
     first_mult = start_frame - (start_frame % frame_step)
     if first_mult < start_frame:
@@ -227,23 +273,55 @@ def build_onion_cache(context=None):
     
     changed_frame = False
     if frames_to_build:
-        for f in frames_to_build:
-            if f != orig_frame:
-                context.scene.frame_set(f)
-                changed_frame = True
-            
-            # Fetch fresh evaluated depsgraph for this specific frame
-            current_deps = context.evaluated_depsgraph_get()
+        global _is_auto_syncing
+        _is_auto_syncing = True
+        try:
+            for f in frames_to_build:
+                if f != orig_frame:
+                    context.scene.frame_set(f)
+                    changed_frame = True
                 
-            _cached_data[f] = []
-            for obj in target_objs:
-                if obj.type == 'ARMATURE':
-                    _cached_data[f].extend(get_bone_lines(obj, current_deps))
-                elif obj.type == 'MESH':
-                    _cached_data[f].extend(get_mesh_lines(obj, current_deps, settings.onion_skin_display_type))
+                # Fetch fresh evaluated depsgraph for this specific frame
+                current_deps = context.evaluated_depsgraph_get()
                     
-        if changed_frame:
-            context.scene.frame_set(orig_frame)
+                full_lines = []
+                filtered_lines = []
+                
+                for obj in target_objs:
+                    obj_keyframed = False
+                    bone_names = None
+                    
+                    if f in _cached_keyframe_bone_data:
+                        # If this object's name is in the set, the whole object is keyframed
+                        # If any bone names are in the set, we filter to those
+                        if obj.name in _cached_keyframe_bone_data[f]:
+                            obj_keyframed = True
+                        else:
+                            bone_names = _cached_keyframe_bone_data[f]
+                            if any(b in bone_names for b in [pb.name for pb in obj.pose.bones]) if obj.type == 'ARMATURE' else False:
+                                obj_keyframed = True
+                    
+                    if obj.type == 'ARMATURE':
+                        full_lines.extend(get_bone_lines(obj, current_deps))
+                        if obj_keyframed and bone_names:
+                            filtered_lines.extend(get_bone_lines(obj, current_deps, bone_names))
+                        elif obj_keyframed:
+                            filtered_lines.extend(get_bone_lines(obj, current_deps))
+                    elif obj.type == 'MESH':
+                        m_lines = get_mesh_lines(obj, current_deps, settings.onion_skin_display_type)
+                        full_lines.extend(m_lines)
+                        if obj_keyframed:
+                            filtered_lines.extend(m_lines)
+                            
+                if f in _cached_keyframe_frames and getattr(settings, 'onion_skin_keyframe_filter', 'TARGETS') == 'TARGETS':
+                    _cached_data[f] = {'full': full_lines, 'filtered': filtered_lines}
+                else:
+                    _cached_data[f] = full_lines
+                
+        finally:
+            if changed_frame:
+                context.scene.frame_set(orig_frame)
+            _is_auto_syncing = False
     _is_building = False
 
 def onion_skin_timer_update():
@@ -254,26 +332,26 @@ def onion_skin_timer_update():
         
     if not settings: return 1.0
     
+    # Active Transform Intercept: Prevent jitter while the user is actively dragging a bone
     try:
-        from . import core
-        if getattr(core, '_ak_dirty', False) or getattr(core, '_ak_inserting', False):
-            return 0.1
-            
+        from . import anim_core
         obj = bpy.context.active_object
-        if obj and obj.type == 'ARMATURE' and hasattr(core, '_ak_cache') and bpy.context.mode == 'POSE':
+        if obj and obj.type == 'ARMATURE' and bpy.context.mode == 'POSE' and hasattr(anim_core, '_ak_cache'):
             for bone in obj.pose.bones:
-                if bone.name in core._ak_cache:
-                    diff = bone.matrix_basis - core._ak_cache[bone.name]
+                if bone.name in anim_core._ak_cache:
+                    diff = bone.matrix_basis - anim_core._ak_cache[bone.name]
                     if any(abs(v) > 0.0001 for row in diff for v in row):
-                        return 0.1  # Un-keyed pose detected! Do not evaluate depsgraph!
-    except:
+                        return 0.1 # Un-keyed pose detected! Halt cache rebuild to prevent active transform jitter!
+    except Exception:
         pass
     
     if settings.onion_skin_enabled and settings.onion_skin_auto_refresh:
-        # Always force refresh the current frame so the pose is live and never stale!
         curr_frame = bpy.context.scene.frame_current
-        if curr_frame in _cached_data:
-            del _cached_data[curr_frame]
+        
+        # Always force refresh the current frame so the active pose is never stale (unless playing)
+        if not bpy.context.screen.is_animation_playing:
+            if curr_frame in _cached_data:
+                del _cached_data[curr_frame]
                 
         build_onion_cache(bpy.context)
         for window in bpy.context.window_manager.windows:

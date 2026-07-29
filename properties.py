@@ -1136,6 +1136,10 @@ class LSD_PG_SDF_Props(bpy.types.PropertyGroup):
 
 # ------------------------------------------------------------------------
 
+class LSD_PG_AnimLibraryItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Name")
+    filepath: bpy.props.StringProperty(name="Filepath")
+    
 class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="Anim_Layer")
     track_name: bpy.props.StringProperty(name="Track Name", default="")
@@ -1175,6 +1179,7 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
             anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
         except:
             pass
+            
     def update_layers_enabled(self, context):
         try:
             from . import anim_core
@@ -1191,9 +1196,13 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         except:
             pass
 
-    layers_enabled: bpy.props.BoolProperty(name="Turn Animation Layers On", default=False, update=update_layers_enabled)
+    layers_enabled: bpy.props.BoolProperty(name="Enable Animation Layers", default=False, update=update_layers_enabled)
     layers: bpy.props.CollectionProperty(type=LSD_PG_Animation_Layer)
-    active_layer_index: bpy.props.IntProperty(default=-1, update=update_active_idx)
+    active_layer_index: bpy.props.IntProperty(name="Active Layer", default=0, update=update_active_idx)
+    
+    # --- Animation Library ---
+    library_items: bpy.props.CollectionProperty(type=LSD_PG_AnimLibraryItem)
+    active_library_index: bpy.props.IntProperty(name="Active Library Item", default=0)
     show_bake_operators: bpy.props.BoolProperty(default=True)
     
     onion_skin_enabled: bpy.props.BoolProperty(
@@ -1270,18 +1279,30 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default=0.1, min=0.0, max=1.0
     )
     onion_skin_color_past: bpy.props.FloatVectorProperty(
-        name="Onion Skins Past Color", subtype='COLOR', size=3, default=(1.0, 1.0, 0.8), min=0.0, max=1.0
+        name="Onion Skins Past Color", subtype='COLOR', size=3, default=(0.0, 1.0, 0.0), min=0.0, max=1.0
     )
     onion_skin_color_present: bpy.props.FloatVectorProperty(
-        name="Onion Skins with Keyframes Color", subtype='COLOR', size=3, default=(1.0, 1.0, 1.0), min=0.0, max=1.0
+        name="Onion Skins with Keyframes Color 1", subtype='COLOR', size=3, default=(0.7, 0.7, 1.0), min=0.0, max=1.0
+    )
+    onion_skin_color_present_2: bpy.props.FloatVectorProperty(
+        name="Onion Skins with Keyframes Color 2", subtype='COLOR', size=3, default=(1.0, 0.7, 0.7), min=0.0, max=1.0
     )
     onion_skin_color_future: bpy.props.FloatVectorProperty(
-        name="Onion Skins Future Color", subtype='COLOR', size=3, default=(0.9, 0.9, 1.0), min=0.0, max=1.0
+        name="Onion Skins Future Color", subtype='COLOR', size=3, default=(1.0, 1.0, 0.0), min=0.0, max=1.0
     )
     
     onion_skin_show_past: bpy.props.BoolProperty(name="Show Past", default=True)
     onion_skin_show_present: bpy.props.BoolProperty(name="Show Keyframes", default=True)
     onion_skin_show_future: bpy.props.BoolProperty(name="Show Future", default=True)
+    
+    onion_skin_keyframe_filter: bpy.props.EnumProperty(
+        name="Keyframe Filter",
+        items=[
+            ('TARGETS', "Show Persistent Onion Skins for Targets with Keyframes", ""),
+            ('FRAMES', "Show Persistent Onion Skins for Frames with Keyframes", "")
+        ],
+        default='TARGETS'
+    )
     
     affect_selected_bones_only: bpy.props.BoolProperty(default=False)
     inbetween_value: bpy.props.FloatProperty(default=0.8, min=0.0, max=1.0)
@@ -1988,17 +2009,6 @@ def register():
         description="Safely allows for indirect editing/naming/clear assets without needing to open the .blend file directly",
         default=False
     )
-    def update_auto_keyframe_all(self, context):
-        if self.lsd_enable_auto_keyframe_all:
-            context.scene.tool_settings.use_keyframe_insert_auto = True
-        else:
-            context.scene.tool_settings.use_keyframe_insert_auto = False
-    bpy.types.Scene.lsd_enable_auto_keyframe_all = bpy.props.BoolProperty(
-        name="Automatic Keyframe Everything",
-        description="Automatically stores both changed and unmodified poses and transforms when keyframing",
-        default=True,
-        update=update_auto_keyframe_all
-    )
     bpy.types.Scene.lsd_asset_new_name = bpy.props.StringProperty(
         name="New Asset Name",
         description="Type the new name for the selected asset here",
@@ -2073,8 +2083,11 @@ def unregister():
     if hasattr(bpy.types.Scene, "lsd_anim_settings"):
         del bpy.types.Scene.lsd_anim_settings
     try:
-        bpy.utils.unregister_class(LSD_PG_Animation_Settings)
+        bpy.utils.unregister_class(LSD_PG_SDF_Props)
+        
+        bpy.utils.unregister_class(LSD_PG_AnimLibraryItem)
         bpy.utils.unregister_class(LSD_PG_Animation_Layer)
+        bpy.utils.unregister_class(LSD_PG_Animation_Settings)
     except: pass
 
     for cls in reversed(CLASSES):

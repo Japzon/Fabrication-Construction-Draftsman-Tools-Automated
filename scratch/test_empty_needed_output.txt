@@ -1,0 +1,2 @@
+1. rotation_quaternion with INSERTKEY_NEEDED on EMPTY action: True
+FCurves after test 1: 4

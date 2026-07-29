@@ -1,0 +1,2 @@
+1. rotation_quaternion with INSERTKEY_NEEDED: True
+2. rotation_quaternion with INSERTKEY_NEEDED after change: False

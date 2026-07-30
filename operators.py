@@ -7286,16 +7286,14 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
                 except: pass
             
             strip = track.strips.new(name=layer.name, start=1, action=new_action)
-            strip.blend_type = 'COMBINE'
-            strip.extrapolation = 'HOLD'
+            strip.blend_type = 'ADD'
+            strip.extrapolation = 'NOTHING'
             if hasattr(strip, 'use_sync_length'):
-                strip.use_sync_length = False
+                strip.use_sync_length = True
             try:
                 strip.action_frame_start = -100000
                 strip.action_frame_end = 100000
             except: pass
-            strip.frame_start = -100000
-            strip.frame_end = 100000
             strip.scale = 1.0
             
             # Removed default 5-frame blend to prevent single-keyframe influence suppression

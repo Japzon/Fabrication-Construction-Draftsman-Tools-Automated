@@ -42,18 +42,21 @@ def ensure_nla_track(obj, track_name):
 def get_action_fcurves(obj, action):
     """Safely retrieves F-Curves from both legacy Actions and Blender 4.3+ Slotted Actions."""
     fcurves = []
+    if not action: return fcurves
+    
     if hasattr(action, "fcurves"):
         fcurves.extend(action.fcurves)
-    else:
+    elif hasattr(action, "slots"):
+        # For Slotted Actions, we must extract fcurves from the channelbags
         try:
-            # Fallback for Blender 4.3+ Slotted Actions
             from bpy_extras import anim_utils
-            anim_data = obj.animation_data
-            if anim_data and anim_data.action == action and hasattr(anim_data, "action_slot"):
-                channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
-                if channelbag and hasattr(channelbag, "fcurves"):
-                    fcurves.extend(channelbag.fcurves)
-        except:
+            for slot in action.slots:
+                # If obj is provided and we can get the specific slot for this object, great.
+                # Otherwise, just grab from all slots (like when importing)
+                cb = anim_utils.action_get_channelbag_for_slot(action, slot)
+                if cb and hasattr(cb, "fcurves"):
+                    fcurves.extend(cb.fcurves)
+        except Exception:
             pass
     return fcurves
 def sync_layer_light(context):

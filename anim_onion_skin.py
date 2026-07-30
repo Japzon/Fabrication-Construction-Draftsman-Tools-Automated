@@ -199,19 +199,11 @@ def build_onion_cache(context=None):
     if getattr(settings, 'onion_skin_show_present', False):
         for obj in target_objs:
             if obj.animation_data and obj.animation_data.action:
-                fcurves_list = []
-                # Legacy Blender (<4.4)
-                if hasattr(obj.animation_data.action, "fcurves"):
-                    fcurves_list = obj.animation_data.action.fcurves
-                # Animation 2.0 (Blender 4.4+)
-                elif hasattr(obj.animation_data, "action_slot"):
-                    try:
-                        from bpy_extras import anim_utils
-                        cb = anim_utils.action_get_channelbag_for_slot(obj.animation_data.action, obj.animation_data.action_slot)
-                        if cb and hasattr(cb, "fcurves"):
-                            fcurves_list = cb.fcurves
-                    except Exception:
-                        pass
+                try:
+                    from . import anim_core
+                    fcurves_list = anim_core.get_action_fcurves(obj, obj.animation_data.action)
+                except Exception:
+                    fcurves_list = []
                 
                 for fcurve in fcurves_list:
                     if getattr(fcurve, "mute", False):

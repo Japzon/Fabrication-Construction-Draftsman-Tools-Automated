@@ -50,16 +50,27 @@ class LSD_PT_Animation_System_Main:
             # --- Animation Library Subpanel ---
             if hasattr(settings, "library_items"):
                 lib_box = col_main.box()
-                lib_box.label(text="Animation Layer Library", icon='ASSET_MANAGER')
+                header_row = lib_box.row()
+                header_row.label(text="Animation Layer Library", icon='ASSET_MANAGER')
+                
+                # Add custom directory selector operator
+                dir_row = header_row.row(align=True)
+                dir_row.operator("lsd.anim_library_select_dir", icon='FILE_FOLDER', text="")
+                
+                header_row.operator("lsd.anim_library_update_preview", icon='FILE_REFRESH', text="")
                 
                 col = lib_box.column(align=True)
                 row = col.row()
                 row.template_list("LSD_UL_Anim_Library", "", settings, "library_items", settings, "active_library_index", rows=4)
                 
                 col_btn = row.column(align=True)
-                col_btn.operator("lsd.anim_library_refresh", icon='FILE_REFRESH', text="")
+                col_btn.operator("lsd.anim_layer_add", icon='ADD', text="")
+                col_btn.operator("lsd.anim_layer_remove", icon='REMOVE', text="")
+                col_btn.separator()
                 col_btn.operator("lsd.anim_library_export", icon='EXPORT', text="")
                 col_btn.operator("lsd.anim_library_import", icon='IMPORT', text="")
+                col_btn.separator()
+                col_btn.operator("lsd.anim_library_delete", icon='TRASH', text="")
                 
                 # Animated Preview
                 if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):

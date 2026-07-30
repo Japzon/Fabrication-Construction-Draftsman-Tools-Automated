@@ -1164,8 +1164,12 @@ class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
         
     blend_type: bpy.props.EnumProperty(
         name="Blend Type",
-        items=[('REPLACE', "Replace", ""), ('COMBINE', "Combine", "")],
-        default='COMBINE',
+        items=[
+            ('REPLACE', "Replace", ""), 
+            ('ADD', "Add", ""),
+            ('COMBINE', "Combine", "")
+        ],
+        default='ADD',
         update=update_prop_light
     )
     influence: bpy.props.FloatProperty(name="Influence", default=1.0, min=0.0, max=1.0, update=update_prop_light)
@@ -1203,6 +1207,13 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     # --- Animation Library ---
     library_items: bpy.props.CollectionProperty(type=LSD_PG_AnimLibraryItem)
     active_library_index: bpy.props.IntProperty(name="Active Library Item", default=0)
+    
+    custom_library_path: bpy.props.StringProperty(
+        name="Select Animation Layer Folder",
+        subtype='DIR_PATH',
+        default=""
+    )
+    
     show_bake_operators: bpy.props.BoolProperty(default=True)
     
     onion_skin_enabled: bpy.props.BoolProperty(

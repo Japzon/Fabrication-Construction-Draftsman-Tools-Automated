@@ -22,7 +22,11 @@ def get_library_path():
     if settings and settings.custom_library_path and os.path.exists(bpy.path.abspath(settings.custom_library_path)):
         return bpy.path.abspath(settings.custom_library_path)
         
-    blend_path = bpy.data.filepath
+    try:
+        blend_path = bpy.data.filepath
+    except AttributeError:
+        blend_path = ""
+        
     if not blend_path:
         import tempfile
         base_dir = os.path.join(tempfile.gettempdir(), "LSD_Unsaved_Projects")

@@ -51,6 +51,7 @@ class LSD_PT_Animation_System_Main:
             if hasattr(settings, "library_items"):
                 lib_box = col_main.box()
                 header_row = lib_box.row()
+                header_row.prop(settings, "library_enabled", text="", icon='TRIA_DOWN' if settings.library_enabled else 'TRIA_RIGHT', emboss=False)
                 header_row.label(text="Animation Layer Library", icon='ASSET_MANAGER')
                 
                 # Add custom directory selector operator
@@ -58,40 +59,46 @@ class LSD_PT_Animation_System_Main:
                 dir_row.operator("lsd.anim_library_select_dir", icon='FILE_FOLDER', text="")
                 
                 header_row.operator("lsd.anim_library_update_preview", icon='FILE_REFRESH', text="")
+                header_row.prop(settings, "library_enabled", text="", icon='CHECKBOX_HLT' if settings.library_enabled else 'CHECKBOX_DEHLT')
                 
-                lib_box.prop(settings, "preview_capture_interval")
-                
-                col = lib_box.column(align=True)
-                row = col.row()
-                row.template_list("LSD_UL_Anim_Library", "", settings, "library_items", settings, "active_library_index", rows=4)
-                
-                col_btn = row.column(align=True)
+                if settings.library_enabled:
+                    lib_box.prop(settings, "preview_capture_interval")
+                    
+                    col = lib_box.column(align=True)
+                    row = col.row()
+                    row.template_list("LSD_UL_Anim_Library", "", settings, "library_items", settings, "active_library_index", rows=4)
+                    
+                    col_btn = row.column(align=True)
 
-                col_btn.operator("lsd.anim_library_export", icon='EXPORT', text="")
-                col_btn.operator("lsd.anim_library_import", icon='IMPORT', text="")
-                col_btn.separator()
-                col_btn.operator("lsd.anim_library_delete", icon='TRASH', text="")
-                
-                col.separator()
-                col.prop(settings, "import_blend_type", text="Mode")
-                
-                # Animated Preview
-                if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):
-                    item = settings.library_items[settings.active_library_index]
-                    try:
-                        from .. import anim_library
-                        icon_id = anim_library.get_animated_icon_id(item.name)
-                        if icon_id > 0:
-                            box_prev = col.box()
-                            row_prev = box_prev.row(align=True)
-                            row_prev.template_icon(icon_value=icon_id, scale=6.0)
-                    except: pass
+                    col_btn.operator("lsd.anim_library_export", icon='EXPORT', text="")
+                    col_btn.operator("lsd.anim_library_import", icon='IMPORT', text="")
+                    col_btn.separator()
+                    col_btn.operator("lsd.anim_library_delete", icon='TRASH', text="")
+                    
+                    col.separator()
+                    col.prop(settings, "import_blend_type", text="Mode")
+                    
+                    # Animated Preview
+                    if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):
+                        item = settings.library_items[settings.active_library_index]
+                        
+                        box = lib_box.box()
+                        row = box.row()
+                        
+                        import layouts_systems_draftsman_toolkit.anim_library as anim_lib
+                        try:
+                            icon_id = anim_lib.get_animated_icon_id(item.name)
+                            if icon_id:
+                                row.template_icon(icon_value=icon_id, scale=6.0)
+                            else:
+                                row.label(text="No Preview", icon='ERROR')
+                        except: pass
                     
             # --- Animation Layers Subpanel ---
             layers_box = col_main.box()
             row = layers_box.row()
             row.prop(settings, "layers_enabled", text="", icon='TRIA_DOWN' if settings.layers_enabled else 'TRIA_RIGHT', emboss=False)
-            row.label(text="Animation Layers")
+            row.label(text="Animation Layers", icon='SEQ_STRIP_DUPLICATE')
             row.operator("lsd.anim_refresh_sync", text="", icon='FILE_REFRESH')
             row.prop(settings, "layers_enabled", text="", icon='CHECKBOX_HLT' if settings.layers_enabled else 'CHECKBOX_DEHLT')
             
@@ -149,7 +156,7 @@ class LSD_PT_Animation_System_Main:
                     
                 col.prop(settings, "onion_skin_display_type", text="")
                 if settings.onion_skin_display_type == 'MESH':
-                    col.prop(settings, "onion_skin_mesh_resolution")
+                    col.prop(settings, "onion_skin_mesh_resolution", text="Mesh Onion Skin Resolution")
                     
                 col.prop(settings, "onion_skin_fade")
                 col.prop(settings, "onion_skin_delete_outer_keyframes")

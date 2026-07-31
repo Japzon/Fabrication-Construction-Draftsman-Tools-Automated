@@ -593,7 +593,31 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                 if track and track.strips:
                     strip = track.strips[0]
                     old_action = strip.action
-                    strip.action = action
+                    
+                    strip_name = strip.name
+                    strip_frame_start = strip.frame_start
+                    
+                    import time
+                    old_track = track
+                    new_track = obj.animation_data.nla_tracks.new()
+                    new_track.name = f"{old_track.name}_imported"
+                    layer.track_name = new_track.name
+                    
+                    strip = new_track.strips.new(name=strip_name, start=int(strip_frame_start), action=action)
+                    
+                    old_track.name = f"DELETED_{old_track.name}_{int(time.time()*1000)}"
+                    old_track.mute = True
+                    for s in old_track.strips: s.mute = True
+                    
+                    track = new_track  # Reassign track so it gets properly renamed at the end
+                    
+                    def safe_delete():
+                        try:
+                            if old_action: bpy.data.actions.remove(old_action)
+                            if obj.animation_data and old_track.name in obj.animation_data.nla_tracks:
+                                obj.animation_data.nla_tracks.remove(old_track)
+                        except: pass
+                    bpy.app.timers.register(safe_delete, first_interval=2.0)
                     
                     # Forward-Infinite bounds with native NLA momentum crossfade
                     if hasattr(strip, 'use_sync_length'):
@@ -616,8 +640,7 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                     layer.blend_type = settings.import_blend_type
                     strip.extrapolation = 'NOTHING' if settings.import_blend_type == 'REPLACE' else 'HOLD_FORWARD'
                     
-                    if old_action:
-                        bpy.data.actions.remove(old_action)
+                    # (Action deletion is safely deferred via the background timer above)
                         
                 base_name = item.name
                 action_name = base_name

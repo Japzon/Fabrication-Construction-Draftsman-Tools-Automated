@@ -1227,6 +1227,7 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     active_layer_index: bpy.props.IntProperty(name="Active Layer", default=0, update=update_active_idx)
     
     # --- Animation Library ---
+    library_enabled: bpy.props.BoolProperty(default=True, description="Expand or collapse the animation layer library panel")
     library_items: bpy.props.CollectionProperty(type=LSD_PG_AnimLibraryItem)
     active_library_index: bpy.props.IntProperty(name="Active Library Item", default=0)
     

@@ -6,6 +6,9 @@ import mathutils
 
 _draw_handler = None
 _cached_data = {}
+_last_selection_state = None
+_last_bone_matrices = {}
+_is_dragging = False
 
 def get_bone_lines(obj, depsgraph, bone_names=None):
     lines = []
@@ -98,12 +101,16 @@ def draw_callback():
             
         is_keyframe = frame in _cached_keyframe_frames
         
-        # When drawing a keyframe highlight (present), use the filtered batch if available
-        # Otherwise use the normal batch
+        batches_to_draw = []
+        
+        # 1. Evaluate Present (Keyframe Highlight)
         if getattr(settings, 'onion_skin_show_present', False) and is_keyframe and frame != current_frame:
             if isinstance(_cached_data[frame], dict):
-                batch = _cached_data[frame].get('filtered')
-                if batch is None: batch = _cached_data[frame].get('full')
+                present_batch = _cached_data[frame].get('filtered')
+                if present_batch is None: present_batch = _cached_data[frame].get('full')
+            else:
+                present_batch = _cached_data[frame]
+                
             try:
                 sorted_keys = sorted(_cached_keyframe_frames)
                 idx = sorted_keys.index(frame)
@@ -113,40 +120,51 @@ def draw_callback():
                     color = list(settings.onion_skin_color_present_2) + [1.0]
             except Exception:
                 color = list(settings.onion_skin_color_present) + [1.0]
-        elif frame < current_frame:
-            if isinstance(_cached_data[frame], dict): batch = _cached_data[frame].get('full')
-            if not getattr(settings, 'onion_skin_show_past', True): continue
-            base_opacity = settings.onion_skin_opacity_before
-            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before >= max(1, settings.onion_skin_frame_distance):
-                frame_dist = max(1, settings.onion_skin_frame_distance)
-                n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
-                max_n = settings.onion_skin_count_before // frame_dist
-                if max_n > 1:
-                    base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
-            color = list(settings.onion_skin_color_past) + [base_opacity]
+                
+            if present_batch:
+                batches_to_draw.append((present_batch, color))
+                
+        # 2. Evaluate Past or Future (Full Armature/Meshes)
+        if frame < current_frame:
+            if getattr(settings, 'onion_skin_show_past', True):
+                if isinstance(_cached_data[frame], dict): past_batch = _cached_data[frame].get('full')
+                else: past_batch = _cached_data[frame]
+                
+                base_opacity = settings.onion_skin_opacity_before
+                if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_before >= max(1, settings.onion_skin_frame_distance):
+                    frame_dist = max(1, settings.onion_skin_frame_distance)
+                    n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
+                    max_n = settings.onion_skin_count_before // frame_dist
+                    if max_n > 1:
+                        base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
+                color = list(settings.onion_skin_color_past) + [base_opacity]
+                
+                if past_batch:
+                    batches_to_draw.append((past_batch, color))
+                    
         elif frame > current_frame:
-            if isinstance(_cached_data[frame], dict): batch = _cached_data[frame].get('full')
-            if not getattr(settings, 'onion_skin_show_future', True): continue
-            base_opacity = settings.onion_skin_opacity_after
-            if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after >= max(1, settings.onion_skin_frame_distance):
-                frame_dist = max(1, settings.onion_skin_frame_distance)
-                n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
-                max_n = settings.onion_skin_count_after // frame_dist
-                if max_n > 1:
-                    base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
-            color = list(settings.onion_skin_color_future) + [base_opacity]
-        else:
-            # If frame == current_frame, we only draw it if it's a keyframe?
-            # But the real mesh is already there, so it's useless to draw a ghost over it.
-            continue
-            
-        if batch is None: continue
-            
-        shader.bind()
-        
-        gpu.state.line_width_set(2.0)
-        shader.uniform_float("color", color)
-        batch.draw(shader)
+            if getattr(settings, 'onion_skin_show_future', True):
+                if isinstance(_cached_data[frame], dict): future_batch = _cached_data[frame].get('full')
+                else: future_batch = _cached_data[frame]
+                
+                base_opacity = settings.onion_skin_opacity_after
+                if getattr(settings, 'onion_skin_fade', False) and settings.onion_skin_count_after >= max(1, settings.onion_skin_frame_distance):
+                    frame_dist = max(1, settings.onion_skin_frame_distance)
+                    n = (abs(current_frame - frame) + frame_dist - 1) // frame_dist
+                    max_n = settings.onion_skin_count_after // frame_dist
+                    if max_n > 1:
+                        base_opacity *= max(0.0, 1.0 - (n - 1) / (max_n - 1))
+                color = list(settings.onion_skin_color_future) + [base_opacity]
+                
+                if future_batch:
+                    batches_to_draw.append((future_batch, color))
+                    
+        # 3. Draw all assigned batches for this frame
+        for b, c in batches_to_draw:
+            shader.bind()
+            gpu.state.line_width_set(2.0)
+            shader.uniform_float("color", c)
+            b.draw(shader)
         
     gpu.state.blend_set('NONE')
 
@@ -156,8 +174,6 @@ _cached_keyframe_bone_data = {} # frame: set of bone names / object names
 
 def build_onion_cache(context=None):
     global _is_building
-    global _cached_keyframe_frames
-    global _cached_keyframe_bone_data
     if _is_building: return
     
     if context is None:
@@ -166,184 +182,229 @@ def build_onion_cache(context=None):
     settings = getattr(context.scene, 'lsd_anim_settings', None)
     if not settings or not settings.onion_skin_enabled: return
     
-    target_objs = []
-    if settings.onion_skin_target == 'SELECTED':
-        target_objs = [o for o in context.selected_objects if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_")]
-        if settings.onion_skin_near_count > 0 and len(target_objs) > 0:
-            center_loc = target_objs[0].matrix_world.translation
-            all_vis = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and o not in target_objs and not o.name.startswith("LSD_OnionArrow_")]
-            all_vis.sort(key=lambda o: (o.matrix_world.translation - center_loc).length)
-            target_objs.extend(all_vis[:settings.onion_skin_near_count])
-    else:
-        target_objs = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_")]
-        
-    if not target_objs: return
-    
-    orig_frame = context.scene.frame_current
-    frame_step = max(1, settings.onion_skin_frame_distance)
-    frames_before = settings.onion_skin_count_before
-    frames_after = settings.onion_skin_count_after
-    
-    start_frame = orig_frame
-    if getattr(settings, 'onion_skin_show_past', True):
-        start_frame -= frames_before
-        
-    end_frame = orig_frame
-    if getattr(settings, 'onion_skin_show_future', True):
-        end_frame += frames_after
-        
-    frames_to_cache = []
-    _cached_keyframe_frames.clear()
-    _cached_keyframe_bone_data.clear()
-    
-    if getattr(settings, 'onion_skin_show_present', False):
-        for obj in target_objs:
-            if not obj.animation_data: continue
-            
-            active_action = None
-            strip_frame_start = 0
-            strip_action_frame_start = 0
-            strip_scale = 1.0
-            
-            if obj.animation_data.action:
-                active_action = obj.animation_data.action
-                if getattr(obj.animation_data, 'use_tweak_mode', False):
-                    for track in obj.animation_data.nla_tracks:
-                        for strip in track.strips:
-                            if strip.action == active_action:
-                                strip_frame_start = strip.frame_start
-                                strip_action_frame_start = strip.action_frame_start
-                                strip_scale = strip.scale
-                                break
-                                
-            elif settings.layers_enabled and settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
-                layer = settings.layers[settings.active_layer_index]
-                track = obj.animation_data.nla_tracks.get(layer.track_name)
-                if track and track.strips:
-                    active_strip = track.strips[0]
-                    active_action = active_strip.action
-                    strip_frame_start = active_strip.frame_start
-                    strip_action_frame_start = active_strip.action_frame_start
-                    strip_scale = active_strip.scale
-                    
-            if not active_action: continue
-            
-            try:
-                from . import anim_core
-                fcurves_list = anim_core.get_action_fcurves(obj, active_action)
-            except Exception:
-                fcurves_list = []
-            
-            for fcurve in fcurves_list:
-                if getattr(fcurve, "mute", False):
-                    continue
+    _is_building = True
+    try:
+        target_objs = []
+        armature_selected_bones = {}
+        if settings.onion_skin_target == 'SELECTED':
+            for o in context.selected_objects:
+                if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_"):
+                    if o.type == 'ARMATURE' and getattr(o, 'mode', '') == 'POSE':
+                        sel_bones = {b.name for b in context.selected_pose_bones if b.id_data == o} if getattr(context, 'selected_pose_bones', None) else set()
+                        if not sel_bones:
+                            continue # If in pose mode and no bones are selected, it doesn't count as a valid target
+                        armature_selected_bones[o.name] = sel_bones
+                    target_objs.append(o)
                 
-                target_name = obj.name
-                if fcurve.data_path.startswith("pose.bones["):
-                    try:
-                        target_name = fcurve.data_path.split('"')[1]
-                    except:
-                        try: target_name = fcurve.data_path.split("'")[1]
-                        except: pass
+            if settings.onion_skin_near_count > 0 and len(target_objs) > 0:
+                center_loc = target_objs[0].matrix_world.translation
+                
+                # If target is an armature in pose mode, calculate distance from the selected bones rather than the armature root
+                if target_objs[0].type == 'ARMATURE' and getattr(target_objs[0], 'mode', '') == 'POSE':
+                    _sel_bones = getattr(context, 'selected_pose_bones', [])
+                    _valid_bones = [b for b in _sel_bones if b.id_data == target_objs[0]] if _sel_bones else []
+                    if _valid_bones:
+                        import mathutils
+                        avg_loc = sum(((target_objs[0].matrix_world @ b.head) for b in _valid_bones), mathutils.Vector((0,0,0))) / len(_valid_bones)
+                        center_loc = avg_loc
                         
-                if hasattr(fcurve, "keyframe_points"):
-                    for kp in fcurve.keyframe_points:
-                        scene_frame = round(strip_frame_start + (kp.co.x - strip_action_frame_start) * strip_scale)
-                        f = int(scene_frame)
-                        if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
-                            if start_frame <= f <= end_frame:
+                all_vis = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and o not in target_objs and not o.name.startswith("LSD_OnionArrow_")]
+                all_vis.sort(key=lambda o: (o.matrix_world.translation - center_loc).length)
+                target_objs.extend(all_vis[:settings.onion_skin_near_count])
+        else:
+            target_objs = [o for o in context.visible_objects if o.type in {'ARMATURE', 'MESH'} and not o.name.startswith("LSD_OnionArrow_")]
+            
+        if not target_objs:
+            _cached_data.clear()
+            _cached_keyframe_frames.clear()
+            _cached_keyframe_bone_data.clear()
+            
+            arrow_col = bpy.data.collections.get("LSD_Onion_Arrows")
+            if arrow_col:
+                for obj in list(arrow_col.objects):
+                    try: bpy.data.objects.remove(obj, do_unlink=True)
+                    except: pass
+                try: bpy.data.collections.remove(arrow_col)
+                except: pass
+            return
+        
+        orig_frame = context.scene.frame_current
+        frame_step = max(1, settings.onion_skin_frame_distance)
+        frames_before = settings.onion_skin_count_before
+        frames_after = settings.onion_skin_count_after
+        
+        start_frame = orig_frame
+        if getattr(settings, 'onion_skin_show_past', True):
+            start_frame -= frames_before
+            
+        end_frame = orig_frame
+        if getattr(settings, 'onion_skin_show_future', True):
+            end_frame += frames_after
+            
+        frames_to_cache = []
+        _cached_keyframe_frames.clear()
+        _cached_keyframe_bone_data.clear()
+        
+        if getattr(settings, 'onion_skin_show_present', False):
+            for obj in target_objs:
+                if not obj.animation_data: continue
+                
+                active_action = None
+                strip_frame_start = 0
+                strip_action_frame_start = 0
+                strip_scale = 1.0
+                
+                if obj.animation_data.action:
+                    active_action = obj.animation_data.action
+                    if getattr(obj.animation_data, 'use_tweak_mode', False):
+                        for track in obj.animation_data.nla_tracks:
+                            for strip in track.strips:
+                                if strip.action == active_action:
+                                    strip_frame_start = strip.frame_start
+                                    strip_action_frame_start = strip.action_frame_start
+                                    strip_scale = strip.scale
+                                    break
+                                    
+                elif settings.layers_enabled and settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
+                    layer = settings.layers[settings.active_layer_index]
+                    track = obj.animation_data.nla_tracks.get(layer.track_name)
+                    if track and track.strips:
+                        active_strip = track.strips[0]
+                        active_action = active_strip.action
+                        strip_frame_start = active_strip.frame_start
+                        strip_action_frame_start = active_strip.action_frame_start
+                        strip_scale = active_strip.scale
+                        
+                if not active_action: continue
+                
+                try:
+                    from . import anim_core
+                    fcurves_list = anim_core.get_action_fcurves(obj, active_action)
+                except Exception:
+                    fcurves_list = []
+                
+                for fcurve in fcurves_list:
+                    if getattr(fcurve, "mute", False):
+                        continue
+                    
+                    target_name = obj.name
+                    if fcurve.data_path.startswith("pose.bones["):
+                        try:
+                            target_name = fcurve.data_path.split('"')[1]
+                        except:
+                            try: target_name = fcurve.data_path.split("'")[1]
+                            except: pass
+                            
+                    if hasattr(fcurve, "keyframe_points"):
+                        for kp in fcurve.keyframe_points:
+                            scene_frame = round(strip_frame_start + (kp.co.x - strip_action_frame_start) * strip_scale)
+                            f = int(scene_frame)
+                            if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
+                                if start_frame <= f <= end_frame:
+                                    _cached_keyframe_frames.add(f)
+                                    if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
+                                    _cached_keyframe_bone_data[f].add(target_name)
+                            else:
                                 _cached_keyframe_frames.add(f)
                                 if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
                                 _cached_keyframe_bone_data[f].add(target_name)
-                        else:
-                            _cached_keyframe_frames.add(f)
-                            if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
-                            _cached_keyframe_bone_data[f].add(target_name)
-                            
-    first_mult = start_frame - (start_frame % frame_step)
-    if first_mult < start_frame:
-        first_mult += frame_step
-        
-    curr = first_mult
-    while curr <= end_frame:
-        frames_to_cache.append(curr)
-        curr += frame_step
+                                
+        first_mult = start_frame - (start_frame % frame_step)
+        if first_mult < start_frame:
+            first_mult += frame_step
             
-    if getattr(settings, 'onion_skin_show_present', False):
-        if orig_frame not in frames_to_cache:
-            frames_to_cache.append(orig_frame)
-        for f in _cached_keyframe_frames:
-            if f not in frames_to_cache:
-                frames_to_cache.append(f)
-        
-    depsgraph = context.evaluated_depsgraph_get()
-    
-    _is_building = True
-    
-    frames_to_remove = [f for f in list(_cached_data.keys()) if f not in frames_to_cache]
-    for f in frames_to_remove:
-        del _cached_data[f]
-        
-    arrow_col = bpy.data.collections.get("LSD_Onion_Arrows")
-    if arrow_col:
-        for obj in list(arrow_col.objects):
-            bpy.data.objects.remove(obj, do_unlink=True)
-        bpy.data.collections.remove(arrow_col)
-        
-    frames_to_build = [f for f in frames_to_cache if f not in _cached_data]
-    
-    changed_frame = False
-    if frames_to_build:
-        global _is_auto_syncing
-        _is_auto_syncing = True
-        try:
-            for f in frames_to_build:
-                if f != orig_frame:
-                    context.scene.frame_set(f)
-                    changed_frame = True
+        curr = first_mult
+        while curr <= end_frame:
+            frames_to_cache.append(curr)
+            curr += frame_step
                 
-                # Fetch fresh evaluated depsgraph for this specific frame
-                current_deps = context.evaluated_depsgraph_get()
+        if getattr(settings, 'onion_skin_show_present', False):
+            if orig_frame not in frames_to_cache:
+                frames_to_cache.append(orig_frame)
+            for f in _cached_keyframe_frames:
+                if f not in frames_to_cache:
+                    frames_to_cache.append(f)
+            
+        depsgraph = context.evaluated_depsgraph_get()
+        
+        frames_to_remove = [f for f in list(_cached_data.keys()) if f not in frames_to_cache]
+        for f in frames_to_remove:
+            del _cached_data[f]
+            
+        arrow_col = bpy.data.collections.get("LSD_Onion_Arrows")
+        if arrow_col:
+            for obj in list(arrow_col.objects):
+                try: bpy.data.objects.remove(obj, do_unlink=True)
+                except: pass
+            try: bpy.data.collections.remove(arrow_col)
+            except: pass
+            
+        frames_to_build = [f for f in frames_to_cache if f not in _cached_data]
+        
+        changed_frame = False
+        if frames_to_build:
+            global _is_auto_syncing
+            _is_auto_syncing = True
+            try:
+                for f in frames_to_build:
+                    if f != orig_frame:
+                        context.scene.frame_set(f)
+                        changed_frame = True
                     
-                full_lines = []
-                filtered_lines = []
-                
-                for obj in target_objs:
-                    obj_keyframed = False
-                    bone_names = None
+                    # Fetch fresh evaluated depsgraph for this specific frame
+                    current_deps = context.evaluated_depsgraph_get()
+                        
+                    full_lines = []
+                    filtered_lines = []
                     
-                    if f in _cached_keyframe_bone_data:
-                        # If this object's name is in the set, the whole object is keyframed
-                        # If any bone names are in the set, we filter to those
-                        if obj.name in _cached_keyframe_bone_data[f]:
-                            obj_keyframed = True
-                        else:
-                            bone_names = _cached_keyframe_bone_data[f]
-                            if any(b in bone_names for b in [pb.name for pb in obj.pose.bones]) if obj.type == 'ARMATURE' else False:
+                    for obj in target_objs:
+                        obj_keyframed = False
+                        bone_names = None
+                        
+                        if f in _cached_keyframe_bone_data:
+                            # If this object's name is in the set, the whole object is keyframed
+                            # If any bone names are in the set, we filter to those
+                            if obj.name in _cached_keyframe_bone_data[f]:
                                 obj_keyframed = True
-                    
-                    if obj.type == 'ARMATURE':
-                        full_lines.extend(get_bone_lines(obj, current_deps))
-                        if obj_keyframed and bone_names:
-                            filtered_lines.extend(get_bone_lines(obj, current_deps, bone_names))
-                        elif obj_keyframed:
-                            filtered_lines.extend(get_bone_lines(obj, current_deps))
-                    elif obj.type == 'MESH':
-                        m_lines = get_mesh_lines(obj, current_deps, settings.onion_skin_display_type)
-                        full_lines.extend(m_lines)
-                        if obj_keyframed:
-                            filtered_lines.extend(m_lines)
-                            
-                if f in _cached_keyframe_frames and getattr(settings, 'onion_skin_keyframe_filter', 'TARGETS') == 'TARGETS':
-                    _cached_data[f] = {'full': full_lines, 'filtered': filtered_lines}
-                else:
-                    _cached_data[f] = full_lines
-                
-        finally:
-            if changed_frame:
-                context.scene.frame_set(orig_frame)
-            _is_auto_syncing = False
-    _is_building = False
+                            else:
+                                bone_names = _cached_keyframe_bone_data[f]
+                                if any(b in bone_names for b in [pb.name for pb in obj.pose.bones]) if obj.type == 'ARMATURE' else False:
+                                    obj_keyframed = True
+                        
+                        if obj.type == 'ARMATURE':
+                            active_bone_names = None
+                            if obj.name in armature_selected_bones:
+                                active_bone_names = armature_selected_bones[obj.name]
+                                if not active_bone_names:
+                                    continue # If in Pose Mode and no bones are selected, skip drawing this armature completely
+                                    
+                            full_lines.extend(get_bone_lines(obj, current_deps, None))
+                            if obj_keyframed and bone_names:
+                                # Intersect the active selection with the keyframed bones filter
+                                if active_bone_names is not None:
+                                    filtered = active_bone_names.intersection(set(bone_names))
+                                    filtered_lines.extend(get_bone_lines(obj, current_deps, filtered))
+                                else:
+                                    filtered_lines.extend(get_bone_lines(obj, current_deps, bone_names))
+                            elif obj_keyframed:
+                                filtered_lines.extend(get_bone_lines(obj, current_deps, active_bone_names))
+                        elif obj.type == 'MESH':
+                            m_lines = get_mesh_lines(obj, current_deps, settings.onion_skin_display_type)
+                            full_lines.extend(m_lines)
+                            if obj_keyframed:
+                                filtered_lines.extend(m_lines)
+                                
+                    if f in _cached_keyframe_frames and getattr(settings, 'onion_skin_keyframe_filter', 'TARGETS') == 'TARGETS':
+                        _cached_data[f] = {'full': full_lines, 'filtered': filtered_lines}
+                    else:
+                        _cached_data[f] = full_lines
+                        
+            finally:
+                if changed_frame:
+                    context.scene.frame_set(orig_frame)
+                _is_auto_syncing = False
+    finally:
+        _is_building = False
 
 def onion_skin_timer_update():
     try:
@@ -353,22 +414,64 @@ def onion_skin_timer_update():
         
     if not settings: return 1.0
     
-    # Active Transform Intercept: Prevent jitter while the user is actively dragging a bone
-    try:
-        from . import anim_core
-        obj = bpy.context.active_object
-        if obj and obj.type == 'ARMATURE' and bpy.context.mode == 'POSE' and hasattr(anim_core, '_ak_cache'):
-            for bone in obj.pose.bones:
-                if bone.name in anim_core._ak_cache:
-                    diff = bone.matrix_basis - anim_core._ak_cache[bone.name]
-                    if any(abs(v) > 0.0001 for row in diff for v in row):
-                        return 0.1 # Un-keyed pose detected! Halt cache rebuild to prevent active transform jitter!
-    except Exception:
-        pass
-    
     if settings.onion_skin_enabled and settings.onion_skin_auto_refresh:
         curr_frame = bpy.context.scene.frame_current
         
+        global _last_selection_state, _last_bone_matrices, _is_dragging
+        
+        # 1. Active Transform Intercept: Monitor bone matrices to detect dragging vs dropping
+        is_currently_moving = False
+        obj = bpy.context.active_object
+        if obj and obj.type == 'ARMATURE' and bpy.context.mode == 'POSE':
+            sel_bones = [b for b in bpy.context.selected_pose_bones if b.id_data == obj] if getattr(bpy.context, 'selected_pose_bones', None) else []
+            
+            # Clean up unselected bones from matrix cache
+            current_bone_names = {b.name for b in sel_bones}
+            _last_bone_matrices = {name: mat for name, mat in _last_bone_matrices.items() if name in current_bone_names}
+            
+            for b in sel_bones:
+                if b.name in _last_bone_matrices:
+                    diff = b.matrix_basis - _last_bone_matrices[b.name]
+                    if any(abs(v) > 0.0001 for row in diff for v in row):
+                        if not bpy.context.screen.is_animation_playing:
+                            is_currently_moving = True
+                        _last_bone_matrices[b.name] = b.matrix_basis.copy()
+                else:
+                    _last_bone_matrices[b.name] = b.matrix_basis.copy()
+        else:
+            _last_bone_matrices.clear()
+            
+        if is_currently_moving:
+            _is_dragging = True
+            # User is actively dragging a bone. Halt full cache rebuild to prevent massive lag.
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+            return max(0.1, settings.onion_skin_refresh_interval)
+            
+        elif _is_dragging:
+            # Bone just stopped moving (dropped or keyed). Flush entire cache to recalculate past/future ghosts!
+            _cached_data.clear()
+            _is_dragging = False
+            
+        # 2. Monitor absolute object selection changes
+        if settings.onion_skin_target == 'SELECTED':
+            current_sel = set()
+            for o in bpy.context.selected_objects:
+                current_sel.add(o.name)
+                if o.type == 'ARMATURE' and getattr(o, 'mode', '') == 'POSE':
+                    if getattr(bpy.context, 'selected_pose_bones', None):
+                        for b in bpy.context.selected_pose_bones:
+                            if b.id_data == o:
+                                current_sel.add(f"{o.name}:{b.name}")
+            
+            if _last_selection_state != current_sel:
+                _cached_data.clear()
+                _last_selection_state = current_sel
+        else:
+            _last_selection_state = None
+            
         # Always force refresh the current frame so the active pose is never stale (unless playing)
         if not bpy.context.screen.is_animation_playing:
             if curr_frame in _cached_data:

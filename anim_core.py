@@ -95,7 +95,9 @@ def sync_layer_light(context):
         if not active_layer.is_muted and obj.animation_data and not obj.animation_data.action:
             track = obj.animation_data.nla_tracks.get(active_layer.track_name)
             if track and track.strips:
-                obj.animation_data.action = track.strips[0].action
+                try:
+                    obj.animation_data.action = track.strips[0].action
+                except: pass
                 
         if obj.animation_data and obj.animation_data.action:
             for fcurve in get_action_fcurves(obj, obj.animation_data.action):
@@ -159,6 +161,25 @@ def execute_sync_logic(context):
                     strip.extrapolation = 'HOLD_FORWARD'
                     if hasattr(strip, 'use_sync_length'):
                         strip.use_sync_length = True
+                        
+    def safe_enter_tweak_mode(context_ref, o, t, s):
+        if not o or not o.animation_data: return
+        for window in context_ref.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'NLA_EDITOR':
+                    with context_ref.temp_override(window=window, area=area, active_object=o):
+                        if getattr(o.animation_data, 'use_tweak_mode', False):
+                            try: bpy.ops.nla.tweakmode_exit(isolate_action=False)
+                            except: pass
+                        if t and s:
+                            for tr in o.animation_data.nla_tracks:
+                                tr.select = False
+                                for st in tr.strips: st.select = False
+                            t.select = True
+                            s.select = True
+                            try: bpy.ops.nla.tweakmode_enter(isolate_action=False)
+                            except: pass
+                    return
             
     active_layer = None
     active_track = None
@@ -232,13 +253,22 @@ def execute_sync_logic(context):
             except: pass
             
             # Ensure the action matches the layer state
-            if active_layer.is_muted:
-                # Clear the action if muted to prevent accidental base-level edits
-                obj.animation_data.action = None
-            elif active_track.strips:
-                # Explicitly push the layer's action into the active slot for graph separation
-                assigned_action = active_track.strips[0].action
-                obj.animation_data.action = assigned_action
+            try:
+                if active_layer.is_muted:
+                    if getattr(obj.animation_data, 'use_tweak_mode', False):
+                        for window in context.window_manager.windows:
+                            for area in window.screen.areas:
+                                if area.type == 'NLA_EDITOR':
+                                    with context.temp_override(window=window, area=area, active_object=obj):
+                                        try: bpy.ops.nla.tweakmode_exit(isolate_action=False)
+                                        except: pass
+                                    break
+                    obj.animation_data.action = None
+                elif active_track.strips:
+                    assigned_action = active_track.strips[0].action
+                    safe_enter_tweak_mode(context, obj, active_track, active_track.strips[0])
+                    obj.animation_data.action = assigned_action
+            except: pass
                 
             # Aggressively disable NLA track visibility in all Graph Editors so the user only sees the active layer
             for window in context.window_manager.windows:
@@ -284,7 +314,9 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
         # Fallback to pure logic if no safe area exists
         obj = get_active_object(context)
         if exit_first and obj and obj.animation_data:
-            obj.animation_data.action = None
+            try:
+                obj.animation_data.action = None
+            except: pass
         execute_sync_logic(context)
         return
         
@@ -316,7 +348,9 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
                     
                 obj = get_active_object(context)
                 if obj and obj.animation_data:
-                    obj.animation_data.action = None  # Prevent old layer action from leaking
+                    try:
+                        obj.animation_data.action = None  # Prevent old layer action from leaking
+                    except: pass
                     
                 execute_sync_logic(context)
                 

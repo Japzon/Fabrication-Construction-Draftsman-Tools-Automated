@@ -7185,16 +7185,20 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
             
         if obj and obj.animation_data:
-            obj.animation_data.action = None  # CRITICAL: Prevent old layer action from leaking!
+            try:
+                obj.animation_data.action = None  # CRITICAL: Prevent old layer action from leaking!
+            except: pass
             
         # Step 2: Now it is mathematically safe to generate new tracks!
         if len(settings.layers) == 0:
             if not obj.animation_data:
                 obj.animation_data_create()
                 
-            if not obj.animation_data or not obj.animation_data.action:
+            if not obj.animation_data or getattr(obj.animation_data, 'action', None) is None:
                 base_action = bpy.data.actions.new(name=f"{obj.name}_Base_Layer")
-                obj.animation_data.action = base_action
+                try:
+                    obj.animation_data.action = base_action
+                except: pass
                 anchor_frame = 1
                 
                 # CRITICAL: We MUST anchor the current pose into the Base Layer.

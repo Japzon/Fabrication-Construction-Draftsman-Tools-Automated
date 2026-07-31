@@ -198,38 +198,67 @@ def build_onion_cache(context=None):
     
     if getattr(settings, 'onion_skin_show_present', False):
         for obj in target_objs:
-            if obj.animation_data and obj.animation_data.action:
-                try:
-                    from . import anim_core
-                    fcurves_list = anim_core.get_action_fcurves(obj, obj.animation_data.action)
-                except Exception:
-                    fcurves_list = []
-                
-                for fcurve in fcurves_list:
-                    if getattr(fcurve, "mute", False):
-                        continue
+            if not obj.animation_data: continue
+            
+            active_action = None
+            strip_frame_start = 0
+            strip_action_frame_start = 0
+            strip_scale = 1.0
+            
+            if obj.animation_data.action:
+                active_action = obj.animation_data.action
+                if getattr(obj.animation_data, 'use_tweak_mode', False):
+                    for track in obj.animation_data.nla_tracks:
+                        for strip in track.strips:
+                            if strip.action == active_action:
+                                strip_frame_start = strip.frame_start
+                                strip_action_frame_start = strip.action_frame_start
+                                strip_scale = strip.scale
+                                break
+                                
+            elif settings.layers_enabled and settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
+                layer = settings.layers[settings.active_layer_index]
+                track = obj.animation_data.nla_tracks.get(layer.track_name)
+                if track and track.strips:
+                    active_strip = track.strips[0]
+                    active_action = active_strip.action
+                    strip_frame_start = active_strip.frame_start
+                    strip_action_frame_start = active_strip.action_frame_start
+                    strip_scale = active_strip.scale
                     
-                    # Parse out bone name if it exists (e.g. pose.bones["BoneName"])
-                    target_name = obj.name
-                    if fcurve.data_path.startswith("pose.bones["):
-                        try:
-                            target_name = fcurve.data_path.split('"')[1]
-                        except:
-                            try: target_name = fcurve.data_path.split("'")[1]
-                            except: pass
-                            
-                    if hasattr(fcurve, "keyframe_points"):
-                        for kp in fcurve.keyframe_points:
-                            f = int(kp.co.x)
-                            if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
-                                if start_frame <= f <= end_frame:
-                                    _cached_keyframe_frames.add(f)
-                                    if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
-                                    _cached_keyframe_bone_data[f].add(target_name)
-                            else:
+            if not active_action: continue
+            
+            try:
+                from . import anim_core
+                fcurves_list = anim_core.get_action_fcurves(obj, active_action)
+            except Exception:
+                fcurves_list = []
+            
+            for fcurve in fcurves_list:
+                if getattr(fcurve, "mute", False):
+                    continue
+                
+                target_name = obj.name
+                if fcurve.data_path.startswith("pose.bones["):
+                    try:
+                        target_name = fcurve.data_path.split('"')[1]
+                    except:
+                        try: target_name = fcurve.data_path.split("'")[1]
+                        except: pass
+                        
+                if hasattr(fcurve, "keyframe_points"):
+                    for kp in fcurve.keyframe_points:
+                        scene_frame = round(strip_frame_start + (kp.co.x - strip_action_frame_start) * strip_scale)
+                        f = int(scene_frame)
+                        if getattr(settings, 'onion_skin_delete_outer_keyframes', False):
+                            if start_frame <= f <= end_frame:
                                 _cached_keyframe_frames.add(f)
                                 if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
                                 _cached_keyframe_bone_data[f].add(target_name)
+                        else:
+                            _cached_keyframe_frames.add(f)
+                            if f not in _cached_keyframe_bone_data: _cached_keyframe_bone_data[f] = set()
+                            _cached_keyframe_bone_data[f].add(target_name)
                             
     first_mult = start_frame - (start_frame % frame_step)
     if first_mult < start_frame:

@@ -59,18 +59,21 @@ class LSD_PT_Animation_System_Main:
                 
                 header_row.operator("lsd.anim_library_update_preview", icon='FILE_REFRESH', text="")
                 
+                lib_box.prop(settings, "preview_capture_interval")
+                
                 col = lib_box.column(align=True)
                 row = col.row()
                 row.template_list("LSD_UL_Anim_Library", "", settings, "library_items", settings, "active_library_index", rows=4)
                 
                 col_btn = row.column(align=True)
-                col_btn.operator("lsd.anim_layer_add", icon='ADD', text="")
-                col_btn.operator("lsd.anim_layer_remove", icon='REMOVE', text="")
-                col_btn.separator()
+
                 col_btn.operator("lsd.anim_library_export", icon='EXPORT', text="")
                 col_btn.operator("lsd.anim_library_import", icon='IMPORT', text="")
                 col_btn.separator()
                 col_btn.operator("lsd.anim_library_delete", icon='TRASH', text="")
+                
+                col.separator()
+                col.prop(settings, "import_blend_type", text="Mode")
                 
                 # Animated Preview
                 if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):

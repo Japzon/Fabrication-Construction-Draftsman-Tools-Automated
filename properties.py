@@ -1136,8 +1136,14 @@ class LSD_PG_SDF_Props(bpy.types.PropertyGroup):
 
 # ------------------------------------------------------------------------
 
+def update_library_item_name(self, context):
+    try:
+        from . import anim_library
+        anim_library.rename_library_item(self, context)
+    except: pass
+
 class LSD_PG_AnimLibraryItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Name")
+    name: bpy.props.StringProperty(name="Name", update=update_library_item_name)
     filepath: bpy.props.StringProperty(name="Filepath")
     
 class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
@@ -1166,10 +1172,9 @@ class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
         name="Blend Type",
         items=[
             ('REPLACE', "Replace", ""), 
-            ('ADD', "Add", ""),
             ('COMBINE', "Combine", "")
         ],
-        default='ADD',
+        default='COMBINE',
         update=update_prop_light
     )
     influence: bpy.props.FloatProperty(name="Influence", default=1.0, min=0.0, max=1.0, update=update_prop_light)
@@ -1177,6 +1182,23 @@ class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
     is_locked: bpy.props.BoolProperty(name="Lock / Unlock Layer", default=False, update=update_lock_mute)
 
 class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
+    import_blend_type: bpy.props.EnumProperty(
+        name="Import As",
+        items=[
+            ('REPLACE', "Replace (Absolute)", "Replace the pose exactly as it was saved (rigid)"), 
+            ('COMBINE', "Combine (Delta offset)", "Combine the pose with the current animation")
+        ],
+        default='REPLACE'
+    )
+    
+    preview_capture_interval: bpy.props.FloatProperty(
+        name="Preview Capture Interval (s)",
+        description="Time between captured preview frames (in seconds). Higher values render faster and use less memory.",
+        default=0.5,
+        min=0.01,
+        max=5.0
+    )
+    
     def update_active_idx(self, context):
         try:
             from . import anim_core

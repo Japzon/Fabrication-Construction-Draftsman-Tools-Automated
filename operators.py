@@ -7085,14 +7085,7 @@ class LSD_OT_Anim_Keyframe_Entire_Pose(bpy.types.Operator):
             if not anim_holder.animation_data.action:
                 action = bpy.data.actions.new(name=anim_holder.name + "Action")
                 anim_holder.animation_data.action = action
-            if hasattr(anim_holder.animation_data, 'action_slot'):
-                if not anim_holder.animation_data.action_slot:
-                    try:
-                        slot_name = anim_holder.id_data.name if hasattr(anim_holder, 'id_data') else anim_holder.name
-                        slot = anim_holder.animation_data.action.slots.new(name=slot_name, id_type=anim_holder.id_type if hasattr(anim_holder, 'id_type') else 'OBJECT')
-                        anim_holder.animation_data.action_slot = slot
-                    except Exception:
-                        pass
+
                         
             # Calculate the precise float frame where Blender's native keyframer will insert
             exact_float = float(frame)
@@ -7180,6 +7173,7 @@ class LSD_OT_Anim_Keyframe_Entire_Pose(bpy.types.Operator):
 class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
     bl_idname = "lsd.anim_layer_add"
     bl_label = "Add Animation Layer"
+    bl_description = "Create a new Animation Layer to isolate and stack animation tweaks"
     
     def execute(self, context):
         from . import anim_core
@@ -7200,11 +7194,6 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
                 
             if not obj.animation_data or not obj.animation_data.action:
                 base_action = bpy.data.actions.new(name=f"{obj.name}_Base_Layer")
-                if hasattr(base_action, 'slots'):
-                    try: 
-                        slot_name = obj.id_data.name if hasattr(obj, 'id_data') else obj.name
-                        base_action.slots.new(name=slot_name, id_type=obj.id_type if hasattr(obj, 'id_type') else 'OBJECT')
-                    except: pass
                 obj.animation_data.action = base_action
                 anchor_frame = 1
                 
@@ -7279,15 +7268,9 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             layer.track_name = track.name
             
             new_action = bpy.data.actions.new(name=f"{obj.name}_{layer.name}")
-            if hasattr(new_action, 'slots'):
-                try: 
-                    slot_name = obj.id_data.name if hasattr(obj, 'id_data') else obj.name
-                    new_action.slots.new(name=slot_name, id_type=obj.id_type if hasattr(obj, 'id_type') else 'OBJECT')
-                except: pass
-            
             strip = track.strips.new(name=layer.name, start=1, action=new_action)
-            strip.blend_type = 'ADD'
-            strip.extrapolation = 'NOTHING'
+            strip.blend_type = 'COMBINE'
+            strip.extrapolation = 'HOLD_FORWARD'
             if hasattr(strip, 'use_sync_length'):
                 strip.use_sync_length = True
             try:
@@ -7311,11 +7294,65 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
 class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
     bl_idname = "lsd.anim_layer_remove"
     bl_label = "Remove Animation Layer"
+    bl_description = "Delete the active Animation Layer from the timeline stack"
     def execute(self, context):
         settings = context.scene.lsd_anim_settings
         if settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
+            layer = settings.layers[settings.active_layer_index]
+            
+            # Step 1: Safely exit tweak mode before modifying tracks
+            try:
+                from . import anim_core
+                anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
+            except: pass
+            
+            # Step 2: Remove the physical NLA Track and its Action
+            obj = context.active_object
+            if obj and obj.animation_data:
+                # Forcefully clear active action to prevent dangling pointers
+                if obj.animation_data.action:
+                    obj.animation_data.action = None
+                    
+                track = obj.animation_data.nla_tracks.get(layer.track_name)
+                if track:
+                    # CRITICAL: Clear all pointers before deletion to prevent Blender EXCEPTION_ACCESS_VIOLATION crashes!
+                    if obj.animation_data.nla_tracks.active == track:
+                        obj.animation_data.nla_tracks.active = None
+                    track.select = False
+                    track.mute = True
+                    track.lock = True
+                    
+                    for strip in track.strips:
+                        strip.select = False
+                        strip.mute = True
+                        
+                    import time
+                    del_name = f"__DEL_{track.name}_{time.time()}__"
+                    track.name = del_name
+                    
+                    def safe_remove_track(obj_name, track_name):
+                        try:
+                            import bpy
+                            o = bpy.data.objects.get(obj_name)
+                            if o and o.animation_data:
+                                t = o.animation_data.nla_tracks.get(track_name)
+                                if t:
+                                    for s in list(t.strips):
+                                        t.strips.remove(s)
+                                    o.animation_data.nla_tracks.remove(t)
+                        except: pass
+                        return None
+                        
+                    bpy.app.timers.register(lambda obj_name=obj.name, track_name=del_name: safe_remove_track(obj_name, track_name), first_interval=0.1)
+                    
+            if context.view_layer:
+                context.view_layer.update()
+            
+            # Step 3: Remove from UI list
             settings.layers.remove(settings.active_layer_index)
             settings.active_layer_index = max(0, settings.active_layer_index - 1)
+            
+            # Tweak mode will naturally resume on the new active layer via the property update callback
         return {'FINISHED'}
 
 class LSD_OT_Anim_Layer_Move(bpy.types.Operator):
@@ -7490,14 +7527,37 @@ class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
                     for strip in track.strips:
                         if strip.action:
                             actions_to_delete.append(strip.action)
-                            
-                    # Remove the track from the object
-                    obj.animation_data.nla_tracks.remove(track)
+                            try:
+                                if obj.animation_data.action == strip.action:
+                                    obj.animation_data.action = None
+                            except: pass
+                                
+                    # Safely detach the track logically without ripping it from memory instantly
+                    if obj.animation_data.nla_tracks.active == track:
+                        obj.animation_data.nla_tracks.active = None
+                        
+                    track.name = track.name + "_DELETING"
+                    track.mute = True
+                    for strip in track.strips:
+                        strip.mute = True
                     
-                    # Delete the orphaned actions to ensure keyframes are permanently erased
-                    for action in actions_to_delete:
-                        try: bpy.data.actions.remove(action)
+                    # We MUST defer the actual memory deletion by 2.0s to prevent EXCEPTION_ACCESS_VIOLATION crashes
+                    # when the user rapidly deletes multiple layers while Blender is actively evaluating them.
+                    def _delayed_remove_layer(obj_name=obj.name, t_name=track.name, action_names=[a.name for a in actions_to_delete]):
+                        try:
+                            o = bpy.data.objects.get(obj_name)
+                            if o and o.animation_data:
+                                t = o.animation_data.nla_tracks.get(t_name)
+                                if t:
+                                    o.animation_data.nla_tracks.remove(t)
+                                    
+                            for aname in action_names:
+                                a = bpy.data.actions.get(aname)
+                                if a and a.users == 0:
+                                    bpy.data.actions.remove(a)
                         except: pass
+                        return None
+                    bpy.app.timers.register(_delayed_remove_layer, first_interval=2.0)
                         
             # Remove the layer from the UI list
             settings.layers.remove(idx)

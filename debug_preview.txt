@@ -1,0 +1,8 @@
+Interval: 0.5
+FPS: 3
+Start F: 0.0
+End F: 240.0
+Frame Range: 240
+Old Step: 1
+Expected Captures: 240.0
+Final Step: 2

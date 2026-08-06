@@ -48,15 +48,10 @@ from .core import (
     update_ik_chain_length,
     create_parametric_chain,
     update_chain_driver_settings,
-    apply_auto_smooth,
     setup_native_wrap_gn,
     get_all_children_objects,
     rig_parametric_joint,
     build_generative_robot,
-    build_example_rover,
-    build_example_arm,
-    build_mobile_base_diff_drive,
-    build_quadruped_spider,
     get_part_catalog_prompt,
 )
 
@@ -3913,296 +3908,6 @@ class LSD_OT_SmartSmooth(bpy.types.Operator):
             mod.keep_sharp = True
         self.report({'INFO'}, f"Applied smart smooth to '{obj.name}'.")
         return {'FINISHED'}
-class LSD_OT_CreatePart(bpy.types.Operator):
-    bl_idname = "lsd.create_part"
-    bl_label = "Generate"
-    bl_options = {'REGISTER', 'UNDO'}
-    category: bpy.props.StringProperty(default="")
-    type_sub: bpy.props.StringProperty(default="")
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        # --- 1. Get Scaling Factor from Generation Cage ---
-        scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
-        use_cage = context.scene.lsd_use_generation_cage
-        if use_cage:
-            scale_factor = context.scene.lsd_generation_cage_size
-            self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
-        else:
-            self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
-        cursor_loc = context.scene.cursor.location
-        cat = self.category if self.category else context.scene.lsd_part_category
-        type_sub = self.type_sub if self.type_sub else context.scene.lsd_part_type
-        # Override with scene-specific properties if available
-        if cat == 'ELECTRONICS' and not self.type_sub:
-            type_sub = context.scene.lsd_electronics_type
-        elif cat == 'VEHICLE' and not self.type_sub:
-            type_sub = context.scene.lsd_vehicle_type
-        elif cat == 'ARCHITECTURAL' and not self.type_sub:
-            type_sub = context.scene.lsd_architectural_type
-        # --- AI Editor Note: Use the new centralized helper function ---
-        new_obj = create_parametric_part_object(context, cat, type_sub, cursor_loc, scale_factor)
-        props = new_obj.lsd_pg_mech_props
-        # --- AI Editor Note: Auto-rigging for Basic Robot Joints ---
-        # Moved outside the removed 'if' block to ensure it runs.
-        if cat == 'BASIC_JOINT':
-            rig = ensure_default_rig(context)
-            if not rig:
-                self.report({'ERROR'}, "Could not find or create a default rig.")
-                return {'CANCELLED'}
-            # AI Editor Note: Use the shared helper function for rigging basic joints.
-            # This ensures consistency between manual creation and AI generation.
-            base_bone, joint_bone = rig_parametric_joint(context, new_obj)
-            if joint_bone:
-                pbone_joint = rig.pose.bones.get(joint_bone)
-                # Sync to UI tool
-                core._joint_editor_update_guard = True
-                try:
-                    tool_props = context.scene.lsd_pg_joint_editor_settings
-                    tool_props.joint_type = pbone_joint.lsd_pg_kinematic_props.joint_type
-                    tool_props.axis_alignment = pbone_joint.lsd_pg_kinematic_props.axis_alignment
-                    tool_props.joint_radius = pbone_joint.lsd_pg_kinematic_props.joint_radius
-                    tool_props.lower_limit = pbone_joint.lsd_pg_kinematic_props.lower_limit
-                    tool_props.upper_limit = pbone_joint.lsd_pg_kinematic_props.upper_limit
-                finally:
-                    core._joint_editor_update_guard = False
-        if new_obj:
-            # --- Set up initial viewport material ---
-            # This ensures the new part has the correct default color immediately.
-            # The update callback on the color property will handle subsequent changes.
-            obj_for_material = new_obj
-            props_owner = new_obj.lsd_pg_mech_props
-            if props_owner.category == 'CHAIN':
-                # For chains, the material goes on the instanced link object,
-                # but the properties are on the main curve object.
-                obj_for_material = props_owner.instanced_link_obj
-            if obj_for_material and hasattr(props_owner, 'material'):
-                # Use the color from the main properties owner (the curve for chains).
-                setup_and_update_material(obj_for_material, props_owner.material.color)
-            for o in context.view_layer.objects.selected:
-                o.select_set(False)
-            new_obj.select_set(True)
-            context.view_layer.objects.active = new_obj
-            self.report({'INFO'}, f"Created new part: {new_obj.name}")
-        return {'FINISHED'}
-class LSD_OT_ChainAddWrapObject(bpy.types.Operator):
-    bl_idname = "lsd.chain_add_wrap_object"
-    bl_label = "Add Wrap Object"
-    bl_options = {'REGISTER', 'UNDO'}
-    @classmethod
-    def poll(cls, context: bpy.types.Context) -> bool:
-        obj = context.active_object
-        # Operator works on an active Chain object
-        if not (obj and obj.lsd_pg_mech_props.category == 'CHAIN'):
-            return False
-        # Ensure there is a selected object to wrap around
-        selected = [o for o in context.selected_objects if o != obj]
-        if not selected:
-            return False
-        return True
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        chain_obj = context.active_object
-        props = chain_obj.lsd_pg_mech_props
-        targets = [o for o in context.selected_objects if o != chain_obj]
-        # 1. Get or Create the Wrap Collection
-        coll_name = f"LSD_Wraps_{chain_obj.name}"
-        wrap_coll = bpy.data.collections.get(coll_name)
-        if not wrap_coll:
-            wrap_coll = bpy.data.collections.new(coll_name)
-            context.scene.collection.children.link(wrap_coll)
-        props.chain_wrap_collection = wrap_coll
-        # 2. Add objects to collection and UI list
-        for target in targets:
-            # Check if already in list
-            exists = False
-            for item in props.chain_wrap_items:
-                if item.target == target:
-                    exists = True
-                    break
-            if not exists:
-                # Link to collection if not already there
-                if target.name not in wrap_coll.objects:
-                    wrap_coll.objects.link(target)
-                # Add to UI list
-                item = props.chain_wrap_items.add()
-                item.target = target
-        # 3. Update GN Modifier
-        mod_name = f"{MOD_PREFIX}Native_{props.type_chain.capitalize()}Chain"
-        mod = chain_obj.modifiers.get(mod_name)
-        if mod:
-            # We need to find the socket index or name for "Wrap Collection"
-            # Since we added it to the node group, it should be available.
-            # We can access it by identifier if we knew it, or by name.
-            # The setup_native_chain_gn function sets it up, but we can re-trigger it or set it here.
-            # Re-running setup is safe.
-            setup_native_wrap_gn(chain_obj)
-        self.report({'INFO'}, f"Added {len(targets)} wrap objects to '{chain_obj.name}'")
-        return {'FINISHED'}
-class LSD_OT_SlinkyAddHook(bpy.types.Operator):
-    """Adds a new middle hook for the Slinky spring at the 3D cursor location."""
-    bl_idname = "lsd.slinky_add_hook"
-    bl_label = "Add Middle Hook"
-    bl_options = {'REGISTER', 'UNDO'}
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        return obj and obj.lsd_pg_mech_props.category == 'SPRING' and obj.lsd_pg_mech_props.type_spring == 'SPRING_SLINKY'
-    def execute(self, context):
-        obj = context.active_object
-        props = obj.lsd_pg_mech_props
-        # Create an Empty at the 3D cursor
-        hook = bpy.data.objects.new(name=f"Hook_{obj.name}", object_data=None)
-        hook.location = context.scene.cursor.location
-        context.collection.objects.link(hook)
-        hook.empty_display_type = 'SPHERE'
-        hook.empty_display_size = 0.02
-        # Add to collection
-        item = props.slinky_hooks.add()
-        item.target = hook
-        # Trigger regeneration
-        from .core import setup_native_slinky
-        setup_native_slinky(obj, props.spring_start_obj, props.spring_end_obj)
-        return {'FINISHED'}
-class LSD_OT_SlinkyRemoveHook(bpy.types.Operator):
-    """Removes the active middle hook from the Slinky spring."""
-    bl_idname = "lsd.slinky_remove_hook"
-    bl_label = "Remove Active Hook"
-    bl_options = {'REGISTER', 'UNDO'}
-    @classmethod
-    def poll(cls, context):
-        obj = context.active_object
-        if not (obj and obj.lsd_pg_mech_props.category == 'SPRING'): return False
-        return len(obj.lsd_pg_mech_props.slinky_hooks) > 0
-    def execute(self, context):
-        obj = context.active_object
-        props = obj.lsd_pg_mech_props
-        if props.slinky_active_index >= 0 and props.slinky_active_index < len(props.slinky_hooks):
-            props.slinky_hooks.remove(props.slinky_active_index)
-            props.slinky_active_index = max(0, props.slinky_active_index - 1)
-            # Trigger regeneration
-            from .core import setup_native_slinky
-            setup_native_slinky(obj, props.spring_start_obj, props.spring_end_obj)
-        return {'FINISHED'}
-class LSD_OT_CreateElectronicPart(bpy.types.Operator):
-    """Creates a new parametric electronic component."""
-    bl_idname = "lsd.create_electronic_part"
-    bl_label = "Generate Electronic Part"
-    bl_options = {'REGISTER', 'UNDO'}
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        cursor_loc = context.scene.cursor.location
-        type_sub = context.scene.lsd_electronics_type
-        # --- 1. Get Scaling Factor from Generation Cage ---
-        scale_factor = 0.1 # Default base dimension (10cm) if cage is unused
-        if context.scene.lsd_use_generation_cage:
-            scale_factor = context.scene.lsd_generation_cage_size
-            self.report({'INFO'}, f"Generating part with Size Cage: {scale_factor:.3f}m")
-        else:
-            self.report({'INFO'}, f"Generating part with Default Size: {scale_factor:.3f}m")
-        # Use the centralized helper
-        new_obj = create_parametric_part_object(context, 'ELECTRONICS', type_sub, cursor_loc, scale_factor)
-        props = new_obj.lsd_pg_mech_props
-        setup_and_update_material(new_obj, props.material.color)
-        for o in context.view_layer.objects.selected:
-            o.select_set(False)
-        new_obj.select_set(True)
-        context.view_layer.objects.active = new_obj
-        self.report({'INFO'}, f"Created new electronic part: {new_obj.name}")
-        return {'FINISHED'}
-class LSD_OT_ChainAddPickedWrapObject(bpy.types.Operator):
-    """Adds the object selected in the 'Pick Object' field to the wrap bundle"""
-    bl_idname = "lsd.chain_add_picked_wrap_object"
-    bl_label = "Add Picked Object"
-    bl_options = {'REGISTER', 'UNDO'}
-    @classmethod
-    def poll(cls, context: bpy.types.Context) -> bool:
-        obj = context.active_object
-        return (obj and obj.lsd_pg_mech_props.category == 'CHAIN' and
-                obj.lsd_pg_mech_props.wrap_picker is not None)
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        chain_obj = context.active_object
-        props = chain_obj.lsd_pg_mech_props
-        target = props.wrap_picker
-        if not target:
-            return {'CANCELLED'}
-        # Reuse logic to ensure collection exists
-        coll_name = f"LSD_Wraps_{chain_obj.name}"
-        wrap_coll = bpy.data.collections.get(coll_name)
-        if not wrap_coll:
-            wrap_coll = bpy.data.collections.new(coll_name)
-            context.scene.collection.children.link(wrap_coll)
-        props.chain_wrap_collection = wrap_coll
-        # Add to collection and list if not present
-        if target.name not in wrap_coll.objects:
-            wrap_coll.objects.link(target)
-        if not any(item.target == target for item in props.chain_wrap_items):
-            item = props.chain_wrap_items.add()
-            item.target = target
-        # Update GN and clear picker
-        setup_native_wrap_gn(chain_obj)
-        props.wrap_picker = None
-        self.report({'INFO'}, f"Added '{target.name}' to wrap bundle.")
-        return {'FINISHED'}
-class LSD_OT_ChainRemoveWrapObject(bpy.types.Operator):
-    bl_idname = "lsd.chain_remove_wrap_object"
-    bl_label = "Remove Wrap Object"
-    bl_options = {'REGISTER', 'UNDO'}
-    index: bpy.props.IntProperty()
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        chain_obj = context.active_object
-        if not chain_obj:
-            return {'CANCELLED'}
-        props = chain_obj.lsd_pg_mech_props
-        if not props.chain_wrap_items or self.index >= len(props.chain_wrap_items):
-            return {'CANCELLED'}
-        item = props.chain_wrap_items[self.index]
-        target = item.target
-        # Remove from collection
-        if props.chain_wrap_collection and target and target.name in props.chain_wrap_collection.objects:
-            props.chain_wrap_collection.objects.unlink(target)
-        # Remove the item from the UI list.
-        props.chain_wrap_items.remove(self.index)
-        self.report({'INFO'}, f"Removed wrap object '{target.name if target else 'unknown'}'")
-        return {'FINISHED'}
-class LSD_OT_CalculateRatio(bpy.types.Operator):
-    bl_idname = "lsd.calculate_ratio"
-    bl_label = "Calculate Ratio"
-    def execute(self, context: bpy.types.Context) -> Set[str]:
-        bones_to_process = context.selected_pose_bones if context.selected_pose_bones else [context.active_pose_bone]
-        count = 0
-        for bone in bones_to_process:
-            if not bone: continue
-            props = bone.lsd_pg_kinematic_props
-            target_name = props.ratio_ref_bone if props.ratio_ref_bone else props.ratio_target_bone
-            if not target_name:
-                continue
-            target = bone.id_data.pose.bones.get(target_name)
-            if target:
-                is_rot_self = props.joint_type in ['revolute', 'continuous', 'spherical']
-                is_rot_tgt = target.lsd_pg_kinematic_props.joint_type in ['revolute', 'continuous', 'spherical']
-                # --- NEW: Use joint_radius for rotational joints (gears) and bone length for linear joints (racks) ---
-                # This provides physically-based ratio calculation.
-                # Determine the effective "length" or "radius" for the source (driver) bone
-                len_driver = target.length
-                if is_rot_tgt:
-                    # For gears, the ratio is based on radius
-                    len_driver = target.lsd_pg_kinematic_props.joint_radius if target.lsd_pg_kinematic_props.joint_radius > 0.001 else 1.0
-                # Determine the effective "length" or "radius" for the target (follower) bone
-                len_follower = bone.length
-                if is_rot_self:
-                    # For gears, the ratio is based on radius
-                    len_follower = bone.lsd_pg_kinematic_props.joint_radius if bone.lsd_pg_kinematic_props.joint_radius > 0.001 else 1.0
-                if len_follower < 0.0001:
-                    len_follower = 0.0001
-                # --- Logic for different joint type combinations ---
-                if is_rot_self and not is_rot_tgt: # Follower is ROT, Driver is LIN (e.g., Rack and Pinion)
-                    bone.lsd_pg_kinematic_props.ratio_value = 1.0 / len_follower
-                elif not is_rot_self and is_rot_tgt: # Follower is LIN, Driver is ROT (e.g., Pinion and Rack)
-                    bone.lsd_pg_kinematic_props.ratio_value = len_driver
-                elif is_rot_self and is_rot_tgt: # Follower is ROT, Driver is ROT (e.g., two gears)
-                    bone.lsd_pg_kinematic_props.ratio_value = len_driver / len_follower
-                else: # Both are LIN
-                    bone.lsd_pg_kinematic_props.ratio_value = 1.0
-                count += 1
-        self.report({'INFO'}, f"Calculated ratio for {count} bone(s).")
-        return {'FINISHED'}
 class LSD_OT_AddMimic(bpy.types.Operator):
     bl_idname = "lsd.add_mimic"
     bl_label = "Add / Update Driver"
@@ -7898,8 +7603,88 @@ class LSD_OT_Global_Math_Input(bpy.types.Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
+
+import shutil
+
+
+
+from bpy_extras.io_utils import ImportHelper
+import shutil
+
+class LSD_OT_SelectStartupBlend(bpy.types.Operator, ImportHelper):
+    bl_idname = "lsd.select_startup_blend"
+    bl_label = "Select startup.blend File"
+    bl_description = "Open the file browser to locate and select a replacement startup.blend file"
+    
+    filter_glob: bpy.props.StringProperty(default="*.blend", options={'HIDDEN'})
+    
+    def execute(self, context):
+        context.scene.lsd_startup_blend_path = self.filepath
+        return {'FINISHED'}
+
+class LSD_OT_SelectUserprefBlend(bpy.types.Operator, ImportHelper):
+    bl_idname = "lsd.select_userpref_blend"
+    bl_label = "Select userpref.blend File"
+    bl_description = "Open the file browser to locate and select a replacement userpref.blend file"
+    
+    filter_glob: bpy.props.StringProperty(default="*.blend", options={'HIDDEN'})
+    
+    def execute(self, context):
+        context.scene.lsd_userpref_blend_path = self.filepath
+        return {'FINISHED'}
+
+class LSD_OT_SetStartupFiles(bpy.types.Operator):
+    bl_idname = "lsd.set_startup_files"
+    bl_label = "Set as Default Startup Files"
+    bl_description = "Copy the selected configuration files directly into the active Blender configuration directory"
+    bl_options = {'REGISTER'}
+
+    @classmethod
+    def poll(cls, context):
+        return True
+
+    def execute(self, context):
+        scene = context.scene
+        startup_path = bpy.path.abspath(scene.lsd_startup_blend_path)
+        userpref_path = bpy.path.abspath(scene.lsd_userpref_blend_path)
+        
+        config_dir = bpy.utils.user_resource('CONFIG')
+        
+        if not os.path.exists(config_dir):
+            self.report({'ERROR'}, f"Config directory not found: {config_dir}")
+            return {'CANCELLED'}
+            
+        success_count = 0
+        
+        if startup_path and os.path.exists(startup_path) and startup_path.endswith('.blend'):
+            dest = os.path.join(config_dir, "startup.blend")
+            try:
+                shutil.copy2(startup_path, dest)
+                success_count += 1
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to copy startup.blend: {e}")
+                
+        if userpref_path and os.path.exists(userpref_path) and userpref_path.endswith('.blend'):
+            dest = os.path.join(config_dir, "userpref.blend")
+            try:
+                shutil.copy2(userpref_path, dest)
+                success_count += 1
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed to copy userpref.blend: {e}")
+                
+        if success_count == 0:
+            self.report({'WARNING'}, "No valid files selected or copied.")
+        else:
+            self.report({'INFO'}, f"Successfully set {success_count} config file(s)! Restarting Blender...")
+            import subprocess
+            subprocess.Popen([bpy.app.binary_path])
+            bpy.ops.wm.quit_blender()
+            
+        return {'FINISHED'}
+
 def register():
     CLASSES = [
+        LSD_OT_SetStartupFiles, LSD_OT_SelectStartupBlend, LSD_OT_SelectUserprefBlend,
         LSD_OT_NM_Boolean_Pro,
         LSD_OT_NM_Surface_Project,
         LSD_OT_NM_Surface_Insert,
@@ -7939,9 +7724,7 @@ def register():
         LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_Manually_Draw_Offset_Line, LSD_OT_AddModifier,
         LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
         LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
-        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
-        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject,
-        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic,
+        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_AddMimic,
         LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone,
         LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add,
         LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement,
@@ -7965,6 +7748,7 @@ def register():
 
 def unregister():
     CLASSES = [
+        LSD_OT_SetStartupFiles, LSD_OT_SelectStartupBlend, LSD_OT_SelectUserprefBlend,
         LSD_OT_NM_Boolean_Pro,
         LSD_OT_NM_Surface_Project,
         LSD_OT_NM_Surface_Insert,
@@ -8004,9 +7788,7 @@ def unregister():
         LSD_OT_AddTextDescription, LSD_OT_Remove_Dimension, LSD_OT_Add_Dimension, LSD_OT_Manually_Draw_Offset_Line, LSD_OT_AddModifier,
         LSD_OT_Dimension_AutoScale, LSD_OT_Register_Default_Proportions, LSD_OT_Dimension_Auto_Calculate_Global,
         LSD_OT_AddSimplify, LSD_OT_SetupLinearArray, LSD_OT_SetupRadialArray, LSD_OT_CreateCurveForPath,
-        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_CreatePart, LSD_OT_ChainAddWrapObject,
-        LSD_OT_CreateElectronicPart, LSD_OT_ChainAddPickedWrapObject, LSD_OT_ChainRemoveWrapObject,
-        LSD_OT_SlinkyAddHook, LSD_OT_SlinkyRemoveHook, LSD_OT_CalculateRatio, LSD_OT_AddMimic,
+        LSD_OT_SetupCurveArray, LSD_OT_SmartSmooth, LSD_OT_AddMimic,
         LSD_OT_RemoveMimic, LSD_OT_ClearConfig, LSD_OT_ApplyBoneConstraints, LSD_OT_PickBone,
         LSD_OT_GenerateROS2Workspace, LSD_OT_ExportList_Add,
         LSD_OT_ExportList_Remove, LSD_OT_Export, LSD_OT_ExportSelected, LSD_OT_TogglePlacement,

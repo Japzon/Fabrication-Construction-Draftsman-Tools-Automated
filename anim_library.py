@@ -404,11 +404,11 @@ class LSD_OT_Anim_Library_Export(bpy.types.Operator):
             action = track.strips[0].action
             
         lib_path = get_library_path()
-        base_name = layer.name
+        base_name = settings.import_export_name if settings.import_export_name else layer.name
         out_filepath = os.path.join(lib_path, f"{base_name}.blend")
         counter = 1
         while os.path.exists(out_filepath):
-            base_name = f"{layer.name}_{counter:03d}"
+            base_name = f"{settings.import_export_name if settings.import_export_name else layer.name}_{counter:03d}"
             out_filepath = os.path.join(lib_path, f"{base_name}.blend")
             counter += 1
             
@@ -646,7 +646,7 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                     
                     # (Action deletion is safely deferred via the background timer above)
                         
-                base_name = item.name
+                base_name = settings.import_export_name if settings.import_export_name else item.name
                 action_name = base_name
                 existing_names = [l.name for l in settings.layers if l != layer]
                 counter = 1

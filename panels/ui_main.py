@@ -46,8 +46,6 @@ from .. import core
 from .. import properties
 from .. import operators
 
-from . import ui_common
-from .ui_materials import LSD_PT_Materials_And_Textures
 from .ui_dimensions import LSD_PT_Dimensions_And_Precision_Transforms
 from .ui_physics import LSD_PT_Physics
 
@@ -77,7 +75,6 @@ class LSD_PT_FabricationConstructionDraftsmanTools(bpy.types.Panel):
         panel_map = [
             (LSD_PT_Dimensions_And_Precision_Transforms, "lsd_order_dimensions"),
             (LSD_PT_SDF_Booleans, "lsd_order_sdf_booleans"),
-            (LSD_PT_Materials_And_Textures, "lsd_order_materials"),
             (LSD_PT_Kinematics_Setup, "lsd_order_kinematics"),
             (LSD_PT_Animation_System_Main, "lsd_order_animation"),
             (LSD_PT_Camera_Cinematography, "lsd_order_camera"),

@@ -56,6 +56,20 @@ class LSD_PT_Workflow_Optimizer(bpy.types.Panel):
                     row.operator("lsd.asset_edit_external", text="Directly Save to External File", icon='FILE_TICK')
             else:
                 abox.label(text="No asset selected.", icon='INFO')
+                
+        # Startup Preferences Box
+        startup_box = layout.box()
+        startup_box.label(text="Startup Preferences Override", icon='PREFERENCES')
+        
+        row1 = startup_box.row(align=True)
+        row1.prop(context.scene, "lsd_startup_blend_path")
+        row1.operator("lsd.select_startup_blend", icon='FILE_FOLDER', text="")
+        
+        row2 = startup_box.row(align=True)
+        row2.prop(context.scene, "lsd_userpref_blend_path")
+        row2.operator("lsd.select_userpref_blend", icon='FILE_FOLDER', text="")
+        
+        startup_box.operator("lsd.set_startup_files", icon='FILE_TICK')
 
 classes = (
     LSD_PT_Workflow_Optimizer,

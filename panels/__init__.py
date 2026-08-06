@@ -9,12 +9,7 @@
 # --------------------------------------------------------------------------------
 
 from . import ui_common
-from . import ui_parts
-from . import ui_materials
-from . import ui_electronics
 from . import ui_dimensions
-from . import ui_architectural
-from . import ui_vehicle
 from . import ui_physics
 from . import ui_transmission
 from . import ui_kinematics
@@ -28,12 +23,7 @@ from . import ui_animation
 
 modules = [
     ui_common,
-    ui_parts,
-    ui_materials,
-    ui_electronics,
     ui_dimensions,
-    ui_architectural,
-    ui_vehicle,
     ui_physics,
     ui_transmission,
     ui_animation,

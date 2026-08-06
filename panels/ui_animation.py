@@ -77,6 +77,8 @@ class LSD_PT_Animation_System_Main:
                     
                     col.separator()
                     col.prop(settings, "import_blend_type", text="Mode")
+                    col.prop(settings, "upload_selection", text="Upload Selection")
+                    col.prop(settings, "import_export_name")
                     
                     # Animated Preview
                     if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):

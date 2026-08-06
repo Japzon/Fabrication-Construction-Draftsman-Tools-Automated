@@ -527,38 +527,6 @@ def update_dimension_driver_target(self, context):
         host.update_tag()
         root = core.get_dimension_root(host)
         if root: root.update_tag()
-def update_collision_sync_all(self, context, prop_name: str, mod_name: str, mod_type: str, attr_name: str):
-    """Generic helper to sync collision properties across multi-selection via a guard."""
-    if context.window_manager.get("_lsd_coll_guard", False):
-        return None
-    context.window_manager["_lsd_coll_guard"] = True
-    try:
-        val = getattr(self, prop_name)
-        targets = context.selected_objects
-        if not targets and hasattr(self, "id_data"):
-            targets = [self.id_data]
-        for obj in targets:
-            source = obj
-            if obj.name.startswith("COLL_") and obj.parent:
-                source = obj.parent
-            if not hasattr(source, "lsd_pg_mech_props"):
-                continue
-            # Sync logical props
-            setattr(source.lsd_pg_mech_props.collision, prop_name, val)
-            # Update modifier
-            coll_name = f"COLL_{source.name}"
-            coll_obj = bpy.data.objects.get(coll_name)
-            if coll_obj:
-                mod = coll_obj.modifiers.get(mod_name)
-                if mod and mod.type == mod_type:
-                    setattr(mod, attr_name, val)
-    finally:
-        context.window_manager["_lsd_coll_guard"] = False
-    return None
-def update_collision_decimate(self, context):
-    return update_collision_sync_all(self, context, "decimate_ratio", "LSD_Collision_Simplify", 'DECIMATE', 'ratio')
-def update_collision_thickness(self, context):
-    return update_collision_sync_all(self, context, "thickness", "LSD_Collision_Thickness", 'SOLIDIFY', 'thickness')
 def update_element_category(self, context):
     """Resets the element selection to the first alphabetical item of the new category."""
     from .config import ELEMENT_DATA
@@ -593,13 +561,6 @@ def update_element_density(self, context):
 
 # ------------------------------------------------------------------------
 
-class LSD_PG_Transmission_Properties(bpy.types.PropertyGroup):
-    type: bpy.props.StringProperty(name="Type", default="transmission_interface/SimpleTransmission")
-    joint: bpy.props.StringProperty(name="Joint")
-    hardware_interface: bpy.props.StringProperty(name="Hardware Interface", default="hardware_interface/EffortJointInterface")
-    mechanical_reduction: bpy.props.FloatProperty(name="Mechanical Reduction", default=1.0)
-class LSD_PG_Material_Properties(bpy.types.PropertyGroup):
-    pass
 
 def update_paint_layer(self, context):
     try:
@@ -628,21 +589,6 @@ class LSD_PG_Slinky_Hook(bpy.types.PropertyGroup):
 class LSD_PG_Wrap_Item(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Item Name")
     target: bpy.props.PointerProperty(type=bpy.types.Object, name="Object")
-class LSD_PG_Collision_Properties(bpy.types.PropertyGroup):
-    shape: bpy.props.EnumProperty(name="Shape", items=[('BOX', "Box", ""), ('CYLINDER', "Cylinder", ""), ('SPHERE', "Sphere", ""), ('MESH', "Mesh", "")], default='MESH')
-    collision_object: bpy.props.PointerProperty(name="Collision Object", type=bpy.types.Object)
-    decimate_ratio: bpy.props.FloatProperty(
-        name="Simplification Ratio",
-        description="Ratio of triangles to keep (1.0 = original, 0.1 = 10% polygons)",
-        default=1.0, min=0.0, max=1.0,
-        update=update_collision_decimate
-    )
-    thickness: bpy.props.FloatProperty(
-        name="Collision Thickness",
-        description="Offset distance/shell thickness relative to original mesh",
-        default=0.0, min=0.0, unit='LENGTH',
-        update=update_collision_thickness
-    )
 class LSD_PG_Inertial_Properties(bpy.types.PropertyGroup):
     # Element Preset Selection
     element_category: bpy.props.EnumProperty(
@@ -775,197 +721,6 @@ class LSD_PG_Dimension_Props(bpy.types.PropertyGroup):
         default='CENTER',
         update=update_arrow_settings_timer
     )
-class LSD_PG_Mech_Props(bpy.types.PropertyGroup):
-    is_part: bpy.props.BoolProperty(default=False)
-    category: bpy.props.EnumProperty(name="Category", items=ALL_CATEGORIES_SORTED, update=update_mesh_wrapper)
-    # Types
-    type_gear: bpy.props.EnumProperty(name="Type", items=GEAR_TYPES, update=update_mesh_wrapper)
-    type_rack: bpy.props.EnumProperty(name="Type", items=RACK_TYPES, update=update_mesh_wrapper)
-    type_basic_shape: bpy.props.EnumProperty(name="Type", items=BASIC_SHAPE_TYPES, update=update_mesh_wrapper)
-    type_pulley: bpy.props.EnumProperty(name="Type", items=PULLEY_TYPES, update=update_mesh_wrapper)
-    type_rope: bpy.props.EnumProperty(name="Type", items=ROPE_TYPES, update=update_mesh_wrapper)
-    type_spring: bpy.props.EnumProperty(name="Type", items=SPRING_TYPES, update=update_mesh_wrapper)
-    type_fastener: bpy.props.EnumProperty(name="Type", items=FASTENER_TYPES, update=update_mesh_wrapper)
-    type_chain: bpy.props.EnumProperty(name="Type", items=CHAIN_TYPES, update=update_mesh_wrapper)
-    type_wheel: bpy.props.EnumProperty(name="Type", items=WHEEL_TYPES, update=update_mesh_wrapper)
-    type_basic_joint: bpy.props.EnumProperty(name="Type", items=BASIC_JOINT_TYPES, update=update_mesh_wrapper)
-    type_electronics: bpy.props.EnumProperty(name="Type", items=ALL_ELECTRONICS_TYPES, update=update_mesh_wrapper)
-    type_architectural: bpy.props.EnumProperty(name="Type", items=ARCHITECTURAL_TYPES, update=update_mesh_wrapper)
-    type_vehicle: bpy.props.EnumProperty(name="Type", items=VEHICLE_TYPES, update=update_mesh_wrapper)
-    # 1. GEARS
-    gear_radius: bpy.props.FloatProperty(name="Gear Radius", default=0.05, min=0.001, unit='LENGTH', update=update_radius_prop)
-    gear_width: bpy.props.FloatProperty(name="Gear Width", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    gear_teeth_count: bpy.props.IntProperty(name="Teeth Count", default=24, min=3, update=update_mesh_wrapper)
-    gear_tooth_depth: bpy.props.FloatProperty(name="Tooth Depth", default=0.005, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    gear_tooth_taper: bpy.props.FloatProperty(name="Tooth Taper", default=0.8, min=0.0, max=1.5, update=update_mesh_wrapper)
-    gear_bore_radius: bpy.props.FloatProperty(name="Bore Radius", default=0.0, min=0.0, unit='LENGTH', update=update_mesh_wrapper)
-    gear_outer_radius: bpy.props.FloatProperty(name="Outer Radius (Ring)", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 2. RACKS
-    rack_width: bpy.props.FloatProperty(name="Rack Width", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rack_height: bpy.props.FloatProperty(name="Rack Height", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rack_length: bpy.props.FloatProperty(name="Rack Length", default=0.2, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rack_teeth_count: bpy.props.IntProperty(name="Teeth Count", default=40, min=1, update=update_mesh_wrapper)
-    rack_tooth_depth: bpy.props.FloatProperty(name="Tooth Depth", default=0.005, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    # 3. FASTENERS
-    fastener_radius: bpy.props.FloatProperty(name="Fastener Radius", default=0.004, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
-    fastener_length: bpy.props.FloatProperty(name="Fastener Length", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 4. SPRINGS & DAMPERS
-    spring_radius: bpy.props.FloatProperty(name="Spring Radius", default=0.015, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    spring_wire_thickness: bpy.props.FloatProperty(name="Wire Thickness", default=0.002, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    spring_turns: bpy.props.IntProperty(name="Turns", default=10, min=1, update=update_mesh_wrapper)
-    # 1. GEARS & RACKS EXTENDED
-    tooth_spacing: bpy.props.FloatProperty(name="Tooth Spacing", default=0.0, min=0.0, unit='LENGTH', update=update_mesh_wrapper)
-    twist: bpy.props.FloatProperty(name="Twist Rate", default=0.0, update=update_mesh_wrapper)
-    bore_type: bpy.props.EnumProperty(name="Bore Type", items=[('ROUND', "Round", ""), ('SQUARE', "Square", ""), ('D-SHAFT', "D-Shaft", ""), ('HEX', "Hex", "")], default='ROUND', update=update_mesh_wrapper)
-    # 4. SPRINGS & DAMPERS EXTENDED
-    slinky_hooks: bpy.props.CollectionProperty(type=LSD_PG_Slinky_Hook)
-    slinky_active_index: bpy.props.IntProperty(default=0)
-    # 5. CHAINS & BELTS EXTENDED
-    chain_drive_target: bpy.props.PointerProperty(type=bpy.types.Object, name="Drive Source")
-    chain_drive_ratio: bpy.props.FloatProperty(name="Drive Ratio", default=1.0)
-    chain_drive_invert: bpy.props.BoolProperty(name="Invert Drive", default=False)
-    wrap_picker: bpy.props.PointerProperty(type=bpy.types.Object, name="Wrap Object")
-    chain_wrap_items: bpy.props.CollectionProperty(type=LSD_PG_Wrap_Item)
-    chain_wrap_collection: bpy.props.PointerProperty(type=bpy.types.Collection, name="Wrap Collection")
-    chain_active_index: bpy.props.IntProperty(default=0)
-    # Custom Overrides for Rollers & Connectors
-    chain_use_custom_roller: bpy.props.BoolProperty(name="Use Custom Roller", default=False, update=update_mesh_wrapper)
-    chain_custom_roller_obj: bpy.props.PointerProperty(name="Roller Object", type=bpy.types.Object, update=update_mesh_wrapper)
-    chain_use_custom_connector: bpy.props.BoolProperty(name="Use Custom Connector", default=False, update=update_mesh_wrapper)
-    chain_custom_connector_obj: bpy.props.PointerProperty(name="Connector Object", type=bpy.types.Object, update=update_mesh_wrapper)
-    # Materials for Rollers/Connectors (Internal references)
-    chain_roller_color: bpy.props.FloatVectorProperty(name="Roller Color", subtype='COLOR', default=(0.4, 0.4, 0.4, 1.0), size=4, min=0.0, max=1.0, update=update_mesh_wrapper)
-    chain_connector_color: bpy.props.FloatVectorProperty(name="Connector Color", subtype='COLOR', default=(0.2, 0.2, 0.2, 1.0), size=4, min=0.0, max=1.0, update=update_mesh_wrapper)
-    # 6. WHEELS EXTENDED
-    wheel_side_pattern: bpy.props.EnumProperty(name="Side Pattern", items=[('NONE', "None", ""), ('HOLES', "Holes", ""), ('SPOKES', "Spokes", "")], default='NONE', update=update_mesh_wrapper)
-    wheel_tread_pattern: bpy.props.EnumProperty(name="Tread Pattern", items=[('NONE', "None", ""), ('LINES', "Lines", ""), ('BLOCKS', "Blocks", "")], default='NONE', update=update_mesh_wrapper)
-    wheel_pattern_spacing: bpy.props.FloatProperty(name="Pattern Spacing", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_pattern_depth: bpy.props.FloatProperty(name="Pattern Depth", default=0.005, unit='LENGTH', update=update_mesh_wrapper)
-    # 11. BASIC SHAPE PROPERTIES
-    shape_size: bpy.props.FloatProperty(name="Size", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    shape_length_x: bpy.props.FloatProperty(name="Length X", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    shape_width_y: bpy.props.FloatProperty(name="Width Y", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    shape_height_z: bpy.props.FloatProperty(name="Height Z", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    shape_radius: bpy.props.FloatProperty(name="Radius", default=0.05, unit='LENGTH', update=update_mesh_wrapper)
-    shape_vertices: bpy.props.IntProperty(name="Vertices", default=32, min=3, update=update_mesh_wrapper)
-    shape_height: bpy.props.FloatProperty(name="Height", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    shape_segments: bpy.props.IntProperty(name="Segments", default=32, min=3, update=update_mesh_wrapper)
-    shape_subdivisions: bpy.props.IntProperty(name="Subdivisions", default=2, min=1, update=update_mesh_wrapper)
-    shape_major_radius: bpy.props.FloatProperty(name="Major Radius", default=0.04, unit='LENGTH', update=update_mesh_wrapper)
-    shape_tube_radius: bpy.props.FloatProperty(name="Tube Radius", default=0.02, unit='LENGTH', update=update_mesh_wrapper)
-    shape_horizontal_segments: bpy.props.IntProperty(name="Horizontal Segments", default=40, min=3, update=update_mesh_wrapper)
-    shape_vertical_segments: bpy.props.IntProperty(name="Vertical Segments", default=15, min=3, update=update_mesh_wrapper)
-    # 12. ARCHITECTURAL PROPERTIES
-    wall_thickness: bpy.props.FloatProperty(name="Wall Thickness", default=0.2, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
-    window_frame_thickness: bpy.props.FloatProperty(name="Frame Thickness", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    glass_thickness: bpy.props.FloatProperty(name="Glass Thickness", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    step_count: bpy.props.IntProperty(name="Step Count", default=12, min=1, update=update_mesh_wrapper)
-    step_height: bpy.props.FloatProperty(name="Step Riser", default=0.18, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
-    step_depth: bpy.props.FloatProperty(name="Step Tread", default=0.28, min=0.01, unit='LENGTH', update=update_mesh_wrapper)
-    # ... (rest of the properties continue)
-    # Dynamic/Damper Specific
-    height: bpy.props.FloatProperty(name="Housing Height", default=0.1, unit='LENGTH', update=update_mesh_wrapper)
-    length: bpy.props.FloatProperty(name="Current Length", default=0.2, unit='LENGTH', update=update_mesh_wrapper)
-    radius: bpy.props.FloatProperty(name="Housing Radius", default=0.05, unit='LENGTH', update=update_mesh_wrapper)
-    teeth: bpy.props.IntProperty(name="Segments/Turns", default=12, update=update_mesh_wrapper)
-    tooth_depth: bpy.props.FloatProperty(name="Wire/Rod Radius", default=0.005, unit='LENGTH', update=update_mesh_wrapper)
-    outer_radius: bpy.props.FloatProperty(name="Outer Radius", default=0.06, unit='LENGTH', update=update_mesh_wrapper)
-    bore_radius: bpy.props.FloatProperty(name="Bore Radius", default=0.03, unit='LENGTH', update=update_mesh_wrapper)
-    damper_seat_radius: bpy.props.FloatProperty(name="Seat Radius", default=0.08, unit='LENGTH', update=update_mesh_wrapper)
-    damper_seat_thickness: bpy.props.FloatProperty(name="Seat Thickness", default=0.02, unit='LENGTH', update=update_mesh_wrapper)
-    # 5. CHAINS & BELTS
-    chain_pitch: bpy.props.FloatProperty(name="Chain Pitch", default=0.0127, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    chain_roller_radius: bpy.props.FloatProperty(name="Roller Radius", default=0.004, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
-    chain_roller_length: bpy.props.FloatProperty(name="Roller Length", default=0.008, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    chain_curve_res: bpy.props.FloatProperty(name="Wrap Resolution", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    chain_plate_height: bpy.props.FloatProperty(name="Plate Height", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    chain_plate_thickness: bpy.props.FloatProperty(name="Plate Thickness", default=0.0015, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    belt_width: bpy.props.FloatProperty(name="Belt Width", default=0.015, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    belt_thickness: bpy.props.FloatProperty(name="Belt Thickness", default=0.002, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    # 6. WHEELS
-    wheel_radius: bpy.props.FloatProperty(name="Wheel Radius", default=0.05, min=0.001, unit='LENGTH', update=update_radius_prop)
-    wheel_width: bpy.props.FloatProperty(name="Wheel Width", default=0.04, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_hub_radius: bpy.props.FloatProperty(name="Hub Radius", default=0.012, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_hub_length: bpy.props.FloatProperty(name="Hub Width", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_tread_count: bpy.props.IntProperty(name="Tread Count", default=24, min=1, update=update_mesh_wrapper)
-    wheel_sub_radius: bpy.props.FloatProperty(name="Sub-Radius", default=0.008, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_sub_length: bpy.props.FloatProperty(name="Sub-Length", default=0.025, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_sub_arrays: bpy.props.IntProperty(name="Roller Arrays", default=1, min=1, update=update_mesh_wrapper)
-    wheel_sub_support_thickness: bpy.props.FloatProperty(name="Support Thickness", default=0.002, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_sub_support_length: bpy.props.FloatProperty(name="Support Length", default=0.005, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_axle_length: bpy.props.FloatProperty(name="Axle Length", default=0.045, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    wheel_thickness: bpy.props.FloatProperty(name="Carriage Thickness", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 7. PULLEYS
-    pulley_radius: bpy.props.FloatProperty(name="Pulley Radius", default=0.03, min=0.001, unit='LENGTH', update=update_radius_prop)
-    pulley_width: bpy.props.FloatProperty(name="Pulley Width", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    pulley_groove_depth: bpy.props.FloatProperty(name="Groove Depth", default=0.005, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    pulley_teeth_count: bpy.props.IntProperty(name="Teeth Count", default=20, min=3, update=update_mesh_wrapper)
-    # 8. ROPES & CABLES
-    rope_radius: bpy.props.FloatProperty(name="Rope Radius", default=0.003, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
-    rope_length: bpy.props.FloatProperty(name="Rope Length", default=0.5, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rope_strands: bpy.props.IntProperty(name="Strands", default=7, min=1, update=update_mesh_wrapper)
-    # 9. BASIC JOINTS
-    joint_width: bpy.props.FloatProperty(name="Joint Width", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_radius: bpy.props.FloatProperty(name="Joint Radius", default=0.03, min=0.001, unit='LENGTH', update=update_radius_prop)
-    joint_pin_radius: bpy.props.FloatProperty(name="Pin Radius", default=0.007, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_pin_length: bpy.props.FloatProperty(name="Pin Length", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_sub_size: bpy.props.FloatProperty(name="Sub-Size/Overhang", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    # Joint Generator Tracking Pointers (AI Added for Stability)
-    joint_stator_obj: bpy.props.PointerProperty(name="Stator Object", type=bpy.types.Object)
-    joint_rotor_obj: bpy.props.PointerProperty(name="Rotor Object", type=bpy.types.Object)
-    joint_screw_obj: bpy.props.PointerProperty(name="Screw Object", type=bpy.types.Object)
-    joint_pin_obj: bpy.props.PointerProperty(name="Pin Object", type=bpy.types.Object)
-    joint_sub_thickness: bpy.props.FloatProperty(name="Sub-Thickness", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_frame_width: bpy.props.FloatProperty(name="Frame Width", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_frame_length: bpy.props.FloatProperty(name="Frame Length", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_carriage_width: bpy.props.FloatProperty(name="Carriage Width", default=0.08, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_carriage_thickness: bpy.props.FloatProperty(name="Carriage Thickness", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_length: bpy.props.FloatProperty(name="Rotor Arm Length", default=0.194, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_width: bpy.props.FloatProperty(name="Rotor Arm Width", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    rotor_arm_height: bpy.props.FloatProperty(name="Rotor Arm Height", default=0.001, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    # 10. ELECTRONICS / CONTINUOUS JOINTS
-    joint_base_radius: bpy.props.FloatProperty(name="Base Radius", default=0.06, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_base_length: bpy.props.FloatProperty(name="Base Length", default=0.12, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_motor_height: bpy.props.FloatProperty(name="Motor Height", default=0.035, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    joint_motor_shaft_radius: bpy.props.FloatProperty(name="Shaft Radius", default=0.01, min=0.0005, unit='LENGTH', update=update_mesh_wrapper)
-    joint_motor_shaft_length: bpy.props.FloatProperty(name="Shaft Length", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 13. IC PROPERTIES
-    ic_width: bpy.props.FloatProperty(name="IC Width", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    ic_length: bpy.props.FloatProperty(name="IC Length", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    ic_height: bpy.props.FloatProperty(name="IC Height", default=0.002, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    ic_pin_count: bpy.props.IntProperty(name="Pin Count", default=8, min=2, update=update_mesh_wrapper)
-    # 14. SENSOR PROPERTIES
-    sensor_radius: bpy.props.FloatProperty(name="Sensor Radius", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    sensor_length: bpy.props.FloatProperty(name="Sensor Length", default=0.02, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    sensor_height: bpy.props.FloatProperty(name="Sensor Height", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 15. CAMERA BODY PROPERTIES
-    camera_case_length: bpy.props.FloatProperty(name="Case Length", default=0.03, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    camera_case_width: bpy.props.FloatProperty(name="Case Width", default=0.03, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    camera_case_height: bpy.props.FloatProperty(name="Case Height", default=0.03, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    camera_lens_radius: bpy.props.FloatProperty(name="Lens Radius", default=0.01, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    # 16. PCB PROPERTIES
-    pcb_width: bpy.props.FloatProperty(name="PCB Width", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    pcb_length: bpy.props.FloatProperty(name="PCB Length", default=0.05, min=0.001, unit='LENGTH', update=update_mesh_wrapper)
-    pcb_thickness: bpy.props.FloatProperty(name="PCB Thickness", default=0.0016, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    pcb_hole_radius: bpy.props.FloatProperty(name="Mounting Hole Radius", default=0.0015, min=0.0001, unit='LENGTH', update=update_mesh_wrapper)
-    # 11. CAMERA SETUP & ANIMATION
-    camera_target: bpy.props.PointerProperty(name="Look At Target", type=bpy.types.Object)
-    camera_path: bpy.props.PointerProperty(name="Animation Path", type=bpy.types.Object, poll=lambda self, obj: obj.type == 'CURVE')
-    camera_focal_length: bpy.props.FloatProperty(name="Focal Length", default=35.0, min=1.0, max=5000.0, update=update_mesh_wrapper)
-    camera_dof_enabled: bpy.props.BoolProperty(name="Enable Depth of Field", default=False)
-    camera_fstop: bpy.props.FloatProperty(name="F-Stop", default=2.8, min=0.1, max=128.0)
-    camera_follow_path: bpy.props.BoolProperty(name="Follow Path", default=False)
-    camera_path_offset: bpy.props.FloatProperty(name="Path Offset", default=0.0, min=-1000.0, max=1000.0)
-    # Final Pointers
-    spring_start_obj: bpy.props.PointerProperty(type=bpy.types.Object)
-    spring_end_obj: bpy.props.PointerProperty(type=bpy.types.Object)
-    instanced_link_obj: bpy.props.PointerProperty(type=bpy.types.Object)
-    # Internal track logic
-    last_radius: bpy.props.FloatProperty(default=0.0, options={'HIDDEN'})
-    # Sub-props
-    collision: bpy.props.PointerProperty(type=LSD_PG_Collision_Properties)
-    inertial: bpy.props.PointerProperty(type=LSD_PG_Inertial_Properties)
-    material: bpy.props.PointerProperty(type=LSD_PG_Material_Properties)
 class LSD_PG_Mimic_Driver(bpy.types.PropertyGroup):
     target_bone: bpy.props.StringProperty(name="Target", update=update_mini_mimic_live)
     drive_x: bpy.props.BoolProperty(name="X", default=True, update=update_mini_mimic_live)
@@ -974,10 +729,7 @@ class LSD_PG_Mimic_Driver(bpy.types.PropertyGroup):
     ratio: bpy.props.FloatProperty(name="Ratio", default=1.0, update=update_mini_mimic_live)
     invert: bpy.props.BoolProperty(name="Invert", default=False, update=update_mini_mimic_live)
 class LSD_PG_Kinematic_Props(bpy.types.PropertyGroup):
-    collision: bpy.props.PointerProperty(type=LSD_PG_Collision_Properties)
     inertial: bpy.props.PointerProperty(type=LSD_PG_Inertial_Properties)
-    material: bpy.props.PointerProperty(type=LSD_PG_Material_Properties)
-    transmission: bpy.props.PointerProperty(type=LSD_PG_Transmission_Properties)
     joint_type: bpy.props.EnumProperty(
         name="Joint Type",
         items=[('none', "None", ""), ('base', "Base", ""), ('fixed', "Fixed", ""), ('revolute', "Revolute", ""), ('continuous', "Continuous", ""), ('prismatic', "Linear", ""), ('spherical', "Spherical", "")],
@@ -1191,6 +943,19 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default='REPLACE'
     )
     
+    upload_selection: bpy.props.EnumProperty(
+        name="Upload Selection",
+        items=[
+            ('LAYER', "Selected Animation Layer", "Upload the entire selected animation layer"),
+            ('KEYFRAMES', "Selected Keyframes", "Upload only the currently selected keyframes in the timeline editor")
+        ],
+        default='LAYER'
+    )
+    
+    import_export_name: bpy.props.StringProperty(
+        name="Import/Export Name"
+    )
+    
     preview_capture_interval: bpy.props.FloatProperty(
         name="Preview Capture Interval (s)",
         description="Time between captured preview frames (in seconds). Higher values render faster and use less memory.",
@@ -1201,6 +966,8 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     
     def update_active_idx(self, context):
         try:
+            if self.layers and 0 <= self.active_layer_index < len(self.layers):
+                self.import_export_name = self.layers[self.active_layer_index].name
             from . import anim_core
             anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
         except:
@@ -1397,9 +1164,9 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     speed: bpy.props.FloatProperty(default=1.0)
 
 CLASSES = [
-    LSD_PG_Transmission_Properties, LSD_PG_Material_Properties, LSD_PG_Collision_Properties,
+    
     LSD_PG_Paint_Layer,
-    LSD_PG_Inertial_Properties, LSD_PG_Wrap_Item, LSD_PG_Dimensions_Master_Item, LSD_PG_Dimensions_Grouped_Set, LSD_PG_Slinky_Hook, LSD_PG_Mech_Props, LSD_PG_Mimic_Driver,
+    LSD_PG_Inertial_Properties, LSD_PG_Wrap_Item, LSD_PG_Dimensions_Master_Item, LSD_PG_Dimensions_Grouped_Set, LSD_PG_Slinky_Hook, LSD_PG_Mimic_Driver,
     LSD_PG_Kinematic_Props, LSD_PG_AI_Props, LSD_PG_Lighting_Props,
     LSD_PG_Dimension_Props, LSD_PG_Smart_Skin_Props, LSD_ExportItem, LSD_PG_SDF_Props
 ]
@@ -1573,7 +1340,6 @@ def register():
         except Exception as e:
             print(f"Warning: LSD could not register {cls.__name__}: {e}")
     # Pointers
-    bpy.types.Object.lsd_pg_mech_props = bpy.props.PointerProperty(type=LSD_PG_Mech_Props)
     bpy.types.PoseBone.lsd_pg_kinematic_props = bpy.props.PointerProperty(type=LSD_PG_Kinematic_Props)
     # Scene
     bpy.types.Scene.lsd_pg_ai_props = bpy.props.PointerProperty(type=LSD_PG_AI_Props)
@@ -1614,43 +1380,25 @@ def register():
         update=update_accurate_scale
     )
     # UI Visibility (Initialize/Reset)
-    from .config import LSD_PANEL_PROPS, MECH_CATEGORIES_SORTED, ELECTRONICS_CATEGORIES, ALL_ELECTRONICS_TYPES, ARCHITECTURAL_TYPES, VEHICLE_TYPES, GIZMO_STYLES, BONE_MODES, BONE_AXES
+    from .config import LSD_PANEL_PROPS, GIZMO_STYLES, BONE_MODES, BONE_AXES
     # 1. Selection & Utility Properties
-    bpy.types.Scene.lsd_part_category = bpy.props.EnumProperty(name="Category", items=MECH_CATEGORIES_SORTED)
-    def lsd_part_type_items(self, context):
-        cat = getattr(self, "lsd_part_category", 'GEAR')
-        if cat == 'GEAR': return GEAR_TYPES
-        elif cat == 'RACK': return RACK_TYPES
-        elif cat == 'FASTENER': return FASTENER_TYPES
-        elif cat == 'SPRING': return SPRING_TYPES
-        elif cat == 'CHAIN': return CHAIN_TYPES
-        elif cat == 'WHEEL': return WHEEL_TYPES
-        elif cat == 'PULLEY': return PULLEY_TYPES
-        elif cat == 'ROPE': return ROPE_TYPES
-        elif cat == 'BASIC_JOINT': return BASIC_JOINT_TYPES
-        elif cat == 'BASIC_SHAPE': return BASIC_SHAPE_TYPES
-        elif cat == 'ARCHITECTURAL': return ARCHITECTURAL_TYPES
-        elif cat == 'VEHICLE': return VEHICLE_TYPES
-        return [('NONE', "None", "")]
-    bpy.types.Scene.lsd_part_type = bpy.props.EnumProperty(name="Type", items=lsd_part_type_items)
-    bpy.types.Scene.lsd_electronics_category = bpy.props.EnumProperty(name="Category", items=ELECTRONICS_CATEGORIES)
-    def lsd_electronics_type_items(self, context):
-        cat = getattr(self, "lsd_electronics_category", 'MOTOR')
-        from .config import MOTOR_TYPES, SENSOR_TYPES, PCB_TYPES, IC_TYPES, CAMERA_TYPES
-        if cat == 'MOTOR': return MOTOR_TYPES
-        elif cat == 'SENSOR': return SENSOR_TYPES
-        elif cat == 'PCB': return PCB_TYPES
-        elif cat == 'IC': return IC_TYPES
-        elif cat == 'CAMERA': return CAMERA_TYPES
-        return [('NONE', "None", "")]
-    bpy.types.Scene.lsd_electronics_type = bpy.props.EnumProperty(name="Type", items=lsd_electronics_type_items)
-    bpy.types.Scene.lsd_architectural_type = bpy.props.EnumProperty(name="Type", items=ARCHITECTURAL_TYPES)
-    bpy.types.Scene.lsd_vehicle_type = bpy.props.EnumProperty(name="Type", items=VEHICLE_TYPES)
-    bpy.types.Scene.lsd_use_generation_cage = bpy.props.BoolProperty(name="Use Size Cage", default=False)
-    bpy.types.Scene.lsd_generation_cage_size = bpy.props.FloatProperty(name="Max Dimension", default=0.2, unit='LENGTH')
     bpy.types.Scene.lsd_viz_gizmos = bpy.props.BoolProperty(name="Show Gizmos", default=True)
     bpy.types.Scene.lsd_show_bones = bpy.props.BoolProperty(name="Show Bones", default=True)
     bpy.types.Scene.lsd_auto_collapse_panels = bpy.props.BoolProperty(name="Auto-Collapse", default=True)
+    
+    bpy.types.Scene.lsd_startup_blend_path = bpy.props.StringProperty(
+        name="Startup File", 
+        description="Defines the absolute path to a custom startup.blend file used for overriding the default Blender layout"
+    )
+    bpy.types.Scene.lsd_userpref_blend_path = bpy.props.StringProperty(
+        name="User Preferences File", 
+        description="Defines the absolute path to a custom userpref.blend file used for overriding the default Blender preferences"
+    )
+    
+    bpy.types.Scene.lsd_show_subpanel_parametric_anchors = bpy.props.BoolProperty(name="Show Parametric Anchors", default=False)
+    bpy.types.Scene.lsd_show_subpanel_dimension_generator = bpy.props.BoolProperty(name="Show Dimension Generator & Preferences", default=False)
+    bpy.types.Scene.lsd_show_subpanel_accurate_scaling = bpy.props.BoolProperty(name="Show Accurate Scaling", default=False)
+
     bpy.types.Scene.lsd_text_placement_mode = bpy.props.BoolProperty(name="Text Placement", default=False)
     bpy.types.Scene.lsd_placement_mode = bpy.props.BoolProperty(name="Object Placement", default=False, update=update_placement_mode_wrapper)
     bpy.types.Scene.lsd_gizmo_style = bpy.props.EnumProperty(name="Style", items=GIZMO_STYLES, default='DEFAULT')

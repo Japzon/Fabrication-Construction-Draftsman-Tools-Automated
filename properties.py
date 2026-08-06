@@ -621,7 +621,7 @@ class LSD_PG_Dimensions_Master_Item(bpy.types.PropertyGroup):
         type=bpy.types.Object,
         name="Link Source",
         description="Link Source - Pick another dimension to mirror its length.",
-        poll=lambda self, obj: obj.get("lsd_is_dimension") or obj.get("lsd_is_dimension_root"),
+        poll=lambda self, obj: obj.get("lsd_is_dimension") or obj.get("lsd_is_dimension_root") or obj.get("lsd_is_dimension_component"),
         update=update_dimension_driver_target
     )
     ratio: bpy.props.FloatProperty(

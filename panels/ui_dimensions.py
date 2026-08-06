@@ -125,6 +125,9 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                 if is_dim:
                     col.operator("lsd.remove_dimension", text="Remove Selected Dimensions", icon='TRASH')
                 
+                col.separator()
+                col.prop(scene, "lsd_hide_all_dimensions", text="Hide All Dimensions", toggle=True, icon='HIDE_OFF' if not scene.lsd_hide_all_dimensions else 'HIDE_ON')
+                
                 if is_standalone:
                     col.separator()
                     box = col.box()
@@ -201,9 +204,7 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                     # Bulk Alignment Tool (User Request)
                     col.separator()
                     col.operator("lsd.align_all_selected_dimensions", icon='ORIENTATION_GLOBAL')
-                # Global Hide/Show All Dimensions (Moved outside the box for direct accessibility)
-                col.separator()
-                col.prop(scene, "lsd_hide_all_dimensions", text="Hide All Dimensions", toggle=True, icon='HIDE_OFF' if not scene.lsd_hide_all_dimensions else 'HIDE_ON')
+
                 # --- Dimensions Master Tracker (Restored for Visibility) ---
                 # Provides a unified list of dimensions within the sidebar for quick management.
                 col.separator()

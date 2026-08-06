@@ -3039,6 +3039,16 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                 # dimension hooks also have the lsd_anchor property set to True.
                 elif hook_empty.name.startswith("Hook_Dim"):
                     to_delete.add(hook_empty)
+                    # Freeze the hook's location before baking to guarantee stability
+                    frozen_world_pos = hook_empty.matrix_world.translation.copy()
+                    for con in list(hook_empty.constraints):
+                        hook_empty.constraints.remove(con)
+                    if hook_empty.parent:
+                        hook_empty.location = hook_empty.parent.matrix_world.inverted() @ frozen_world_pos
+                    else:
+                        hook_empty.location = frozen_world_pos
+                    context.view_layer.update()
+                    
                     # Bake mesh modifiers pointing to this auto-generated hook since it will be deleted
                     for scene_obj in bpy.data.objects:
                         if scene_obj.type != 'MESH': continue
@@ -3049,14 +3059,19 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                                     context.view_layer.objects.active = scene_obj
                                     scene_obj.select_set(True)
                                     bpy.ops.object.modifier_apply(modifier=mod.name)
+                                    if mod.name in scene_obj.modifiers:
+                                        # Bake failed (e.g., multi-user mesh or shape keys). Preserve the empty to prevent retraction.
+                                        to_delete.discard(hook_empty)
+                                        # Re-tag it as a manual anchor so it behaves nicely in the future
+                                        hook_empty["lsd_anchor"] = True
                                 except: pass
                                 finally:
                                     scene_obj.select_set(False)
-                # If it's a user-created "Attach Hook" (lsd_anchor=True), detach it but
-                # DO NOT delete it and DO NOT bake its modifier. The hook empty survives and
+                # If it's a user-created "Attach Hook" (lsd_anchor=True) OR a generic Empty used as an anchor,
+                # detach it but DO NOT delete it and DO NOT bake its modifier. The hook empty survives and
                 # its hook modifier on the mesh must remain intact to preserve the mesh deformation.
                 # Only clean up the dimension-owned constraints and back-pointer properties.
-                elif hook_empty.get("lsd_anchor"):
+                elif hook_empty.get("lsd_anchor") or hook_empty.get("lsd_is_dimension_hook"):
                     # Remove only the COPY_LOCATION constraints this dimension injected.
                     # Identify them by their target being an lsd_is_dimension_anchor=="MASTER"
                     # empty whose parent is this specific root.

@@ -1571,7 +1571,7 @@ def register():
     bpy.types.Scene.lsd_anchor_placement_source = bpy.props.EnumProperty(
         name="Placement Mode",
         items=[('SELECTED', "Selected Origin/Center", ""), ('CURSOR', "3D Cursor", "")],
-        default='CURSOR'
+        default='SELECTED'
     )
     bpy.types.Scene.lsd_anchor_grouping_mode = bpy.props.EnumProperty(
         name="Grouping Mode",

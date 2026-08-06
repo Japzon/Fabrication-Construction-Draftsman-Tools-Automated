@@ -2139,30 +2139,53 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
                     self.report({'WARNING'}, "Action requires selected Mesh object(s).")
                     return {'CANCELLED'}
             # Initialize island mapping
-            all_islands = {} # Mapping obj -> List[List[indices]]
+            all_islands = {} # Mapping obj -> List[List[vertex_indices]]
             # --- Collection Phase ---
-            # AI Editor Note: Per User Request - Group by connectivity (Islands)
-            # to avoid hook-spamming on faces while allowing individual anchors for disconnected points.
-            all_islands = {} # Mapping obj -> List[List[indices]]
+            # Read grouping mode first so the collection logic can branch appropriately.
+            # GROUP mode: merge contiguous selections into connectivity islands (one hook per group).
+            # INDIVIDUAL mode: one island per selected face/edge/vertex to guarantee one hook each.
+            group_mode = scene.lsd_anchor_grouping_mode
             for target in targets:
                 if initial_mode.startswith('EDIT'):
                     bm = bmesh.from_edit_mesh(target.data)
                     bm.verts.ensure_lookup_table()
-                    remaining = {v for v in bm.verts if v.select}
+                    bm.edges.ensure_lookup_table()
+                    bm.faces.ensure_lookup_table()
                     islands = []
-                    while remaining:
-                        root = remaining.pop()
-                        island = {root}
-                        stack = [root]
-                        while stack:
-                            v = stack.pop()
-                            for edge in v.link_edges:
-                                other = edge.other_vert(v)
-                                if other.select and other in remaining:
-                                    remaining.remove(other)
-                                    island.add(other)
-                                    stack.append(other)
-                        islands.append([v.index for v in island])
+                    if group_mode == 'INDIVIDUAL':
+                        # Detect the active mesh selection mode to build per-element islands.
+                        # Face select → one island per selected face (all verts of the face).
+                        # Edge select → one island per selected edge (its two verts).
+                        # Vertex select → one island per selected vertex (single vert).
+                        mesh_select_mode = context.tool_settings.mesh_select_mode  # (vert, edge, face)
+                        if mesh_select_mode[2]:  # Face select mode
+                            for face in bm.faces:
+                                if face.select:
+                                    islands.append([v.index for v in face.verts])
+                        elif mesh_select_mode[1]:  # Edge select mode
+                            for edge in bm.edges:
+                                if edge.select:
+                                    islands.append([v.index for v in edge.verts])
+                        else:  # Vertex select mode (default)
+                            for vert in bm.verts:
+                                if vert.select:
+                                    islands.append([vert.index])
+                    else:
+                        # GROUP mode: walk adjacency to merge connected selected verts into islands.
+                        remaining = {v for v in bm.verts if v.select}
+                        while remaining:
+                            root_vert = remaining.pop()
+                            island = {root_vert}
+                            stack = [root_vert]
+                            while stack:
+                                v = stack.pop()
+                                for edge in v.link_edges:
+                                    other = edge.other_vert(v)
+                                    if other.select and other in remaining:
+                                        remaining.remove(other)
+                                        island.add(other)
+                                        stack.append(other)
+                            islands.append([v.index for v in island])
                     if islands:
                         all_islands[target] = islands
                     bmesh.update_edit_mesh(target.data)
@@ -2179,7 +2202,6 @@ class LSD_OT_AddParametricAnchor(bpy.types.Operator):
             # --- Generation & Assignment Phase ---
             # Determination of Target Placed Location (Project Task 1.1.2)
             import mathutils
-            group_mode = scene.lsd_anchor_grouping_mode
             # --- PATH A: Grouped Anchor ---
             if group_mode == 'GROUP':
                 # 1. Shared World Position
@@ -2966,24 +2988,70 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             to_delete.add(child)
                             for grandchild in child.children:
                                 to_delete.add(grandchild)
-                # If it's a mesh hook, bake it and mark for deletion
-                elif hook_empty.get("lsd_anchor") or hook_empty.name.startswith("Hook_Dim_Obj"):
+                    # Bake any mesh modifiers pointing to this offset hook since the hook will be deleted
+                    for scene_obj in bpy.data.objects:
+                        if scene_obj.type != 'MESH': continue
+                        for mod in scene_obj.modifiers:
+                            if mod.type == 'HOOK' and mod.object == hook_empty:
+                                all_affected_meshes.add(scene_obj)
+                                try:
+                                    context.view_layer.objects.active = scene_obj
+                                    scene_obj.select_set(True)
+                                    bpy.ops.object.modifier_apply(modifier=mod.name)
+                                except: pass
+                                finally:
+                                    scene_obj.select_set(False)
+                # If it's a user-created "Attach Hook" (lsd_anchor=True), detach it but
+                # DO NOT delete it and DO NOT bake its modifier. The hook empty survives and
+                # its hook modifier on the mesh must remain intact to preserve the mesh deformation.
+                # Only clean up the dimension-owned constraints and back-pointer properties.
+                elif hook_empty.get("lsd_anchor"):
+                    # Remove only the COPY_LOCATION constraints this dimension injected.
+                    # Identify them by their target being an lsd_is_dimension_anchor=="MASTER"
+                    # empty whose parent is this specific root.
+                    cons_to_remove = []
+                    for con in hook_empty.constraints:
+                        if con.type == 'COPY_LOCATION':
+                            if con.target and con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                                if con.target.parent == root:
+                                    cons_to_remove.append(con)
+                    if cons_to_remove:
+                        # CRITICAL: Freeze the hook's current constraint-evaluated world position
+                        # BEFORE removing the constraints. The COPY_LOCATION override completely
+                        # replaces the hook's own location, so removing it would snap the empty
+                        # back to its pre-constraint position, causing the mesh to retract.
+                        # We capture the evaluated world translation and bake it into location.
+                        frozen_world_pos = hook_empty.matrix_world.translation.copy()
+                        for con in cons_to_remove:
+                            hook_empty.constraints.remove(con)
+                        # Apply the frozen world position as the hook's new local location,
+                        # accounting for any parent transform on the hook.
+                        if hook_empty.parent:
+                            hook_empty.location = hook_empty.parent.matrix_world.inverted() @ frozen_world_pos
+                        else:
+                            hook_empty.location = frozen_world_pos
+                    # Clean up back-pointer properties this dimension placed on the hook
+                    if hook_empty.get("lsd_is_dimension_hook") is not None:
+                        del hook_empty["lsd_is_dimension_hook"]
+                    if hook_empty.get("lsd_dim_root") == root:
+                        del hook_empty["lsd_dim_root"]
+                # If it's an auto-generated internal dimension hook (not user-created),
+                # mark for deletion and bake any mesh modifiers pointing to it.
+                elif hook_empty.name.startswith("Hook_Dim_Obj"):
                     to_delete.add(hook_empty)
-                    
-                # Find all meshes driven by this hook
-                for scene_obj in bpy.data.objects:
-                    if scene_obj.type != 'MESH': continue
-                    # If the mesh is driven by our dimension's hook, bake it
-                    for mod in scene_obj.modifiers:
-                        if mod.type == 'HOOK' and mod.object == hook_empty:
-                            all_affected_meshes.add(scene_obj)
-                            try:
-                                context.view_layer.objects.active = scene_obj
-                                scene_obj.select_set(True)
-                                bpy.ops.object.modifier_apply(modifier=mod.name)
-                            except: pass
-                            finally:
-                                scene_obj.select_set(False)
+                    # Bake mesh modifiers pointing to this auto-generated hook since it will be deleted
+                    for scene_obj in bpy.data.objects:
+                        if scene_obj.type != 'MESH': continue
+                        for mod in scene_obj.modifiers:
+                            if mod.type == 'HOOK' and mod.object == hook_empty:
+                                all_affected_meshes.add(scene_obj)
+                                try:
+                                    context.view_layer.objects.active = scene_obj
+                                    scene_obj.select_set(True)
+                                    bpy.ops.object.modifier_apply(modifier=mod.name)
+                                except: pass
+                                finally:
+                                    scene_obj.select_set(False)
             # --- PHASE 2: PURGE ASSEMBLY ---
             for child in root.children:
                 if child: to_delete.add(child)
@@ -3008,14 +3076,31 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                         except: pass
             removed_count += 1
         # --- PHASE 3: FINAL ANCHOR CLEANUP ---
+        # Targeted cleanup: only remove dangling hook modifiers on affected meshes whose
+        # hook target object was deleted (no longer exists in bpy.data.objects).
+        # We do NOT call the global cleanup_anchor operator here because it would
+        # indiscriminately remove all hooks from those meshes, including user-created ones.
         if all_affected_meshes:
-            original_sel = context.selected_objects
+            original_sel = list(context.selected_objects)
             original_act = context.view_layer.objects.active
-            bpy.ops.object.select_all(action='DESELECT')
             for m in all_affected_meshes:
-                if m.name in bpy.data.objects: m.select_set(True)
-            # Trigger the universal cleanup operator on these meshes
-            bpy.ops.lsd.cleanup_anchor()
+                if not m or m.name not in bpy.data.objects: continue
+                dangling_mods = [
+                    mod for mod in m.modifiers
+                    if mod.type == 'HOOK' and (mod.object is None or mod.object.name not in bpy.data.objects)
+                ]
+                if dangling_mods:
+                    context.view_layer.objects.active = m
+                    m.select_set(True)
+                    for mod in dangling_mods:
+                        vg_name = mod.vertex_group
+                        try:
+                            m.modifiers.remove(mod)
+                            if vg_name and vg_name in m.vertex_groups:
+                                vg = m.vertex_groups.get(vg_name)
+                                if vg: m.vertex_groups.remove(vg)
+                        except: pass
+                    m.select_set(False)
             # Restore selection (minus what was deleted)
             for o in original_sel:
                 if o and o.name in bpy.data.objects: o.select_set(True)

@@ -391,10 +391,6 @@ def load_panel_order_handler(dummy: Any) -> None:
     bpy.app.timers.register(lambda: (bpy.ops.lsd.update_panel_order() and None), first_interval=0.2)
 @persistent
 
-def set_scene_units_handler(dummy: Any) -> None:
-    """Sets the scene length unit to Millimeters on load."""
-    if bpy.context and bpy.context.scene:
-        bpy.context.scene.unit_settings.length_unit = 'MILLIMETERS'
 def get_font_data(font_name: str, is_bold: bool = False, is_italic: bool = False) -> Optional[bpy.types.VectorFont]:
     """
     Discovery and loading logic for standard technical fonts.
@@ -5228,7 +5224,7 @@ def register():
     if lsd_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_placement_handler)
     if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
     if load_panel_order_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(load_panel_order_handler)
-    if set_scene_units_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(set_scene_units_handler)
+
     if active_bone_change_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(active_bone_change_handler)
     if local_cursor_depsgraph_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(local_cursor_depsgraph_handler)
     if lsd_dimension_sync_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_dimension_sync_handler)
@@ -5261,7 +5257,7 @@ def unregister():
     if lsd_placement_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_placement_handler)
     if auto_set_active_rig_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(auto_set_active_rig_handler)
     if load_panel_order_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(load_panel_order_handler)
-    if set_scene_units_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(set_scene_units_handler)
+
     if active_bone_change_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(active_bone_change_handler)
     if local_cursor_depsgraph_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(local_cursor_depsgraph_handler)
     if lsd_dimension_sync_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_dimension_sync_handler)

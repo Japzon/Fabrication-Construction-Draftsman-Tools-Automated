@@ -53,6 +53,13 @@ def register():
                  try: addon_prefs.remove(addon_prefs[old_id])
                  except: pass # Fallback
                  print(f"[LSD] Registry Purge: Cleared ghost '{old_id}'.")
+                 
+        # 0.5. Hard Memory Cleanup - Clears legacy handlers that force 'MILLIMETERS' on load
+        if hasattr(bpy.app.handlers, 'load_post'):
+            for handler in list(bpy.app.handlers.load_post):
+                if getattr(handler, "__name__", "") == "set_scene_units_handler":
+                    bpy.app.handlers.load_post.remove(handler)
+                    print("[LSD] Registry Purge: Cleared legacy 'set_scene_units_handler' from memory.")
     except:
         pass
     # 1. Properties - Scene attributes must exist before operators/panels call them

@@ -819,6 +819,8 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
          dim_coll.objects.link(o)
          o.parent = root
          o["lsd_is_dimension_anchor"] = "MASTER"
+         o.hide_viewport = True
+         o.hide_render = True
     aa_master.location = (0, 0, 0)
     ab_master.location = (0, 0, initial_length)
     aa_master["lsd_anchor_type"] = "START"
@@ -833,11 +835,11 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
         obj["lsd_anchor_type"] = suffix # START or END
         obj.rotation_euler = (math.radians(rot_x), 0, 0)
         return obj
-    # Arrow A is at the START (local z=0). Its cone tip points in -Z (rot_x=180┬░),
-    # meaning it points AWAY from p2 (outward).  But now root +Z goes p1ΓåÆp2,
-    # so the cone tip at rot_x=0┬░ already points in +Z (away from centre at p1
-    # end meaning INTO the dimension).  We must FLIP: START=0┬░ ΓåÆ tip at -Z ΓåÆ outward.
-    # END=180┬░ ΓåÆ tip at +Z at z=initial_length ΓåÆ outward from centre at p2 end.
+    # Arrow A is at the START (local z=0). Its cone tip points in -Z (rot_x=180°),
+    # meaning it points AWAY from p2 (outward).  But now root +Z goes p1→p2,
+    # so the cone tip at rot_x=0° already points in +Z (away from centre at p1
+    # end meaning INTO the dimension).  We must FLIP: START=0° → tip at -Z → outward.
+    # END=180° → tip at +Z at z=initial_length → outward from centre at p2 end.
     arrow_a = create_arrowhead("START", 0.0)
     arrow_b = create_arrowhead("END", 180.0)
     # AI Editor Note: Design Strategy - Dedicated Hook Empty.
@@ -850,6 +852,8 @@ def generate_smart_dimension_parametric(context, p1, p2, name="Dimension", paren
     hook.empty_display_type = 'CIRCLE'
     hook.empty_display_size = 0.02
     hook.location = (0, 0, initial_length)
+    hook.hide_viewport = True
+    hook.hide_render = True
     # 4. Extension Lines (Drafting legs from arrowheads to objects)
     def create_ext_line(name_suffix, loc_z, offset_y, ext_type):
         mesh = create_dimension_line_mesh(f"{name}_{name_suffix}")

@@ -74,7 +74,7 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                 else:
                     anchor_box.operator("lsd.toggle_hook_placement", text="Start Anchor Transform Mode", icon='TRANSFORM_ORIGINS')
                 row_ops = anchor_box.row(align=True)
-                row_ops.operator("lsd.bake_anchor", text="Update Selected", icon='MODIFIER_ON')
+                row_ops.operator("lsd.bake_anchor", text="Bake for Selected", icon='MODIFIER_ON')
                 row_ops.operator("lsd.cleanup_anchor", text="Remove Selected", icon='TRASH')
                 # Global Hide/Show All Anchors
                 anchor_box.prop(scene, "lsd_hide_all_anchors", text="Hide All Anchors", toggle=True, icon='HIDE_OFF' if not scene.lsd_hide_all_anchors else 'HIDE_ON')

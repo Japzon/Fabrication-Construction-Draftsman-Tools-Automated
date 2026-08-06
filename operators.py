@@ -2039,6 +2039,36 @@ def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", disp
     """
     import mathutils
     mw = mesh_obj.matrix_world
+    
+    # Project Task 1.1.2: Prevent stacking duplicate hooks on the exact same selection
+    if vert_indices:
+        target_set = set(vert_indices)
+        for mod in mesh_obj.modifiers:
+            if mod.type == 'HOOK' and mod.object and mod.vertex_group:
+                vg = mesh_obj.vertex_groups.get(mod.vertex_group)
+                if vg:
+                    hooked_verts = set()
+                    for v in mesh_obj.data.vertices:
+                        try:
+                            if vg.weight(v.index) > 0.5:
+                                hooked_verts.add(v.index)
+                        except RuntimeError:
+                            pass
+                    if target_set == hooked_verts:
+                        # Re-use the existing anchor to prevent double-transform shear
+                        if mod.object.get("lsd_anchor") or mod.object.get("lsd_is_dimension_hook"):
+                            return mod.object
+
+    if not vert_indices:
+        if force_location is not None:
+            empty = bpy.data.objects.new(f"{name_prefix}_{mesh_obj.name}", None)
+            empty.location = force_location
+            empty.empty_display_type = display_type
+            empty.empty_display_size = display_size
+            empty["lsd_anchor"] = True
+            context.scene.collection.objects.link(empty)
+            return empty
+        return None
     coords = [mw @ mesh_obj.data.vertices[i].co.copy() for i in vert_indices]
     if not coords:
         return None
@@ -2066,7 +2096,7 @@ def create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook", disp
     mod = mesh_obj.modifiers.new(name="HookAnchor", type='HOOK')
     mod.show_viewport = False # ATOMIC GUARD: Prevents initial jump on binding
     mod.object = empty
-    mod.vertex_group = vg_name
+    mod.vertex_group = vg.name
     # Ensure matrix data is absolute after location set and linking
     context.view_layer.update()
     # ZERO-WARP: Force evaluate to ensure world matrices are absolute before inverse calculation
@@ -2974,6 +3004,8 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
             participants = []
             if root.get("lsd_parent_obj"): participants.append(root["lsd_parent_obj"])
             if root.get("lsd_slave_obj"):  participants.append(root["lsd_slave_obj"])
+            if root.get("lsd_hook_start"): participants.append(root["lsd_hook_start"])
+            if root.get("lsd_hook_end"):   participants.append(root["lsd_hook_end"])
             # --- PHASE 1: BAKE & DETACH ---
             to_delete = {root}
             for hook_empty in participants:
@@ -2989,6 +3021,25 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                             for grandchild in child.children:
                                 to_delete.add(grandchild)
                     # Bake any mesh modifiers pointing to this offset hook since the hook will be deleted
+                    for scene_obj in bpy.data.objects:
+                        if scene_obj.type != 'MESH': continue
+                        for mod in scene_obj.modifiers:
+                            if mod.type == 'HOOK' and mod.object == hook_empty:
+                                all_affected_meshes.add(scene_obj)
+                                try:
+                                    context.view_layer.objects.active = scene_obj
+                                    scene_obj.select_set(True)
+                                    bpy.ops.object.modifier_apply(modifier=mod.name)
+                                except: pass
+                                finally:
+                                    scene_obj.select_set(False)
+                # If it's an auto-generated internal dimension hook (not user-created),
+                # mark for deletion and bake any mesh modifiers pointing to it.
+                # NOTE: This MUST run before the generic lsd_anchor check, because auto-generated
+                # dimension hooks also have the lsd_anchor property set to True.
+                elif hook_empty.name.startswith("Hook_Dim"):
+                    to_delete.add(hook_empty)
+                    # Bake mesh modifiers pointing to this auto-generated hook since it will be deleted
                     for scene_obj in bpy.data.objects:
                         if scene_obj.type != 'MESH': continue
                         for mod in scene_obj.modifiers:
@@ -3035,28 +3086,36 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                         del hook_empty["lsd_is_dimension_hook"]
                     if hook_empty.get("lsd_dim_root") == root:
                         del hook_empty["lsd_dim_root"]
-                # If it's an auto-generated internal dimension hook (not user-created),
-                # mark for deletion and bake any mesh modifiers pointing to it.
-                elif hook_empty.name.startswith("Hook_Dim_Obj"):
-                    to_delete.add(hook_empty)
-                    # Bake mesh modifiers pointing to this auto-generated hook since it will be deleted
-                    for scene_obj in bpy.data.objects:
-                        if scene_obj.type != 'MESH': continue
-                        for mod in scene_obj.modifiers:
-                            if mod.type == 'HOOK' and mod.object == hook_empty:
-                                all_affected_meshes.add(scene_obj)
-                                try:
-                                    context.view_layer.objects.active = scene_obj
-                                    scene_obj.select_set(True)
-                                    bpy.ops.object.modifier_apply(modifier=mod.name)
-                                except: pass
-                                finally:
-                                    scene_obj.select_set(False)
             # --- PHASE 2: PURGE ASSEMBLY ---
             for child in root.children:
                 if child: to_delete.add(child)
                 for grandchild in child.children:
                     if grandchild: to_delete.add(grandchild)
+                    
+            # --- PHASE 2.5: AGGRESSIVE ORPHAN CLEANUP ---
+            # To fix scenes corrupted by the previous deletion bug, we proactively hunt down
+            # any 'Hook_Dim' empties that have no parent and no dimension driving them.
+            for obj in bpy.data.objects:
+                if obj.name.startswith("Hook_Dim_Obj") and obj.parent is None:
+                    is_driven = False
+                    for con in obj.constraints:
+                        if con.type == 'COPY_LOCATION' and con.target and con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                            is_driven = True
+                            break
+                    if not is_driven:
+                        to_delete.add(obj)
+                        # Bake any modifiers pointing to this orphaned hook
+                        for scene_obj in bpy.data.objects:
+                            if scene_obj.type != 'MESH': continue
+                            for mod in scene_obj.modifiers:
+                                if mod.type == 'HOOK' and mod.object == obj:
+                                    try:
+                                        context.view_layer.objects.active = scene_obj
+                                        scene_obj.select_set(True)
+                                        bpy.ops.object.modifier_apply(modifier=mod.name)
+                                        scene_obj.select_set(False)
+                                    except: pass
+
             # Unparent orphans with Keep Transform
             for p_obj in to_delete:
                 if not p_obj or p_obj.name not in bpy.data.objects: continue
@@ -3321,71 +3380,206 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
         dim_was_generated = False  # Flag to skip workspace restoration if a new dimension was spawned
         try:
             # ======================================================================
+            # PRE-GENERATION ORPHAN CLEANUP
+            # To handle cases where users manually deleted previous dimensions (leaving residual hooks),
+            # proactively bake and purge any orphaned parametric hooks in the scene.
+            # ======================================================================
+            scene_meshes = [obj for obj in context.scene.objects if obj.type == 'MESH']
+            orphaned_hooks = []
+            for obj in context.scene.objects:
+                if obj.type == 'EMPTY' and obj.name.startswith("Hook_Dim_"):
+                    # Check if it is actively driven by a dimension
+                    is_driven = False
+                    for con in obj.constraints:
+                        if con.type == 'COPY_LOCATION' and con.target and con.target.get("lsd_is_dimension_anchor") == "MASTER":
+                            is_driven = True
+                            break
+                    if not is_driven:
+                        orphaned_hooks.append(obj)
+            
+            if orphaned_hooks:
+                for empty in orphaned_hooks:
+                    for m_obj in scene_meshes:
+                        mods_to_remove = [m for m in m_obj.modifiers if m.type == 'HOOK' and m.object == empty]
+                        for mod in mods_to_remove:
+                            vg_name = mod.vertex_group
+                            try:
+                                m_obj.modifiers.remove(mod)
+                                if vg_name and vg_name in m_obj.vertex_groups:
+                                    vg = m_obj.vertex_groups.get(vg_name)
+                                    if vg: m_obj.vertex_groups.remove(vg)
+                            except: pass
+                    try:
+                        bpy.data.objects.remove(empty, do_unlink=True)
+                    except: pass
+
+            # ======================================================================
             # EDIT MODE PATH — Hook-first, then dimension
             # ======================================================================
             if initial_mode == 'EDIT_MESH':
                 import bmesh
                 # --- Step 1: Capture selection in Edit Mode ---
-                per_obj_data = [] # (mesh_obj, world_center, [vert_indices])
+                depsgraph = context.evaluated_depsgraph_get()
+                per_obj_data = [] # (mesh_obj, [vert_indices])
                 for obj in context.objects_in_mode:
                     if obj.type != 'MESH': continue
                     bm = bmesh.from_edit_mesh(obj.data)
                     bm.verts.ensure_lookup_table()
                     sel_verts = [v for v in bm.verts if v.select]
                     if not sel_verts: continue
-                    pts = [obj.matrix_world @ v.co.copy() for v in sel_verts]
-                    center = sum(pts, mathutils.Vector()) / len(pts)
+                    
                     indices = [v.index for v in sel_verts]
-                    per_obj_data.append((obj, center.copy(), indices))
+                    per_obj_data.append((obj, indices))
+                    
                 if not per_obj_data:
                     self.report({'WARNING'}, "No vertices selected.")
                     return {'CANCELLED'}
-                anchor_spec = [] # (mesh_obj, [vert_indices], world_point)
+                    
+                anchor_spec_indices = [] # (mesh_obj, vert_indices_1, vert_indices_2)
+                
                 if len(per_obj_data) >= 2:
                     # Multiple objects: pick two for the dimension
                     o2c = initial_active
                     d2 = next((d for d in per_obj_data if d[0] == o2c), per_obj_data[-1])
                     d1 = next((d for d in per_obj_data if d != d2), per_obj_data[0])
-                    anchor_spec.append((d1[0], d1[2], d1[1]))
-                    anchor_spec.append((d2[0], d2[2], d2[1]))
+                    anchor_spec_indices.append((d1[0], d1[1], None))
+                    anchor_spec_indices.append((d2[0], d2[1], None))
                 else:
-                    # Single object: pick two vertices
-                    obj0, center0, indices0 = per_obj_data[0]
+                    # Single object: pick two elements or vertices
+                    obj0, indices0 = per_obj_data[0]
                     bm0 = bmesh.from_edit_mesh(obj0.data)
                     bm0.verts.ensure_lookup_table()
-                    # Using Active Vertex logic for selection order certainty
-                    v_active = bm0.select_history.active if isinstance(bm0.select_history.active, bmesh.types.BMVert) else None
-                    if not v_active:
-                        hist = [e for e in bm0.select_history if isinstance(e, bmesh.types.BMVert) and e.select]
-                        if hist: v_active = hist[-1]
-                    v1, v2 = None, None
-                    if v_active and v_active.select:
-                        # v2 is the Dynamic end (Active)
-                        v2 = v_active
-                        # Find the furthest vertex from v_active to serve as v1 (Static)
-                        v_sel = [v for v in bm0.verts if v.select and v != v2]
-                        if v_sel:
-                            v1 = max(v_sel, key=lambda v: (v.co - v2.co).length)
-                    if not v1 or not v2:
-                        # Absolute fallback to indices
-                        v_sel = [v for v in bm0.verts if v.select]
-                        if len(v_sel) >= 2: v1, v2 = v_sel[0], v_sel[-1]
-                    if not v1 or not v2:
-                        self.report({'WARNING'}, "Select at least 2 vertices.")
-                        return {'CANCELLED'}
-                    anchor_spec.append((obj0, [v1.index], obj0.matrix_world @ v1.co.copy()))
-                    anchor_spec.append((obj0, [v2.index], obj0.matrix_world @ v2.co.copy()))
+                    bm0.edges.ensure_lookup_table()
+                    bm0.faces.ensure_lookup_table()
+                    
+                    islands = []
+                    mesh_select_mode = context.tool_settings.mesh_select_mode
+                    if mesh_select_mode[2]:  # Face select
+                        for face in bm0.faces:
+                            if face.select: islands.append([v.index for v in face.verts])
+                    else:  # Vertex or Edge select (group by connected components)
+                        selected_verts = [v for v in bm0.verts if v.select]
+                        visited = set()
+                        for v in selected_verts:
+                            if v in visited: continue
+                            island = []
+                            queue = [v]
+                            visited.add(v)
+                            while queue:
+                                curr = queue.pop(0)
+                                island.append(curr.index)
+                                for edge in curr.link_edges:
+                                    other_v = edge.other_vert(curr)
+                                    if other_v.select and other_v not in visited:
+                                        visited.add(other_v)
+                                        queue.append(other_v)
+                            islands.append(island)
+                            
+                    if len(islands) >= 2:
+                        active_island = None
+                        active_elem = bm0.select_history.active
+                        if active_elem and active_elem.select:
+                            active_verts = set()
+                            if isinstance(active_elem, bmesh.types.BMFace):
+                                active_verts = set(v.index for v in active_elem.verts)
+                            elif isinstance(active_elem, bmesh.types.BMEdge):
+                                active_verts = set(v.index for v in active_elem.verts)
+                            elif isinstance(active_elem, bmesh.types.BMVert):
+                                active_verts = {active_elem.index}
+                                
+                            for isl in islands:
+                                if active_verts.intersection(isl):
+                                    active_island = isl
+                                    break
+                                    
+                        if not active_island:
+                            active_island = islands[-1]
+                            
+                        # Estimate furthest using base coords for now since it's just relative distance
+                        furthest_island = None
+                        max_dist = -1
+                        def base_center(idx_list):
+                            pts = [bm0.verts[i].co for i in idx_list]
+                            return sum(pts, mathutils.Vector()) / len(pts)
+                            
+                        c_active_base = base_center(active_island)
+                        for isl in islands:
+                            if isl == active_island: continue
+                            dist = (base_center(isl) - c_active_base).length
+                            if dist > max_dist:
+                                max_dist = dist
+                                furthest_island = isl
+                        if furthest_island is None:
+                            furthest_island = islands[0]
+                            
+                        anchor_spec_indices.append((obj0, furthest_island, active_island))
+                    else:
+                        # Fallback: only 1 island (e.g. 1 face). Bridge the entire island to the 3D cursor.
+                        active_island = islands[0] if islands else []
+                        if active_island:
+                            anchor_spec_indices.append((obj0, active_island, "CURSOR"))
+                        else:
+                            self.report({'WARNING'}, "Select at least 1 element.")
+                            return {'CANCELLED'}
+
                 # --- STEP 1.5: Workspace Transition (MANDATORY for creation) ---
-                # Vertex group assignment and Hook reset require Object Mode.
+                # Clear edit mode selection so subsequent dimension generation doesn't accidentally bridge to old selections
                 if context.mode != 'OBJECT':
+                    for obj in context.objects_in_mode:
+                        if obj.type == 'MESH':
+                            bm = bmesh.from_edit_mesh(obj.data)
+                            for v in bm.verts: v.select = False
+                            for e in bm.edges: e.select = False
+                            for f in bm.faces: f.select = False
+                            bm.select_flush(False)
+                            bmesh.update_edit_mesh(obj.data)
                     bpy.ops.object.mode_set(mode='OBJECT')
+                # In Edit Mode, evaluated meshes are often undeformed. Now that we are in Object Mode,
+                # the evaluated mesh contains the true displaced coordinates.
+                depsgraph = context.evaluated_depsgraph_get()
+                context.view_layer.update()
+                
+                anchor_spec = [] # (mesh_obj, [vert_indices], world_point)
+                
+                for spec in anchor_spec_indices:
+                    obj = spec[0]
+                    eval_obj = obj.evaluated_get(depsgraph)
+                    eval_mesh = eval_obj.to_mesh()
+                    
+                    if spec[2] is None:
+                        # Multiple objects case
+                        pts = [obj.matrix_world @ eval_mesh.vertices[i].co.copy() for i in spec[1]]
+                        center = sum(pts, mathutils.Vector()) / len(pts)
+                        anchor_spec.append((obj, spec[1], center))
+                    elif spec[2] == "CURSOR":
+                        # Single-island fallback: bridge to 3D cursor
+                        pts1 = [obj.matrix_world @ eval_mesh.vertices[i].co.copy() for i in spec[1]]
+                        c1 = sum(pts1, mathutils.Vector()) / len(pts1)
+                        anchor_spec.append((obj, spec[1], c1))
+                        
+                        c2 = context.scene.cursor.location.copy()
+                        anchor_spec.append((obj, [], c2))
+                    else:
+                        # Single object case (two islands/vertices)
+                        pts1 = [obj.matrix_world @ eval_mesh.vertices[i].co.copy() for i in spec[1]]
+                        c1 = sum(pts1, mathutils.Vector()) / len(pts1)
+                        anchor_spec.append((obj, spec[1], c1))
+                        
+                        pts2 = [obj.matrix_world @ eval_mesh.vertices[i].co.copy() for i in spec[2]]
+                        c2 = sum(pts2, mathutils.Vector()) / len(pts2)
+                        anchor_spec.append((obj, spec[2], c2))
+                        
+                    eval_obj.to_mesh_clear()
+
                 # --- Step 2: Process anchors (Consolidated Workflow) ---
                 # We use the same helper as the standard Attach Hook feature
                 # to guarantee consistency and non-warping behavior.
                 hook_empties = []
                 for mesh_obj, vert_indices, world_point in anchor_spec:
-                    empty = create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook_Dim", display_type='CUBE', force_location=world_point)
+                    empty = create_hook_anchor(context, mesh_obj, vert_indices, name_prefix="Hook_Dim", display_type='PLAIN_AXES', force_location=world_point)
                     if empty:
+                        empty.hide_viewport = True
+                        empty.hide_render = True
                         hook_empties.append((empty, world_point))
                 if len(hook_empties) < 2:
                     self.report({'ERROR'}, "Failed to create anchor hooks.")
@@ -3472,8 +3666,12 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                                     # Re-use existing stable anchor
                                     return target_o
                         # 3. Fallback: Create a fresh hook anchor at the measured position
-                        return create_hook_anchor(context, obj, [v.index for v in obj.data.vertices],
-                                                 name_prefix="Hook_Dim_Obj", force_location=measured_p)
+                        empty = create_hook_anchor(context, obj, [v.index for v in obj.data.vertices],
+                                                 name_prefix="Hook_Dim_Obj", display_type='PLAIN_AXES', force_location=measured_p)
+                        if empty:
+                            empty.hide_viewport = True
+                            empty.hide_render = True
+                        return empty
                     return None
                 h1 = resolve_anchor(o1, p1_v)
                 h2 = resolve_anchor(o2, p2_v)

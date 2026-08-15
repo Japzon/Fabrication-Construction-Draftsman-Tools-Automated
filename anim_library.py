@@ -577,8 +577,8 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                                 curr_z = z_fc.evaluate(frame)
                                 curr_q = mathutils.Quaternion((curr_w, curr_x, curr_y, curr_z))
                                 
-                                # True 4D Delta calculation
-                                delta_q = curr_q @ base_q_inv
+                                # True 4D Delta calculation (Blender NLA Combine is base @ delta)
+                                delta_q = base_q_inv @ curr_q
                                 deltas.append((frame, delta_q))
                                 
                             # Clear old absolute keyframes to prevent Blender interpolation crashes
@@ -594,55 +594,72 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                                 y_fc.keyframe_points.insert(frame, delta_q.y, options={'FAST'})
                                 z_fc.keyframe_points.insert(frame, delta_q.z, options={'FAST'})
                                 
-                            w_fc.update()
-                            x_fc.update()
-                            y_fc.update()
-                            z_fc.update()
-                elif "location" in data_path or (settings.import_blend_type in {'COMBINE', 'ADD'} and ("rotation_euler" in data_path or "scale" in data_path)):
-                    # Pure Delta Conversion
+                            # Force AUTO_CLAMPED on recreated quaternions to prevent flipping
+                            for f in (w_fc, x_fc, y_fc, z_fc):
+                                for kp in f.keyframe_points:
+                                    kp.handle_left_type = 'AUTO_CLAMPED'
+                                    kp.handle_right_type = 'AUTO_CLAMPED'
+                                f.update()
+                                
+                elif "scale" in data_path:
+                    base_val = 1.0
+                else:
+                    base_val = 0.0
+                    
+                if settings.import_blend_type == 'REPLACE':
+                    try:
+                        prop = obj.path_resolve(data_path)
+                        if hasattr(prop, '__getitem__'):
+                            base_val = prop[fcs[0].array_index]
+                        else:
+                            base_val = prop
+                    except: pass
+                    
+                if fcs:
                     for fc in fcs:
-                        if not fc.keyframe_points: continue
-                        fc.extrapolation = 'CONSTANT'
-                        
-                        # Evaluate at the curve's own first keyframe, not the global min_frame, to prevent linear slope backtracking
+                        if not fc.keyframe_points:
+                            continue
+                            
                         action_start_val = fc.keyframe_points[0].co.y
                         
-                        base_val = 0.0
-                        if settings.import_blend_type == 'REPLACE':
-                            try:
-                                prop = obj.path_resolve(fc.data_path)
-                                if hasattr(prop, '__getitem__'):
-                                    base_val = prop[fc.array_index]
-                                else:
-                                    base_val = prop
-                            except:
-                                base_val = 0.0
-                        else:
-                            if "scale" in data_path:
-                                base_val = 1.0
+                        if settings.import_blend_type == 'ADD' and data_path.endswith("location"):
+                            action_start_val = 0.0
                             
                         spatial_offset = base_val - action_start_val
                         
-                        scale_factor = 1.0
+                        base_scale_factor = 1.0
+                        scale_fcs = []
                         if settings.import_blend_type in {'COMBINE', 'ADD'} and data_path.endswith("location"):
                             scale_path = data_path.replace("location", "scale")
                             try:
                                 scale_prop = obj.path_resolve(scale_path)
                                 if hasattr(scale_prop, '__getitem__'):
-                                    scale_factor = scale_prop[fc.array_index]
+                                    base_scale_factor = scale_prop[fc.array_index]
                                 else:
-                                    scale_factor = scale_prop
+                                    base_scale_factor = scale_prop
                             except:
                                 pass
                                 
-                            if scale_factor == 0: scale_factor = 1.0
+                            if base_scale_factor == 0: base_scale_factor = 1.0
+                            
+                            # Find if the imported action ALSO animates scale
+                            scale_fcs = [f for f in fcurves if f.data_path == scale_path and f.array_index == fc.array_index]
                         
-                        if spatial_offset != 0 or scale_factor != 1.0:
-                            for kp in fc.keyframe_points:
-                                kp.co.y = (kp.co.y + spatial_offset) / scale_factor
-                                kp.handle_left.y = (kp.handle_left.y + spatial_offset) / scale_factor
-                                kp.handle_right.y = (kp.handle_right.y + spatial_offset) / scale_factor
-                            fc.update()
+                        for kp in fc.keyframe_points:
+                            # Dynamically calculate the scale factor at this exact frame if the combine layer scales it
+                            dyn_scale_factor = base_scale_factor
+                            if scale_fcs:
+                                # Blend the combine layer's scale natively (COMBINE scale multiplies)
+                                dyn_scale_factor *= scale_fcs[0].evaluate(kp.co.x)
+                                
+                            kp.co.y = (kp.co.y + spatial_offset) * dyn_scale_factor
+                            kp.handle_left.y = (kp.handle_left.y + spatial_offset) * dyn_scale_factor
+                            kp.handle_right.y = (kp.handle_right.y + spatial_offset) * dyn_scale_factor
+                            
+                            kp.handle_left_type = 'AUTO_CLAMPED'
+                            kp.handle_right_type = 'AUTO_CLAMPED'
+                            
+                        fc.update()
         
         # Create a new layer in our UI
         bpy.ops.lsd.anim_layer_add()

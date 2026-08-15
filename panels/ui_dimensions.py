@@ -122,8 +122,8 @@ class LSD_PT_Dimensions_And_Precision_Transforms:
                 dim_host = core.get_dimension_host(active_obj)
                 is_dim = dim_host is not None
                 
-                if is_dim:
-                    col.operator("lsd.remove_dimension", text="Remove Selected Dimensions", icon='TRASH')
+                # Always show Remove Selected Dimensions as requested
+                col.operator("lsd.remove_dimension", text="Remove Selected Dimensions", icon='TRASH')
                 
                 col.separator()
                 col.prop(scene, "lsd_hide_all_dimensions", text="Hide All Dimensions", toggle=True, icon='HIDE_OFF' if not scene.lsd_hide_all_dimensions else 'HIDE_ON')

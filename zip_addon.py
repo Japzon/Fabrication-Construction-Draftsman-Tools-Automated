@@ -50,17 +50,20 @@ def zip_addon():
                 # Mandatory exclusions to keep the zip clean and small
                 if any(x in root for x in ['__pycache__', '.git', '.gemini', '.idea', '.vscode']):
                     continue
+                # Write directory entries to preserve empty directories
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    if any(x in dir_path for x in ['__pycache__', '.git', '.gemini', '.idea', '.vscode']):
+                        continue
+                    rel_path = os.path.relpath(dir_path, addon_dir)
+                    archive_path = os.path.join("layouts_systems_draftsman_toolkit", rel_path)
+                    zipf.write(dir_path, archive_path)
+
                 for file in files:
-                    # Exclude the zip itself and the automation scripts
-                    if file == zip_name or file.endswith('.zip'):
+                    # Exclude the generated release zip itself to prevent recursive zipping
+                    if file == zip_name:
                         continue
-                    if file == 'zip_addon.py' or file == 'patch_panels.py' or file == 'test_addon.py' or file == 'test_rna.py':
-                        continue
-                    if file.endswith('.bat') or file.endswith('.txt') or file.endswith('.md'):
-                        # Optional: Keep logs and documentation out of the final install?
-                        # For now, let's keep READMEs but skip logs.
-                        if 'log' in file.lower() or 'Prompt' in file:
-                            continue
+                        
                     file_path = os.path.join(root, file)
                     rel_path = os.path.relpath(file_path, addon_dir)
                     # Use the lowercase ID for the root folder inside the zip to match the Extension manifest

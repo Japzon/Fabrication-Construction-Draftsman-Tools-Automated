@@ -897,6 +897,8 @@ def update_library_item_name(self, context):
 class LSD_PG_AnimLibraryItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", update=update_library_item_name)
     filepath: bpy.props.StringProperty(name="Filepath")
+    target_type: bpy.props.StringProperty(name="Target Type", default="")
+    target_name: bpy.props.StringProperty(name="Target Name", default="")
     
 class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty(name="Name", default="Anim_Layer")
@@ -914,9 +916,6 @@ class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
         from . import anim_core
         anim_core.update_layer_property_light(self, context)
         
-        settings = context.scene.lsd_anim_settings
-        active_layer = settings.layers[settings.active_layer_index] if settings.layers and settings.active_layer_index < len(settings.layers) else None
-        
         # No deferred timers or UI hijacking is necessary. The light sync instantly mutes F-curves,
         # perfectly snapping the pose without dropping Tweak Mode or flashing the UI.
         
@@ -932,6 +931,17 @@ class LSD_PG_Animation_Layer(bpy.types.PropertyGroup):
     influence: bpy.props.FloatProperty(name="Influence", default=1.0, min=0.0, max=1.0, update=update_prop_light)
     is_muted: bpy.props.BoolProperty(name="Mute / Unmute Layer", default=False, update=update_lock_mute)
     is_locked: bpy.props.BoolProperty(name="Lock / Unlock Layer", default=False, update=update_lock_mute)
+
+class LSD_PG_Object_Anim_Layers(bpy.types.PropertyGroup):
+    def update_active_idx(self, context):
+        try:
+            from . import anim_core
+            anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
+        except:
+            pass
+
+    layers: bpy.props.CollectionProperty(type=LSD_PG_Animation_Layer)
+    active_layer_index: bpy.props.IntProperty(name="Active Layer", default=0, update=update_active_idx)
 
 class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     import_blend_type: bpy.props.EnumProperty(
@@ -952,9 +962,6 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         default='LAYER'
     )
     
-    import_export_name: bpy.props.StringProperty(
-        name="Import/Export Name"
-    )
     
     preview_capture_interval: bpy.props.FloatProperty(
         name="Preview Capture Interval (s)",
@@ -963,15 +970,6 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
         min=0.01,
         max=5.0
     )
-    
-    def update_active_idx(self, context):
-        try:
-            if self.layers and 0 <= self.active_layer_index < len(self.layers):
-                self.import_export_name = self.layers[self.active_layer_index].name
-            from . import anim_core
-            anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
-        except:
-            pass
             
     def update_layers_enabled(self, context):
         try:
@@ -979,19 +977,67 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
             if not self.layers_enabled:
                 # Safely exit tweak mode
                 anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
-                # Unlock all layer tracks so the user isn't frozen from animating
+                
+                # Turn off auto-keying globally
+                context.scene.tool_settings.use_keyframe_insert_auto = False
+                
+                # Unlock and mute all layer tracks so they don't override transforms
                 for obj in context.scene.objects:
                     if obj.animation_data and obj.animation_data.nla_tracks:
-                        for layer in self.layers:
-                            track = obj.animation_data.nla_tracks.get(layer.track_name if layer.track_name else layer.name)
-                            if track:
+                        for track in obj.animation_data.nla_tracks:
+                            is_layer_track = False
+                            if hasattr(obj, 'lsd_anim_layers_data'):
+                                is_layer_track = any(track.name in {l.track_name, l.name} for l in obj.lsd_anim_layers_data.layers)
+                            is_base_track = ("Base_Layer" in track.name or "Base Layer" in track.name)
+                            if is_layer_track:
+                                track.mute = True
                                 track.lock = False
+                            elif is_base_track:
+                                track.mute = False
+                        
+                        # Restore the Base Action to the timeline so they can preview their original keyframes
+                        base_action = None
+                        for track in obj.animation_data.nla_tracks:
+                            if "Base_Layer" in track.name or "Base Layer" in track.name:
+                                if len(track.strips) > 0:
+                                    base_action = track.strips[0].action
+                                    break
+                        if base_action:
+                            obj.animation_data.action = base_action
+                        elif obj.animation_data.nla_tracks and len(obj.animation_data.nla_tracks) > 0:
+                            bottom_track = obj.animation_data.nla_tracks[0]
+                            if len(bottom_track.strips) > 0:
+                                obj.animation_data.action = bottom_track.strips[0].action
+                        
+                        obj.update_tag(refresh={'OBJECT', 'DATA'})
+                
+                if context.view_layer:
+                    context.view_layer.update()
+            else:
+                context.scene.tool_settings.use_keyframe_insert_auto = True
+                
+                # Unmute layer tracks
+                for obj in context.scene.objects:
+                    if obj.animation_data and obj.animation_data.nla_tracks and hasattr(obj, 'lsd_anim_layers_data'):
+                        for layer in obj.lsd_anim_layers_data.layers:
+                            for track in obj.animation_data.nla_tracks:
+                                if track.name == layer.name or track.name == layer.track_name:
+                                    track.mute = layer.is_muted
+                                    track.lock = layer.is_locked
+                                    break
+                
+                anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=True)
         except:
             pass
 
+    def update_onion_skin_enabled(self, context):
+        try:
+            from . import anim_onion_skin
+            anim_onion_skin.update_onion_skin(self, context)
+        except Exception as e:
+            print(f"[LSD] Onion Skin toggle error: {e}")
+
     layers_enabled: bpy.props.BoolProperty(name="Enable Animation Layers", default=False, update=update_layers_enabled)
-    layers: bpy.props.CollectionProperty(type=LSD_PG_Animation_Layer)
-    active_layer_index: bpy.props.IntProperty(name="Active Layer", default=0, update=update_active_idx)
     
     # --- Animation Library ---
     library_enabled: bpy.props.BoolProperty(default=True, description="Expand or collapse the animation layer library panel")
@@ -1009,7 +1055,7 @@ class LSD_PG_Animation_Settings(bpy.types.PropertyGroup):
     onion_skin_enabled: bpy.props.BoolProperty(
         name="Enable Timeline Onion Skinning",
         default=False,
-        update=lambda self, context: __import__('importlib').import_module('.anim_onion_skin', __package__).update_onion_skin(self, context) if __package__ else None
+        update=update_onion_skin_enabled
     )
     
     onion_skin_target: bpy.props.EnumProperty(
@@ -1316,23 +1362,12 @@ def get_catalogs_items(self, context):
     return items
 
 def register():
-
-    try:
-        bpy.utils.register_class(LSD_PG_AnimLibraryItem)
-    except Exception as e:
-        print(f"Warning: Could not register LSD_PG_AnimLibraryItem: {e}")
-        
-    try:
-        bpy.utils.register_class(LSD_PG_Animation_Layer)
-    except Exception as e:
-        print(f"Warning: Could not register LSD_PG_Animation_Layer: {e}")
-        
-    try:
-        bpy.utils.register_class(LSD_PG_Animation_Settings)
-    except Exception as e:
-        print(f"Warning: Could not register LSD_PG_Animation_Settings: {e}")
-        
+    bpy.utils.register_class(LSD_PG_Animation_Layer)
+    bpy.utils.register_class(LSD_PG_AnimLibraryItem)
+    bpy.utils.register_class(LSD_PG_Animation_Settings)
+    bpy.utils.register_class(LSD_PG_Object_Anim_Layers)
     bpy.types.Scene.lsd_anim_settings = bpy.props.PointerProperty(type=LSD_PG_Animation_Settings)
+    bpy.types.Object.lsd_anim_layers_data = bpy.props.PointerProperty(type=LSD_PG_Object_Anim_Layers)
 
     for cls in CLASSES:
         try:
@@ -1814,6 +1849,14 @@ def unregister():
     if bpy.app.timers.is_registered(lsd_asset_sync_timer):
         bpy.app.timers.unregister(lsd_asset_sync_timer)
         
+    del bpy.types.Object.lsd_anim_layers_data
+    del bpy.types.Scene.lsd_anim_settings
+    
+    bpy.utils.unregister_class(LSD_PG_Object_Anim_Layers)
+    bpy.utils.unregister_class(LSD_PG_Animation_Settings)
+    bpy.utils.unregister_class(LSD_PG_AnimLibraryItem)
+    bpy.utils.unregister_class(LSD_PG_Animation_Layer)
+
     """Systematic cleanup of all LSD properties and classes."""
     try:
         # 1. Clean up Scene Properties
@@ -1867,14 +1910,8 @@ def unregister():
         print(f"Error during LSD property cleanup: {e}")
     # 3. Unregister classes in reverse order
 
-    if hasattr(bpy.types.Scene, "lsd_anim_settings"):
-        del bpy.types.Scene.lsd_anim_settings
     try:
         bpy.utils.unregister_class(LSD_PG_SDF_Props)
-        
-        bpy.utils.unregister_class(LSD_PG_AnimLibraryItem)
-        bpy.utils.unregister_class(LSD_PG_Animation_Layer)
-        bpy.utils.unregister_class(LSD_PG_Animation_Settings)
     except: pass
 
     for cls in reversed(CLASSES):
@@ -1882,3 +1919,4 @@ def unregister():
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+

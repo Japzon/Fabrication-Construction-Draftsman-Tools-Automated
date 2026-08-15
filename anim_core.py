@@ -62,37 +62,44 @@ def get_action_fcurves(obj, action):
 def sync_layer_light(context):
     """Fast, synchronous update for influence and blend type. Does not touch Tweak Mode."""
     settings = get_anim_settings(context)
-    if not settings.layers_enabled or not settings.layers:
+    if not settings.layers_enabled:
         return
-    # Apply to all objects to ensure global influence update
-    for scene_obj in context.scene.objects:
-        if not scene_obj.animation_data:
-            continue
         
-        for i, layer in enumerate(settings.layers):
-            track = None
-            for t in scene_obj.animation_data.nla_tracks:
-                if t.name == layer.name or t.name == layer.track_name:
-                    track = t
-                    break
-            
-            if track:
-                for strip in track.strips:
-                    strip.blend_type = layer.blend_type
-                    strip.extrapolation = 'NOTHING' if layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
-                    strip.influence = 0.0 if layer.is_muted else layer.influence
-                    strip.mute = layer.is_muted
+    obj = get_active_object(context)
+    if not obj or not hasattr(obj, 'lsd_anim_layers_data') or not obj.animation_data:
+        return
+        
+    layer_data = obj.lsd_anim_layers_data
+    if not layer_data.layers: return
+    
+    # Apply to the active object ONLY
+    for i, layer in enumerate(layer_data.layers):
+        track = None
+        for t in obj.animation_data.nla_tracks:
+            if t.name == layer.name or t.name == layer.track_name:
+                track = t
+                break
+        
+        if track:
+            for strip in track.strips:
+                strip.blend_type = layer.blend_type
+                strip.extrapolation = 'NOTHING' if layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
+                strip.influence = 0.0 if layer.is_muted else layer.influence
+                strip.mute = layer.is_muted
+                
+                if strip.action:
+                    for fcurve in get_action_fcurves(obj, strip.action):
+                        fcurve.mute = layer.is_muted
     
     context.view_layer.update()
     
     # CRITICAL: Muting the active layer while in Tweak Mode causes the Action slot to override the NLA strip!
     # Instead of forcefully exiting Tweak Mode (which flashes the UI), we can simply mute the active action's F-curves!
-    obj = get_active_object(context)
-    if obj and settings.active_layer_index < len(settings.layers):
-        active_layer = settings.layers[settings.active_layer_index]
+    if layer_data.active_layer_index < len(layer_data.layers):
+        active_layer = layer_data.layers[layer_data.active_layer_index]
         
         # Restore the action if it was cleared while muted
-        if not active_layer.is_muted and obj.animation_data and not obj.animation_data.action:
+        if not active_layer.is_muted and not obj.animation_data.action:
             track = obj.animation_data.nla_tracks.get(active_layer.track_name)
             if track and track.strips:
                 try:
@@ -114,60 +121,79 @@ def sync_layer_light(context):
             
     context.view_layer.update()
     reset_auto_keyframe_cache()
-def execute_sync_logic(context):
-    """Core logic to restructure NLA tracks. Must be called when Tweak Mode is OFF."""
+def execute_sync_logic(context, enter_tweak_mode=True):
+    """Core logic to restructure NLA tracks."""
     settings = get_anim_settings(context)
-    if not settings.layers_enabled or not settings.layers:
+    if not settings.layers_enabled:
         return
         
     obj = get_active_object(context)
-    if not obj or not obj.animation_data:
+    if not obj or not obj.animation_data or not hasattr(obj, 'lsd_anim_layers_data'):
         return
+        
+    layer_data = obj.lsd_anim_layers_data
+    if not layer_data.layers: return
 
-    # 1. Apply muting and blending settings to ALL objects in the scene 
-    # to guarantee global suppression (e.g., if a user animated multiple characters/meshes)
-    for scene_obj in context.scene.objects:
-        if not scene_obj.animation_data:
-            continue
-        for i, layer in enumerate(settings.layers):
-            # Check if this object actually has a track for this layer
-            track = None
-            for t in scene_obj.animation_data.nla_tracks:
-                if t.name == layer.name or t.name == layer.track_name:
-                    track = t
-                    break
-            
-            # If we are the active object, ensure the track exists
-            if scene_obj == obj and not track:
-                track = ensure_nla_track(scene_obj, layer.track_name if layer.track_name else layer.name)
-            
-            if track:
-                if scene_obj == obj:
-                    layer.track_name = track.name
-                    if layer.name == track.name:
-                        track.name = layer.name
-                    
-                track.mute = layer.is_muted
-                track.lock = layer.is_locked
+    # Aggressively repair existing broken files: forcibly unmute the base track so the base animation is never frozen
+    for track in obj.animation_data.nla_tracks:
+        if "Base_Layer" in track.name or "Base Layer" in track.name:
+            track.mute = False
+
+    # 1. Apply muting and blending settings to the active object ONLY
+    for i, layer in enumerate(layer_data.layers):
+        # Check if this object actually has a track for this layer
+        track = None
+        for t in obj.animation_data.nla_tracks:
+            if t.name == layer.name or t.name == layer.track_name:
+                track = t
+                break
+        
+        # Ensure the track exists
+        if not track:
+            track = ensure_nla_track(obj, layer.track_name if layer.track_name else layer.name)
+        
+        if track:
+            layer.track_name = track.name
+            if layer.name == track.name:
+                track.name = layer.name
                 
-                # In NLA, strips hold the influence and blend_type
-                for strip in track.strips:
-                    strip.blend_type = layer.blend_type
-                    
-                    # Forcibly drop the strip influence to 0 and explicitly mute the strip itself
-                    strip.influence = 0.0 if layer.is_muted else layer.influence
-                    strip.mute = layer.is_muted
-                    
-                    strip.extrapolation = 'HOLD_FORWARD'
-                    if hasattr(strip, 'use_sync_length'):
-                        strip.use_sync_length = True
+            track.mute = layer.is_muted
+            track.lock = layer.is_locked
+            
+            # In NLA, strips hold the influence and blend_type
+            for strip in track.strips:
+                strip.blend_type = layer.blend_type
+                
+                # Forcibly drop the strip influence to 0 and explicitly mute the strip itself
+                strip.influence = 0.0 if layer.is_muted else layer.influence
+                strip.mute = layer.is_muted
+                
+                if strip.action:
+                    for fcurve in get_action_fcurves(obj, strip.action):
+                        fcurve.mute = layer.is_muted
+                
+                strip.extrapolation = 'NOTHING' if layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
+                if hasattr(strip, 'use_sync_length'):
+                    strip.use_sync_length = True
                         
     def safe_enter_tweak_mode(context_ref, o, t, s):
         if not o or not o.animation_data: return
         for window in context_ref.window_manager.windows:
             for area in window.screen.areas:
                 if area.type == 'NLA_EDITOR':
-                    with context_ref.temp_override(window=window, area=area, active_object=o):
+                    target_space = None
+                    if hasattr(area, "spaces"):
+                        for space in area.spaces:
+                            if space.type == 'NLA_EDITOR':
+                                target_space = space
+                                break
+                    target_region = None
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            target_region = region
+                            break
+                            
+                    with context_ref.temp_override(window=window, area=area, region=target_region, space_data=target_space, active_object=o, selected_objects=[o]):
                         if getattr(o.animation_data, 'use_tweak_mode', False):
                             try: bpy.ops.nla.tweakmode_exit(isolate_action=False)
                             except: pass
@@ -183,8 +209,8 @@ def execute_sync_logic(context):
             
     active_layer = None
     active_track = None
-    if settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
-        active_layer = settings.layers[settings.active_layer_index]
+    if layer_data.active_layer_index >= 0 and layer_data.active_layer_index < len(layer_data.layers):
+        active_layer = layer_data.layers[layer_data.active_layer_index]
         for t in obj.animation_data.nla_tracks:
             if t.name == active_layer.name or t.name == active_layer.track_name:
                 active_track = t
@@ -220,6 +246,10 @@ def execute_sync_logic(context):
                     strip.extrapolation = 'HOLD' if active_layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
                     if hasattr(strip, 'use_sync_length'):
                         strip.use_sync_length = True
+                    try:
+                        obj.animation_data.action_blend_type = active_layer.blend_type
+                        obj.animation_data.action_extrapolation = 'HOLD' if active_layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
+                    except: pass
                 elif not active_track.strips:
                     # Create an empty strip so tweak mode has something to lock onto and blend type applies
                     empty_action = bpy.data.actions.new(name=active_track.name)
@@ -242,6 +272,11 @@ def execute_sync_logic(context):
                     if hasattr(existing_strip, 'use_sync_length'):
                         existing_strip.use_sync_length = True
                 active_track.strips[0].active = True
+                
+                try:
+                    obj.animation_data.action_blend_type = active_layer.blend_type
+                    obj.animation_data.action_extrapolation = 'HOLD' if active_layer.blend_type == 'REPLACE' else 'HOLD_FORWARD'
+                except: pass
             except:
                 pass
             
@@ -263,20 +298,23 @@ def execute_sync_logic(context):
                                         try: bpy.ops.nla.tweakmode_exit(isolate_action=False)
                                         except: pass
                                     break
-                    obj.animation_data.action = None
+                    if not getattr(obj.animation_data, 'use_tweak_mode', False):
+                        obj.animation_data.action = None
                 elif active_track.strips:
-                    assigned_action = active_track.strips[0].action
-                    safe_enter_tweak_mode(context, obj, active_track, active_track.strips[0])
-                    obj.animation_data.action = assigned_action
+                    if enter_tweak_mode:
+                        safe_enter_tweak_mode(context, obj, active_track, active_track.strips[0])
+                    # Ensure action does not float and double-evaluate if tweak mode is off
+                    if not getattr(obj.animation_data, 'use_tweak_mode', False):
+                        obj.animation_data.action = None
             except: pass
                 
-            # Aggressively disable NLA track visibility in all Graph Editors so the user only sees the active layer
+            # Ensure NLA track visibility is ON in Dopesheet so the user can still see base animation keyframes in the Timeline
             for window in context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type in {'GRAPH_EDITOR', 'DOPESHEET_EDITOR'}:
                         if hasattr(area.spaces.active, 'dopesheet'):
                             try:
-                                area.spaces.active.dopesheet.show_nla = False
+                                area.spaces.active.dopesheet.show_nla = True
                             except: pass
             
     # Now configure the active track ONLY for the active object
@@ -312,12 +350,15 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
             
     if not target_area:
         # Fallback to pure logic if no safe area exists
-        obj = get_active_object(context)
         if exit_first and obj and obj.animation_data:
-            try:
-                obj.animation_data.action = None
-            except: pass
-        execute_sync_logic(context)
+            if getattr(obj.animation_data, 'use_tweak_mode', False):
+                try: bpy.ops.nla.tweakmode_exit(isolate_action=False)
+                except: pass
+            if not getattr(obj.animation_data, 'use_tweak_mode', False):
+                try:
+                    obj.animation_data.action = None
+                except: pass
+        execute_sync_logic(context, enter_tweak_mode=enter_second)
         return
         
     try:
@@ -336,8 +377,14 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
             override['window'] = target_window
             override['area'] = target_area
             override['region'] = target_region
-            if hasattr(target_area, "spaces") and target_area.spaces.active:
-                override['space_data'] = target_area.spaces.active
+            if hasattr(target_area, "spaces"):
+                for space in target_area.spaces:
+                    if space.type == 'NLA_EDITOR':
+                        override['space_data'] = space
+                        break
+            override['active_object'] = get_active_object(context)
+            if override['active_object']:
+                override['selected_objects'] = [override['active_object']]
             
             with context.temp_override(**override):
                 if exit_first:
@@ -348,23 +395,22 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
                     
                 obj = get_active_object(context)
                 if obj and obj.animation_data:
-                    try:
-                        obj.animation_data.action = None  # Prevent old layer action from leaking
-                    except: pass
+                    # CRITICAL: If tweakmode_exit failed (we are still in Tweak Mode), do NOT set action = None
+                    # Otherwise Blender will permanently erase the action from the NLA strip!
+                    if not getattr(obj.animation_data, 'use_tweak_mode', False):
+                        try:
+                            obj.animation_data.action = None  # Prevent old layer action from leaking
+                        except: pass
                     
-                execute_sync_logic(context)
+                execute_sync_logic(context, enter_tweak_mode=enter_second)
                 
                 # CRITICAL: Force a depsgraph update before entering Tweak Mode. 
                 # If we don't, Blender caches the uninitialized strip state and COMBINE mode acts like REPLACE until the user manually switches layers.
                 if context.view_layer:
                     context.view_layer.update()
                 
-                if enter_second:
-                    try: bpy.ops.nla.tweakmode_enter(isolate_action=False)
-                    except:
-                        try: bpy.ops.nla.tweakmode_enter()
-                        except: pass
-                        
+                # Tweak Mode is already safely entered by execute_sync_logic
+                
                 # CRITICAL: Force another depsgraph update and tag the object after entering Tweak Mode.
                 # If we don't, Blender's viewport gets stuck displaying the previous layer's poses until the user manually toggles a property like Mute.
                 if context.view_layer:
@@ -373,20 +419,12 @@ def invisible_tweakmode_swap(context, exit_first=False, enter_second=False):
                 obj = get_active_object(context)
                 if obj:
                     obj.update_tag(refresh={'OBJECT', 'DATA'})
-                    
-                    # CRITICAL: Force NLA cache invalidation by quickly toggling the mute state of all tracks.
-                    # This physically mimics the user's manual mute/unmute workaround to fix Blender's C++ NLA cache freezing.
-                    if obj.animation_data:
-                        for t in obj.animation_data.nla_tracks:
-                            orig_mute = t.mute
-                            t.mute = not orig_mute
-                            t.mute = orig_mute
                             
                     if context.view_layer:
                         context.view_layer.update()
         else:
             # Fallback if region generation failed
-            execute_sync_logic(context)
+            execute_sync_logic(context, enter_tweak_mode=enter_second)
             
     finally:
         # CRITICAL: Instantly restore the area type BEFORE Blender executes its next frame redraw!

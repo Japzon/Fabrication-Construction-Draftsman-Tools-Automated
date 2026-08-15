@@ -3059,13 +3059,14 @@ class LSD_OT_Remove_Dimension(bpy.types.Operator):
                                     context.view_layer.objects.active = scene_obj
                                     scene_obj.select_set(True)
                                     bpy.ops.object.modifier_apply(modifier=mod.name)
+                                except:
+                                    pass
+                                finally:
                                     if mod.name in scene_obj.modifiers:
                                         # Bake failed (e.g., multi-user mesh or shape keys). Preserve the empty to prevent retraction.
                                         to_delete.discard(hook_empty)
                                         # Re-tag it as a manual anchor so it behaves nicely in the future
                                         hook_empty["lsd_anchor"] = True
-                                except: pass
-                                finally:
                                     scene_obj.select_set(False)
                 # If it's a user-created "Attach Hook" (lsd_anchor=True) OR a generic Empty used as an anchor,
                 # detach it but DO NOT delete it and DO NOT bake its modifier. The hook empty survives and
@@ -3738,8 +3739,17 @@ class LSD_OT_Add_Dimension(bpy.types.Operator):
                 else:
                     p1 = mathutils.Vector((max_x + offset_val, mid_y, min_z))
                     p2 = mathutils.Vector((max_x + offset_val, mid_y, max_z))
-                dim = generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}", parent_a=(obj, 'OBJECT', None))
-                if dim: new_dims.append(dim)
+                # DO NOT pass parent_a=(obj,...) to the generator because it will add a COPY_LOCATION
+                # constraint to the mesh itself, forcefully snapping the mesh to the bounding box corner!
+                dim = generators.generate_smart_dimension_parametric(context, p1, p2, name=f"BBox_{ax}")
+                if dim: 
+                    new_dims.append(dim)
+                    # Instead, safely parent the dimension's Root directly to the object so it travels with it.
+                    dim_root = dim.parent
+                    if dim_root:
+                        old_mat = dim_root.matrix_world.copy()
+                        dim_root.parent = obj
+                        dim_root.matrix_world = old_mat
             if new_dims:
                 # Select the last generated dimension (host label) so properties appear instantly
                 last_host = new_dims[-1]
@@ -7193,7 +7203,9 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             except: pass
             
         # Step 2: Now it is mathematically safe to generate new tracks!
-        if len(settings.layers) == 0:
+        layer_data = obj.lsd_anim_layers_data
+        
+        if len(layer_data.layers) == 0:
             if not obj.animation_data:
                 obj.animation_data_create()
                 
@@ -7238,16 +7250,15 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
                 else:
                     anchor_frame = 1
                     
-            base_layer = settings.layers.add()
+            base_layer = layer_data.layers.add()
             base_layer.name = "Base Layer"
             base_layer.blend_type = 'REPLACE'
-            base_layer.is_muted = True
+            base_layer.is_muted = False
             base_layer.is_locked = True
             
             base_track = obj.animation_data.nla_tracks.new()
             base_track.name = base_layer.name
             base_layer.track_name = base_track.name
-            base_track.mute = True
             
             base_strip = base_track.strips.new(name=base_layer.name, start=anchor_frame, action=base_action)
             base_strip.blend_type = 'REPLACE'
@@ -7262,9 +7273,9 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             base_strip.frame_end = 100000
             base_strip.scale = 1.0
         
-        layer = settings.layers.add()
+        layer = layer_data.layers.add()
         
-        layer_count = sum(1 for l in settings.layers if l.name != "Base Layer")
+        layer_count = sum(1 for l in layer_data.layers if l.name != "Base Layer")
         layer.name = f"Layer {layer_count}"
         
         if obj:
@@ -7290,7 +7301,7 @@ class LSD_OT_Anim_Layer_Add(bpy.types.Operator):
             strip.blend_in = 0.0
             strip.blend_out = 0.0
                 
-        settings.active_layer_index = len(settings.layers) - 1
+        layer_data.active_layer_index = len(layer_data.layers) - 1
         
         if context.view_layer:
             context.view_layer.update()
@@ -7515,15 +7526,21 @@ class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
     bl_label = "Remove Animation Layer"
     def execute(self, context):
         settings = context.scene.lsd_anim_settings
-        idx = settings.active_layer_index
-        if idx >= 0 and idx < len(settings.layers):
-            layer_to_remove = settings.layers[idx]
+        
+        from . import anim_core
+        obj = anim_core.get_active_object(context)
+        if not obj or not hasattr(obj, 'lsd_anim_layers_data'):
+            return {'CANCELLED'}
+            
+        layer_data = obj.lsd_anim_layers_data
+        idx = layer_data.active_layer_index
+        if idx >= 0 and idx < len(layer_data.layers):
+            layer_to_remove = layer_data.layers[idx]
             layer_name = layer_to_remove.name
             track_name = layer_to_remove.track_name if hasattr(layer_to_remove, 'track_name') and layer_to_remove.track_name else layer_name
             
-            # Remove NLA tracks and their Actions from all objects
-            for obj in bpy.data.objects:
-                if not obj.animation_data: continue
+            # Remove NLA tracks and their Actions from the active object ONLY
+            if obj.animation_data:
                 track = obj.animation_data.nla_tracks.get(track_name)
                 if not track:
                     track = obj.animation_data.nla_tracks.get(layer_name)
@@ -7552,6 +7569,7 @@ class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
                     # when the user rapidly deletes multiple layers while Blender is actively evaluating them.
                     def _delayed_remove_layer(obj_name=obj.name, t_name=track.name, action_names=[a.name for a in actions_to_delete]):
                         try:
+                            import bpy
                             o = bpy.data.objects.get(obj_name)
                             if o and o.animation_data:
                                 t = o.animation_data.nla_tracks.get(t_name)
@@ -7564,14 +7582,14 @@ class LSD_OT_Anim_Layer_Remove(bpy.types.Operator):
                                     bpy.data.actions.remove(a)
                         except: pass
                         return None
+                    import bpy
                     bpy.app.timers.register(_delayed_remove_layer, first_interval=2.0)
                         
-            # Remove the layer from the UI list
-            settings.layers.remove(idx)
-            settings.active_layer_index = max(0, idx - 1)
+            # Remove the layer from the object's UI list
+            layer_data.layers.remove(idx)
+            layer_data.active_layer_index = max(0, idx - 1)
             
             # Sync tweak mode
-            from . import anim_core
             anim_core.update_active_layer(settings, context)
             
         return {'FINISHED'}
@@ -7581,14 +7599,18 @@ class LSD_OT_Anim_Layer_Move(bpy.types.Operator):
     bl_label = "Move Animation Layer"
     direction: bpy.props.EnumProperty(items=[('UP', "Up", ""), ('DOWN', "Down", "")])
     def execute(self, context):
-        settings = context.scene.lsd_anim_settings
-        idx = settings.active_layer_index
+        from . import anim_core
+        obj = anim_core.get_active_object(context)
+        if not obj or not hasattr(obj, 'lsd_anim_layers_data'): return {'CANCELLED'}
+        
+        layer_data = obj.lsd_anim_layers_data
+        idx = layer_data.active_layer_index
         if self.direction == 'UP' and idx > 0:
-            settings.layers.move(idx, idx - 1)
-            settings.active_layer_index -= 1
-        elif self.direction == 'DOWN' and idx < len(settings.layers) - 1:
-            settings.layers.move(idx, idx + 1)
-            settings.active_layer_index += 1
+            layer_data.layers.move(idx, idx - 1)
+            layer_data.active_layer_index -= 1
+        elif self.direction == 'DOWN' and idx < len(layer_data.layers) - 1:
+            layer_data.layers.move(idx, idx + 1)
+            layer_data.active_layer_index += 1
         return {'FINISHED'}
 
 class LSD_OT_Anim_Merge_Bake(bpy.types.Operator):

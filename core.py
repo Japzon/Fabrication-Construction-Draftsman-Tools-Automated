@@ -5072,6 +5072,12 @@ def lsd_dimension_hook_cleanup_handler(scene, depsgraph=None):
                         if not con.target.parent or con.target.parent.name not in scene.objects:
                             is_dead = True
                             
+                    # --- BBOX BUG CLEANUP ---
+                    # If this object is a MESH, it was infected by the old BBox bug.
+                    # Meshes should never be dimension hooks. Forcefully purge it!
+                    if obj.type == 'MESH' and obj.get("lsd_is_dimension_hook"):
+                        is_dead = True
+                            
                     if is_dead:
                         if "lsd_saved_world_loc" in obj:
                             loc = obj["lsd_saved_world_loc"]
@@ -5211,6 +5217,79 @@ CLASSES = [
     LSD_OT_Core_DisablePanel, LSD_OT_Core_SnapCursorToActive
 ]
 
+_lsd_previous_mode = 'OBJECT'
+
+@bpy.app.handlers.persistent
+def lsd_edit_mode_bake_handler(scene, depsgraph):
+    """
+    Detects transition from Object Mode to Edit Mode. If the active object
+    has dimension hook modifiers, it temporarily switches back to Object Mode,
+    bakes the modifiers, and returns to Edit Mode. This prevents the 'cage'
+    from appearing un-deformed.
+    """
+    global _lsd_previous_mode
+    if not bpy.context: return
+    current_mode = getattr(bpy.context, 'mode', 'OBJECT')
+    
+    if current_mode == 'EDIT_MESH' and _lsd_previous_mode != 'EDIT_MESH':
+        _lsd_previous_mode = current_mode
+        obj = bpy.context.active_object
+        if not obj or obj.type != 'MESH':
+            return
+            
+        if obj.get("lsd_is_baking_edit", False):
+            return
+
+        has_dim_hook = False
+        for mod in obj.modifiers:
+            if mod.type == 'HOOK' and mod.object:
+                if mod.object.name.startswith("Hook_Dim") or mod.object.get("lsd_anchor"):
+                    has_dim_hook = True
+                    break
+                    
+        if not has_dim_hook:
+            return
+            
+        obj["lsd_is_baking_edit"] = True
+        
+        def deferred_bake():
+            try:
+                # Re-verify context
+                if bpy.context.active_object != obj:
+                    return None
+                    
+                # Temporarily switch back to OBJECT mode to apply modifiers
+                if bpy.context.mode != 'OBJECT':
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    
+                mods_to_apply = []
+                for mod in obj.modifiers:
+                    if mod.type == 'HOOK' and mod.object:
+                        if mod.object.name.startswith("Hook_Dim") or mod.object.get("lsd_anchor"):
+                            mods_to_apply.append(mod.name)
+                
+                for mod_name in mods_to_apply:
+                    try:
+                        bpy.ops.object.modifier_apply(modifier=mod_name)
+                    except:
+                        pass
+                        
+            except Exception as e:
+                print(f"[LSD] Edit-Mode Auto-Bake Failed: {e}")
+            finally:
+                try:
+                    # Return to EDIT mode to seamlessly continue the workflow
+                    if bpy.context.mode != 'EDIT':
+                        bpy.ops.object.mode_set(mode='EDIT')
+                    obj["lsd_is_baking_edit"] = False
+                except:
+                    pass
+            return None
+            
+        bpy.app.timers.register(deferred_bake, first_interval=0.01)
+    elif current_mode != 'EDIT_MESH':
+        _lsd_previous_mode = current_mode
+
 def register():
     # 1. Register Classes
     for cls in CLASSES:
@@ -5220,6 +5299,7 @@ def register():
             except Exception:
                 pass
     # 2. Append Handlers (Set-like behavior to prevent duplicates)
+    if lsd_edit_mode_bake_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_edit_mode_bake_handler)
     if sync_light_props_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(sync_light_props_handler)
     if lsd_placement_handler not in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.append(lsd_placement_handler)
     if auto_set_active_rig_handler not in bpy.app.handlers.load_post: bpy.app.handlers.load_post.append(auto_set_active_rig_handler)
@@ -5253,6 +5333,7 @@ def unregister():
                 pass
                 
     # 2. Remove Handlers safely
+    if lsd_edit_mode_bake_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_edit_mode_bake_handler)
     if sync_light_props_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(sync_light_props_handler)
     if lsd_placement_handler in bpy.app.handlers.depsgraph_update_post: bpy.app.handlers.depsgraph_update_post.remove(lsd_placement_handler)
     if auto_set_active_rig_handler in bpy.app.handlers.load_post: bpy.app.handlers.load_post.remove(auto_set_active_rig_handler)

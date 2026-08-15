@@ -3,9 +3,45 @@ from . import ui_common
 
 class LSD_UL_Anim_Library(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        import layouts_systems_draftsman_toolkit.anim_core as anim_core
+        obj = anim_core.get_active_object(context)
+        active_type = obj.type if obj else ""
+        is_applicable = True
+        if active_type and item.target_type and item.target_type != active_type:
+            is_applicable = False
+            
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             row = layout.row()
-            row.label(text=item.name, icon='ACTION')
+            if not is_applicable:
+                row.enabled = False
+                row.label(text=f"{item.name} (Not applicable to {active_type.title()})", icon='ERROR')
+            else:
+                row.label(text=item.name, icon='ACTION')
+
+    def filter_items(self, context, data, propname):
+        items = getattr(data, propname)
+        import layouts_systems_draftsman_toolkit.anim_core as anim_core
+        obj = anim_core.get_active_object(context)
+        active_type = obj.type if obj else ""
+        
+        flt_flags = []
+        flt_neworder = []
+        
+        if items:
+            flt_flags = [self.bitflag_filter_item] * len(items)
+            
+            match_items = []
+            non_match_items = []
+            
+            for i, item in enumerate(items):
+                if not active_type or item.target_type == active_type or not item.target_type:
+                    match_items.append(i)
+                else:
+                    non_match_items.append(i)
+                    
+            flt_neworder = match_items + non_match_items
+
+        return flt_flags, flt_neworder
 
 class LSD_UL_Animation_Layers(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -78,7 +114,6 @@ class LSD_PT_Animation_System_Main:
                     col.separator()
                     col.prop(settings, "import_blend_type", text="Mode")
                     col.prop(settings, "upload_selection", text="Upload Selection")
-                    col.prop(settings, "import_export_name")
                     
                     # Animated Preview
                     if len(settings.library_items) > 0 and settings.active_library_index < len(settings.library_items):
@@ -105,22 +140,30 @@ class LSD_PT_Animation_System_Main:
             row.prop(settings, "layers_enabled", text="", icon='CHECKBOX_HLT' if settings.layers_enabled else 'CHECKBOX_DEHLT')
             
             if settings.layers_enabled:
+                import layouts_systems_draftsman_toolkit.anim_core as anim_core
+                obj = anim_core.get_active_object(context)
+                
                 col = layers_box.column(align=True)
                 row = col.row()
-                row.template_list("LSD_UL_Animation_Layers", "", settings, "layers", settings, "active_layer_index", rows=4)
                 
-                col_btn = row.column(align=True)
-                col_btn.operator("lsd.anim_layer_add", icon='ADD', text="")
-                col_btn.operator("lsd.anim_layer_remove", icon='REMOVE', text="")
-                col_btn.separator()
-                col_btn.operator("lsd.anim_layer_move", icon='TRIA_UP', text="").direction = 'UP'
-                col_btn.operator("lsd.anim_layer_move", icon='TRIA_DOWN', text="").direction = 'DOWN'
-                
-                if len(settings.layers) > 0 and settings.active_layer_index >= 0:
-                    layer = settings.layers[settings.active_layer_index]
+                if obj and hasattr(obj, 'lsd_anim_layers_data'):
+                    layer_data = obj.lsd_anim_layers_data
+                    row.template_list("LSD_UL_Animation_Layers", "", layer_data, "layers", layer_data, "active_layer_index", rows=4)
                     
-                    row = col.row(align=True)
-                    row.prop(layer, "blend_type", text="Blend")
+                    col_btn = row.column(align=True)
+                    col_btn.operator("lsd.anim_layer_add", icon='ADD', text="")
+                    col_btn.operator("lsd.anim_layer_remove", icon='REMOVE', text="")
+                    col_btn.separator()
+                    col_btn.operator("lsd.anim_layer_move", icon='TRIA_UP', text="").direction = 'UP'
+                    col_btn.operator("lsd.anim_layer_move", icon='TRIA_DOWN', text="").direction = 'DOWN'
+                    
+                    if len(layer_data.layers) > 0 and layer_data.active_layer_index >= 0 and layer_data.active_layer_index < len(layer_data.layers):
+                        layer = layer_data.layers[layer_data.active_layer_index]
+                        
+                        row = col.row(align=True)
+                        row.prop(layer, "blend_type", text="Blend")
+                else:
+                    row.label(text="Select an object to view its animation layers.", icon='INFO')
                     
                 col.separator()
                 col.operator("lsd.anim_keyframe_entire_pose", icon='KEYINGSET')

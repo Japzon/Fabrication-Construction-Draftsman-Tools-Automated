@@ -187,6 +187,16 @@ class LSD_OT_Anim_Library_Refresh(bpy.types.Operator):
                     new_item = settings.library_items.add()
                     new_item.name = layer_name
                     new_item.filepath = os.path.join(lib_path, item)
+                    
+                    import json
+                    meta_filepath = os.path.join(lib_path, f"{layer_name}_preview", "meta.json")
+                    if os.path.exists(meta_filepath):
+                        try:
+                            with open(meta_filepath, 'r') as f:
+                                meta = json.load(f)
+                                new_item.target_type = meta.get("target_type", "")
+                                new_item.target_name = meta.get("target_name", "")
+                        except: pass
                 
         return {'FINISHED'}
 
@@ -381,13 +391,19 @@ class LSD_OT_Anim_Library_Export(bpy.types.Operator):
     bl_label = "Export Active Layer"
     
     def execute(self, context):
-        settings = context.scene.lsd_anim_settings
-        if settings.active_layer_index < 0 or settings.active_layer_index >= len(settings.layers):
+        import layouts_systems_draftsman_toolkit.anim_core as anim_core
+        obj = anim_core.get_active_object(context)
+        
+        if not obj or not hasattr(obj, 'lsd_anim_layers_data'):
+            return {'CANCELLED'}
+            
+        layer_data = obj.lsd_anim_layers_data
+        
+        if layer_data.active_layer_index < 0 or layer_data.active_layer_index >= len(layer_data.layers):
             self.report({'ERROR'}, "No active layer to export")
             return {'CANCELLED'}
             
-        layer = settings.layers[settings.active_layer_index]
-        obj = context.active_object
+        layer = layer_data.layers[layer_data.active_layer_index]
         
         if not obj or not obj.animation_data:
             self.report({'ERROR'}, "No object/animation data selected")
@@ -404,11 +420,11 @@ class LSD_OT_Anim_Library_Export(bpy.types.Operator):
             action = track.strips[0].action
             
         lib_path = get_library_path()
-        base_name = settings.import_export_name if settings.import_export_name else layer.name
+        base_name = layer.name
         out_filepath = os.path.join(lib_path, f"{base_name}.blend")
         counter = 1
         while os.path.exists(out_filepath):
-            base_name = f"{settings.import_export_name if settings.import_export_name else layer.name}_{counter:03d}"
+            base_name = f"{layer.name}_{counter:03d}"
             out_filepath = os.path.join(lib_path, f"{base_name}.blend")
             counter += 1
             
@@ -420,6 +436,15 @@ class LSD_OT_Anim_Library_Export(bpy.types.Operator):
         # Now render preview images using OpenGL Viewport render
         preview_dir = get_preview_dir(layer.name)
         _render_preview_sequence(context, obj, track, action, preview_dir)
+        
+        # Save metadata
+        import json
+        meta_filepath = os.path.join(preview_dir, "meta.json")
+        try:
+            with open(meta_filepath, 'w') as f:
+                json.dump({"target_type": obj.type, "target_name": obj.name}, f)
+        except Exception as e:
+            print(f"Failed to save metadata for library item: {e}")
             
         bpy.ops.lsd.anim_library_refresh()
         return {'FINISHED'}
@@ -445,8 +470,36 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
             
         action = data_to.actions[0]
         
+        import layouts_systems_draftsman_toolkit.anim_core as anim_core
+        obj = anim_core.get_active_object(context)
+        if obj is None:
+            with bpy.data.libraries.load(item.filepath) as (data_from_rig, data_to_rig):
+                if data_from_rig.objects:
+                    data_to_rig.objects = data_from_rig.objects
+                    
+            if hasattr(data_to_rig, 'objects') and data_to_rig.objects:
+                imported_armature = None
+                for new_obj in data_to_rig.objects:
+                    if new_obj and new_obj.type == 'ARMATURE':
+                        imported_armature = new_obj
+                        break
+                        
+                if imported_armature:
+                    context.scene.collection.objects.link(imported_armature)
+                    for o in context.selected_objects:
+                        o.select_set(False)
+                    imported_armature.select_set(True)
+                    context.view_layer.objects.active = imported_armature
+                    imported_armature.location = context.scene.cursor.location
+                    obj = imported_armature
+                else:
+                    self.report({'WARNING'}, "No target armature found or importable from library. Please select the target rig first.")
+                    return {'CANCELLED'}
+            else:
+                self.report({'WARNING'}, "No target armature found or importable from library. Please select the target rig first.")
+                return {'CANCELLED'}
+        
         # Ensure slots match the active object so the poses evaluate correctly on different rigs
-        obj = context.active_object
         if obj and hasattr(action, 'slots'):
             try:
                 target_slot_name = obj.id_data.name if hasattr(obj, 'id_data') else obj.name
@@ -499,11 +552,16 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                             for kp in f.keyframe_points:
                                 frames.add(kp.co.x)
                                 
+                        w_fc.extrapolation = 'CONSTANT'
+                        x_fc.extrapolation = 'CONSTANT'
+                        y_fc.extrapolation = 'CONSTANT'
+                        z_fc.extrapolation = 'CONSTANT'
                         if frames:
-                            base_w = w_fc.evaluate(min_frame)
-                            base_x = x_fc.evaluate(min_frame)
-                            base_y = y_fc.evaluate(min_frame)
-                            base_z = z_fc.evaluate(min_frame)
+                            local_min_frame = sorted(frames)[0]
+                            base_w = w_fc.evaluate(local_min_frame)
+                            base_x = x_fc.evaluate(local_min_frame)
+                            base_y = y_fc.evaluate(local_min_frame)
+                            base_z = z_fc.evaluate(local_min_frame)
                             base_q = mathutils.Quaternion((base_w, base_x, base_y, base_z))
                             try:
                                 base_q_inv = base_q.inverted()
@@ -544,8 +602,10 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                     # Pure Delta Conversion
                     for fc in fcs:
                         if not fc.keyframe_points: continue
+                        fc.extrapolation = 'CONSTANT'
                         
-                        action_start_val = fc.evaluate(min_frame)
+                        # Evaluate at the curve's own first keyframe, not the global min_frame, to prevent linear slope backtracking
+                        action_start_val = fc.keyframe_points[0].co.y
                         
                         base_val = 0.0
                         if settings.import_blend_type == 'REPLACE':
@@ -563,19 +623,34 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                             
                         spatial_offset = base_val - action_start_val
                         
-                        if spatial_offset != 0:
+                        scale_factor = 1.0
+                        if settings.import_blend_type in {'COMBINE', 'ADD'} and data_path.endswith("location"):
+                            scale_path = data_path.replace("location", "scale")
+                            try:
+                                scale_prop = obj.path_resolve(scale_path)
+                                if hasattr(scale_prop, '__getitem__'):
+                                    scale_factor = scale_prop[fc.array_index]
+                                else:
+                                    scale_factor = scale_prop
+                            except:
+                                pass
+                                
+                            if scale_factor == 0: scale_factor = 1.0
+                        
+                        if spatial_offset != 0 or scale_factor != 1.0:
                             for kp in fc.keyframe_points:
-                                kp.co.y += spatial_offset
-                                kp.handle_left.y += spatial_offset
-                                kp.handle_right.y += spatial_offset
+                                kp.co.y = (kp.co.y + spatial_offset) / scale_factor
+                                kp.handle_left.y = (kp.handle_left.y + spatial_offset) / scale_factor
+                                kp.handle_right.y = (kp.handle_right.y + spatial_offset) / scale_factor
                             fc.update()
         
         # Create a new layer in our UI
         bpy.ops.lsd.anim_layer_add()
         
         # Apply chosen import blend mode
-        if settings.active_layer_index >= 0 and settings.active_layer_index < len(settings.layers):
-            layer = settings.layers[settings.active_layer_index]
+        layer_data = obj.lsd_anim_layers_data
+        if layer_data.active_layer_index >= 0 and layer_data.active_layer_index < len(layer_data.layers):
+            layer = layer_data.layers[layer_data.active_layer_index]
             layer.blend_type = settings.import_blend_type
             if obj and obj.animation_data:
                 track = obj.animation_data.nla_tracks.get(layer.track_name)
@@ -584,7 +659,8 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                     track.strips[0].extrapolation = 'NOTHING' if settings.import_blend_type == 'REPLACE' else 'HOLD_FORWARD'
         
         # Assign action
-        obj = context.active_object
+        obj = anim_core.get_active_object(context)
+        
         if obj and obj.animation_data:
             try:
                 from . import anim_core
@@ -592,7 +668,7 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                 anim_core.invisible_tweakmode_swap(context, exit_first=True, enter_second=False)
                 
                 # Step 2: Swap the action on the newly created layer's NLA strip
-                layer = settings.layers[-1]
+                layer = layer_data.layers[-1]
                 track = obj.animation_data.nla_tracks.get(layer.track_name)
                 if track and track.strips:
                     strip = track.strips[0]
@@ -646,9 +722,9 @@ class LSD_OT_Anim_Library_Import(bpy.types.Operator):
                     
                     # (Action deletion is safely deferred via the background timer above)
                         
-                base_name = settings.import_export_name if settings.import_export_name else item.name
+                base_name = item.name
                 action_name = base_name
-                existing_names = [l.name for l in settings.layers if l != layer]
+                existing_names = [l.name for l in layer_data.layers if l != layer]
                 counter = 1
                 while action_name in existing_names:
                     action_name = f"{base_name}.{counter:03d}"
